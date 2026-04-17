@@ -1,0 +1,30 @@
+services:
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    ports:
+      - "8090:8090"
+    develop:
+      watch:
+        - action: sync+restart
+          path: ../backend/pb_hooks
+          target: /app/pb_hooks
+    environment:
+      PB_ORIGINS: '*'
+      PB_SUPERUSER_EMAIL: admin@example.com
+      PB_SUPERUSER_PASSWORD: password
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./nginx-dev.conf
+          target: /etc/nginx/nginx.conf
+    depends_on:
+      - backend

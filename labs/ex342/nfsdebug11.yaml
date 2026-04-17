@@ -1,0 +1,117 @@
+meta:
+  title: NFS Troubleshooting
+  description: Diagnose and fix common NFS export and mount issues across a server and client node.
+
+content:
+  - title: Verify NFS Services
+    content: |
+      Before debugging mounts, confirm NFS services are running on **server-0**.
+
+      ```bash
+      # Check service status
+      systemctl status nfs-server
+      systemctl status rpcbind
+
+      # Start and enable if not running
+      systemctl enable --now nfs-server
+      ```
+
+      On **server-1** (client), verify the NFS utilities are available:
+
+      ```bash
+      rpm -q nfs-utils
+      rpcinfo -p server-0
+      ```
+
+      **Task:** Ensure `nfs-server` is active on server-0 and confirm server-0's RPC portmapper is reachable from server-1.
+
+  - title: Inspect and Fix Exports
+    content: |
+      NFS exports are defined in `/etc/exports`. A common mistake is a missing or malformed entry.
+
+      On **server-0**:
+
+      ```bash
+      # View current exports
+      cat /etc/exports
+      exportfs -v
+
+      # Example correct entry
+      /srv/nfs  server-1(rw,sync,no_root_squash)
+
+      # After editing /etc/exports, re-export
+      exportfs -ra
+      ```
+
+      **Task:** Add an export for `/srv/nfs` allowing `server-1` read-write access with `sync`. Create the directory if missing, then run `exportfs -ra` and verify with `exportfs -v`.
+
+  - title: Check Firewall Rules
+    content: |
+      NFS requires several ports to be open. This is a frequent source of silent mount failures.
+
+      On **server-0**:
+
+      ```bash
+      # List active firewall rules
+      firewall-cmd --list-all
+
+      # Add NFS service (opens 2049 + rpc ports)
+      firewall-cmd --add-service=nfs --permanent
+      firewall-cmd --add-service=rpc-bind --permanent
+      firewall-cmd --add-service=mountd --permanent
+      firewall-cmd --reload
+      ```
+
+      **Task:** Open the required NFS firewall services on server-0 and confirm they appear in `firewall-cmd --list-services`.
+
+  - title: Mount and Diagnose from Client
+    content: |
+      From **server-1**, attempt to mount the export and interpret any errors.
+
+      ```bash
+      # List available exports from server-0
+      showmount -e server-0
+
+      # Attempt mount
+      mkdir -p /mnt/nfs
+      mount -t nfs server-0:/srv/nfs /mnt/nfs
+
+      # Common errors and causes:
+      # "No route to host"    → firewall blocking
+      # "access denied"       → export entry missing or wrong client
+      # "mount.nfs: timeout"  → nfs-server not running
+      ```
+
+      **Task:** Mount `server-0:/srv/nfs` on `/mnt/nfs` from server-1. Write a test file and confirm it appears on server-0 under `/srv/nfs`.
+
+  - title: Persistent Mount with /etc/fstab
+    content: |
+      Manual mounts do not survive reboots. Add the mount to `/etc/fstab` on **server-1**.
+
+      ```bash
+      # /etc/fstab entry
+      server-0:/srv/nfs  /mnt/nfs  nfs  defaults,_netdev  0 0
+
+      # Test fstab without rebooting
+      umount /mnt/nfs
+      mount -a
+
+      # Verify
+      mount | grep nfs
+      df -h /mnt/nfs
+      ```
+
+      The `_netdev` option tells systemd to wait for the network before mounting.
+
+      **Task:** Add the NFS mount to `/etc/fstab` with `_netdev`, then unmount and remount via `mount -a` to confirm the entry is correct.
+
+environment:
+  servers:
+    - name: server-0
+      cpu: 1
+      memory: 512MB
+      disk: 5GB
+    - name: server-1
+      cpu: 1
+      memory: 512MB
+      disk: 5GB
