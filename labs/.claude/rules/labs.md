@@ -3,19 +3,32 @@
 Lab definitions live in `/labs/`. Backend syncs them into PocketBase on every startup.
 
 ## Directory Structure
-Subdirectories = groups; YAML filename (no extension) = slug.
+Each subdirectory → a `folder` record. Each YAML file (except `index.yaml`) → a `lab` record linked to its parent folder via `parent` relation. Nesting is arbitrary.
+
 ```
 labs/
-  rhcsa/
-    rhcsa-lab1.yaml    → slug: rhcsa-lab1, group: rhcsa
+  ex200/
+    index.yaml         → folder metadata (title, description); not synced as a record itself
+    rhcsa1.yaml        → lab id: ex200_rhcsa1, parent: ex200
   networking/
-    intro.yaml         → slug: intro, group: networking
+    advanced/
+      bgp.yaml         → lab id: networking_advanced_bgp, parent: networking_advanced
 ```
 
-## YAML Structure
+`index.yaml` keys: `meta.title`, `meta.description`. If absent, folder title defaults to the directory name.
+
+## Record Types
+
+### Folder record (type: folder)
+Fields: `id` (underscore path), `type=folder`, `title`, `description`, `parent` (id of parent folder, empty if top-level)
+
+### Lab record (type: lab)
+Fields: `id` (underscore path without extension), `type=lab`, `title`, `description`, `content` (json), `environment` (json), `parent` (id of parent folder)
+
+## Lab YAML Structure
 ```yaml
 meta:
-  name: Human-readable lab name
+  title: Human-readable lab name
   description: Short description
 
 content:
@@ -34,7 +47,7 @@ environment:
 - Task order in `content` = sidebar order
 - Each server in `environment.servers` → one `servers` record per attempt
 - Server index in relay URL (`/relay/0/`) matches order in `environment.servers`
-- Slugs must be unique across all groups
+- IDs must be unique (enforced by path uniqueness)
 
 ## Memory Maintenance
 Keep `.claude/memory/` up to date: `memory-decisions.md`, `memory-architecture.md`, `memory-preferences.md`.

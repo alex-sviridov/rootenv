@@ -1,5 +1,22 @@
 services:
 
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile.dev
+    environment:
+      VITE_API_URL: ${VITE_API_URL}
+    develop:
+      watch:
+        - action: sync
+          path: ../frontend/src
+          target: /app/src
+        - action: sync+restart
+          path: ../frontend/package.json
+          target: /app/package.json
+        - action: rebuild
+          path: ../frontend/package-lock.json
+
   backend:
     build:
       context: ../backend
@@ -11,10 +28,13 @@ services:
         - action: sync+restart
           path: ../backend/pb_hooks
           target: /app/pb_hooks
+    volumes:
+      - ../backend/pb_data:/app/pb_data
+      - ../backend/pb_migrations:/app/pb_migrations
     environment:
       PB_ORIGINS: '*'
-      PB_SUPERUSER_EMAIL: admin@example.com
-      PB_SUPERUSER_PASSWORD: password
+      PB_SUPERUSER_EMAIL: ${PB_SUPERUSER_EMAIL}
+      PB_SUPERUSER_PASSWORD: ${PB_SUPERUSER_PASSWORD}
     restart: unless-stopped
 
   nginx:
@@ -28,3 +48,4 @@ services:
           target: /etc/nginx/nginx.conf
     depends_on:
       - backend
+      - frontend

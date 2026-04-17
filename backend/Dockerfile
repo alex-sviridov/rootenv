@@ -15,7 +15,5 @@ COPY ./pb_hooks /pb/pb_hooks
 
 EXPOSE 8090
 
-RUN /app/pocketbase superuser create "${PB_SUPERUSER_EMAIL}" "${PB_SUPERUSER_PASSWORD}"
-
 # start PocketBase
 CMD /app/pocketbase serve --http=0.0.0.0:8090 --origins="${PB_ORIGINS:-*}"
