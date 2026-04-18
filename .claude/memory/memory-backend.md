@@ -41,13 +41,18 @@ One record per lab run per user. Denormalized — lab name and environment copie
 
 Constraint: at most one active attempt per user.
 
-## userview_attempts
+## attempts_userview
+
+View — state computed from servers join.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| user | relation → users | |
+| id | text | attempt id |
+| user | json | user id |
 | lab_name | text | copied at provision |
-| state | select | `new` (all servers are `new`) → `provisioning` (any server is `provisioning`) → `provisioned` (all servers are `provisoned`) → `decommissioning` (any server is `decommissioning`) → `decommissioned` (all servers are `decommissioned`)|
+| state | json | `new` → `provisioning` → `provisioned` → `decommissioning` → `decommissioned` |
+
+`listRule`: `@request.auth.id = user.id`
 
 ## servers
 One record per server defined in the lab's `environment` YAML. Linked to an attempt.
@@ -66,5 +71,5 @@ Queue for server lifecycle operations. Watched by an orchestrator process.
 | Field | Type | Notes |
 |-------|------|-------|
 | server | relation → servers | |
-| command | select | `start` / `stop` / `reboot` |
+| command | select | `start` / `stop` / `restart` |
 | status | select | `pending` → `running` → `done` / `error` |

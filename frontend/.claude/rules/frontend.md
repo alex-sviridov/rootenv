@@ -31,7 +31,13 @@ Labs grouped by directory — UI mirrors `labs/` structure (subdirectory = group
 - Write test first, then implement; feature is not done until test passes
 
 ## Memory Maintenance
-Keep `.claude/memory/` up to date: `memory-decisions.md`, `memory-architecture.md`, `memory-preferences.md`, and root `memory-relay-interface.md` (read before implementing relay connections).
+At the start of any frontend work, read `/home/alex/linuxlab/frontend/.claude/memory/MEMORY.md`.
+Write immediately when a decision, invariant, or preference is discovered — not at session end:
+- Architecture invariant → `/home/alex/linuxlab/frontend/.claude/memory/memory-architecture.md`
+- Implementation decision → `/home/alex/linuxlab/frontend/.claude/memory/memory-decisions.md`
+- Coding style or workflow preference → `/home/alex/linuxlab/frontend/.claude/memory/memory-preferences.md`
+Only write to this module's memory. Cross-module concerns (e.g. relay WebSocket interface, PocketBase collections) go to `/home/alex/linuxlab/.claude/memory/`.
+Before implementing any relay connection, read `/home/alex/linuxlab/.claude/memory/memory-relay-interface.md`.
 
 ## Dockerfiles
 - `Dockerfile` — production; `Dockerfile.dev` — dev with hot-reload

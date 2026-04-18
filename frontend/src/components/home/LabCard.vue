@@ -11,7 +11,7 @@ const emit = defineEmits(['open'])
 <template>
   <button
     class="text-left rounded-xl border border-slate-700/60 bg-slate-800/50 p-5 hover:border-indigo-500 hover:bg-slate-800 transition-all group cursor-pointer"
-    @click="emit('open', lab.slug)"
+    @click="emit('open', lab.id)"
   >
     <div class="mb-3">
       <div class="w-10 h-10 rounded-lg bg-slate-700/60 flex items-center justify-center shrink-0">

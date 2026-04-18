@@ -1,0 +1,52 @@
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useBreadcrumbsStore } from '@/stores/breadcrumbs'
+import { useLabsStore } from '@/stores/labs'
+import { fetchLab } from '@/api/labs'
+import LabSidebar from '@/components/lab/LabSidebar.vue'
+import LabContent from '@/components/lab/LabContent.vue'
+import LabConsole from '@/components/lab/LabConsole.vue'
+
+const route = useRoute()
+const router = useRouter()
+const breadcrumbs = useBreadcrumbsStore()
+const labsStore = useLabsStore()
+
+const lab = ref(null)
+const selectedTask = ref(0)
+const error = ref(null)
+
+const currentTask = computed(() => lab.value?.content?.[selectedTask.value] ?? null)
+
+onMounted(async () => {
+  try {
+    lab.value = await fetchLab(route.params.slug)
+
+    const group = labsStore.groups.find(g => g.id === lab.value.parent)
+    breadcrumbs.set([
+      { label: 'LinuxLab', action: () => { labsStore.clearGroup(); router.push('/') } },
+      group
+        ? { label: group.title, action: () => { labsStore.selectGroup(group.id); router.push('/') } }
+        : null,
+      { label: lab.value.title },
+    ].filter(Boolean))
+  } catch {
+    error.value = 'Lab not found.'
+  }
+})
+</script>
+
+<template>
+  <div v-if="error" class="p-8 text-sm text-red-400">{{ error }}</div>
+  <div v-else-if="!lab" class="p-8 text-sm text-slate-500">Loading…</div>
+  <div v-else class="flex h-full overflow-hidden">
+    <LabSidebar
+      :lab="lab"
+      :selected-task="selectedTask"
+      @select-task="selectedTask = $event"
+    />
+    <LabContent :task="currentTask" />
+    <LabConsole />
+  </div>
+</template>

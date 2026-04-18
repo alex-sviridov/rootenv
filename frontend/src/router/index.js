@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useUserStore } from '@/stores/user'
 import HomeView from '../views/HomeView.vue'
 
 const router = createRouter({
@@ -9,7 +10,33 @@ const router = createRouter({
       name: 'home',
       component: HomeView,
     },
+    {
+      path: '/login',
+      name: 'login',
+      component: () => import('../views/LoginView.vue'),
+    },
+    {
+      path: '/account',
+      name: 'account',
+      component: () => import('../views/AccountView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/lab/:slug',
+      name: 'lab',
+      component: () => import('../views/LabView.vue'),
+      meta: { requiresAuth: true },
+    },
   ],
+})
+
+router.beforeEach((to) => {
+  if (to.meta.requiresAuth) {
+    const user = useUserStore()
+    if (!user.isAuthenticated) {
+      return { name: 'login', query: { redirect: to.fullPath } }
+    }
+  }
 })
 
 export default router

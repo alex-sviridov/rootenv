@@ -9,7 +9,8 @@
 - No squash/force-push; no broken code; tests must pass before commit
 
 ## Memory Maintenance
-Update immediately when learned, not at the end. Skip trivial tasks.
-- Architecture decision → `memory-architecture.md`
-- User preference → `memory-preferences.md`
-- Any decision → `memory-decisions.md`
+At the start of every session read `/home/alex/linuxlab/.claude/memory/MEMORY.md`.
+Write immediately when learned — not at the end. Skip trivial tasks.
+Project-wide memory lives at `/home/alex/linuxlab/.claude/memory/` — use it only for cross-module concerns (shared interfaces, project-wide constraints). Each module has its own memory at `<module>/.claude/memory/`; write module-specific decisions there, not here.
+- Cross-module interface or constraint → `memory-architecture.md`
+- Project-wide decision → `memory-decisions.md`

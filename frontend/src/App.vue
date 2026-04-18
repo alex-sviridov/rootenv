@@ -1,6 +1,11 @@
 <script setup>
+import { onMounted } from 'vue'
 import { RouterView } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
+onMounted(() => userStore.init())
 </script>
 
 <template>

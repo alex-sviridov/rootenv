@@ -1,12 +1,37 @@
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, watchEffect } from 'vue'
+import { useRouter } from 'vue-router'
 import { useLabsStore } from '@/stores/labs'
+import { useUserStore } from '@/stores/user'
+import { useBreadcrumbsStore } from '@/stores/breadcrumbs'
 import GroupCard from '@/components/home/GroupCard.vue'
 import LabCard from '@/components/home/LabCard.vue'
 
+const router = useRouter()
 const labs = useLabsStore()
+const user = useUserStore()
+const breadcrumbs = useBreadcrumbsStore()
 
 onMounted(() => labs.loadGroups())
+
+watchEffect(() => {
+  if (labs.selectedGroupSlug) {
+    breadcrumbs.set([
+      { label: 'LinuxLab', action: () => labs.clearGroup() },
+      { label: labs.selectedGroup?.title ?? '' },
+    ])
+  } else {
+    breadcrumbs.set([{ label: 'LinuxLab' }])
+  }
+})
+
+function openLab(slug) {
+  if (!user.isAuthenticated) {
+    router.push({ name: 'login', query: { redirect: `/lab/${slug}` } })
+    return
+  }
+  router.push(`/lab/${slug}`)
+}
 </script>
 
 <template>
@@ -43,7 +68,7 @@ onMounted(() => labs.loadGroups())
           v-for="lab in labs.currentLabs"
           :key="lab.id"
           :lab="lab"
-          @open="id => console.log('open lab', id)"
+          @open="openLab"
         />
       </div>
     </template>

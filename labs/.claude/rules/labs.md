@@ -50,4 +50,9 @@ environment:
 - IDs must be unique (enforced by path uniqueness)
 
 ## Memory Maintenance
-Keep `.claude/memory/` up to date: `memory-decisions.md`, `memory-architecture.md`, `memory-preferences.md`.
+At the start of any labs work, read `/home/alex/linuxlab/labs/.claude/memory/MEMORY.md`.
+Write immediately when a decision, invariant, or preference is discovered — not at session end:
+- Architecture invariant → `/home/alex/linuxlab/labs/.claude/memory/memory-architecture.md`
+- Implementation decision → `/home/alex/linuxlab/labs/.claude/memory/memory-decisions.md`
+- Coding style or workflow preference → `/home/alex/linuxlab/labs/.claude/memory/memory-preferences.md`
+Only write to this module's memory. Cross-module concerns go to `/home/alex/linuxlab/.claude/memory/`.

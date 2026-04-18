@@ -23,7 +23,13 @@
 Mock only — servers skip cloud provisioning and go directly to `available`/`running`.
 
 ## Memory Maintenance
-Keep `.claude/memory/` up to date: `memory-decisions.md`, `memory-architecture.md`, `memory-preferences.md`, and root `memory-backend.md` (update when any collection changes).
+At the start of any backend work, read `/home/alex/linuxlab/backend/.claude/memory/MEMORY.md`.
+Write immediately when a decision, invariant, or preference is discovered — not at session end:
+- Architecture invariant → `/home/alex/linuxlab/backend/.claude/memory/memory-architecture.md`
+- Implementation decision → `/home/alex/linuxlab/backend/.claude/memory/memory-decisions.md`
+- Coding style or workflow preference → `/home/alex/linuxlab/backend/.claude/memory/memory-preferences.md`
+Only write to this module's memory. Cross-module concerns go to `/home/alex/linuxlab/.claude/memory/`.
+When any collection schema changes, also update `/home/alex/linuxlab/.claude/memory/memory-backend.md` — other modules depend on it.
 
 ## Dockerfiles
 - `Dockerfile` — production; `Dockerfile.dev` — dev with mounted data dir

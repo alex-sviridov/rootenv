@@ -12,16 +12,15 @@ export const useLabsStore = defineStore('labs', () => {
   const selectedGroup = computed(() =>
     groups.value.find(g => g.id === selectedGroupSlug.value) ?? null
   )
-
   const currentLabs = computed(() =>
     selectedGroupSlug.value ? (labsByGroup.value[selectedGroupSlug.value] ?? []) : []
   )
 
-  async function loadGroups() {
+  async function withLoading(fn) {
     loading.value = true
     error.value = null
     try {
-      groups.value = await fetchFolders()
+      await fn()
     } catch (e) {
       error.value = e.message
     } finally {
@@ -29,24 +28,16 @@ export const useLabsStore = defineStore('labs', () => {
     }
   }
 
+  const loadGroups = () =>
+    withLoading(async () => { groups.value = await fetchFolders() })
+
   async function selectGroup(id) {
     selectedGroupSlug.value = id
-    if (!labsByGroup.value[id]) {
-      loading.value = true
-      error.value = null
-      try {
-        labsByGroup.value[id] = await fetchLabsInFolder(id)
-      } catch (e) {
-        error.value = e.message
-      } finally {
-        loading.value = false
-      }
-    }
+    if (!labsByGroup.value[id])
+      await withLoading(async () => { labsByGroup.value[id] = await fetchLabsInFolder(id) })
   }
 
-  function clearGroup() {
-    selectedGroupSlug.value = null
-  }
+  const clearGroup = () => { selectedGroupSlug.value = null }
 
   return { groups, labsByGroup, selectedGroupSlug, selectedGroup, currentLabs, loading, error, loadGroups, selectGroup, clearGroup }
 })

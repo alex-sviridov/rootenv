@@ -1,21 +1,8 @@
-import PocketBase from 'pocketbase'
+import { pb } from '@/lib/pb'
 
-const pb = new PocketBase(import.meta.env.VITE_API_URL)
+const list = filter =>
+  pb.collection('labs_userview').getFullList({ filter, sort: 'title', fields: 'id,title,description' })
 
-export async function fetchFolders() {
-  const records = await pb.collection('labs_userview').getFullList({
-    filter: 'type = "folder" && parent = ""',
-    sort: 'title',
-    fields: 'id,title,description',
-  })
-  return records
-}
-
-export async function fetchLabsInFolder(folderId) {
-  const records = await pb.collection('labs_userview').getFullList({
-    filter: `type = "lab" && parent = "${folderId}"`,
-    sort: 'title',
-    fields: 'id,title,description',
-  })
-  return records
-}
+export const fetchFolders = () => list('type = "folder" && parent = ""')
+export const fetchLabsInFolder = id => list(`type = "lab" && parent = "${id}"`)
+export const fetchLab = id => pb.collection('labs_userview').getOne(id)
