@@ -12,7 +12,9 @@ export const useAttemptsStore = defineStore('attempts', () => {
   let _unsubscribe = null
 
   const canProvision = computed(() =>
-    lastAttempt.value === null || lastAttempt.value.state === 'decommissioned'
+    lastAttempt.value === null ||
+    lastAttempt.value.state === 'decommissioned' ||
+    lastAttempt.value.state === 'decommissioning'
   )
 
   async function withLoading(fn) {
@@ -95,6 +97,7 @@ export const useAttemptsStore = defineStore('attempts', () => {
     return withLoading(async () => {
       await decommissionAttempt(serverIds)
       lastAttempt.value = { ...lastAttempt.value, state: 'decommissioning' }
+      activeAttempt.value = null
     })
   }
 

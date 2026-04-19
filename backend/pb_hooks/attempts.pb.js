@@ -24,7 +24,7 @@ onRecordCreateRequest((e) => {
     let active = []
     try {
         active = $app.findRecordsByFilter(
-            "attempt_userview",
+            "attempts_userview",
             "user = {:userId} && state != 'decommissioned'",
             "", 1, 0,
             { userId: auth.id }
@@ -38,23 +38,3 @@ onRecordCreateRequest((e) => {
     e.next()
 }, "attempts")
 
-
-// ─── After create, start provisioning servers for the session
-onRecordAfterCreateSuccess((e) => {
-    const attempt = e.record
-    const serverCollection = $app.findCollectionByNameOrId("servers")
-    const environment = JSON.parse(attempt.get("environment"))
-    if (environment.servers) {
-        environment.servers.forEach((serverDef) => {
-            console.log(`[attempt:${attempt.id}] creating server: ${serverDef.name}`)
-            const server = new Record(serverCollection)
-            server.set("attempt", attempt.id)
-            server.set("name", serverDef.name)
-            server.set("state", "pending")
-            server.set("status", "poweredoff")
-            $app.save(server)
-        })
-    }
-    
-    e.next()
-}, "attempts")
