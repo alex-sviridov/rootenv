@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useBreadcrumbsStore } from '@/stores/breadcrumbs'
+import { fetchActiveAttempt } from '@/api/attempts'
 
 const router = useRouter()
 const user = useUserStore()
@@ -21,14 +22,18 @@ async function submit() {
 
 const deletePassword = ref('')
 const confirmingDelete = ref(false)
+const activeAttemptForDelete = ref(null)
 
-function requestDelete() {
+async function requestDelete() {
+  activeAttemptForDelete.value = await fetchActiveAttempt()
+  if (activeAttemptForDelete.value) return
   confirmingDelete.value = true
 }
 
 function cancelDelete() {
   confirmingDelete.value = false
   deletePassword.value = ''
+  activeAttemptForDelete.value = null
 }
 
 async function confirmDelete() {
@@ -98,6 +103,9 @@ async function confirmDelete() {
         <p class="text-xs text-slate-400 mb-5">Permanently removes your account and all associated data. This cannot be undone.</p>
 
         <template v-if="!confirmingDelete">
+          <div v-if="activeAttemptForDelete" class="mb-4 rounded-lg bg-amber-500/10 border border-amber-500/25 p-3 text-xs text-amber-300">
+            You have an active lab session (<RouterLink :to="{ name: 'lab', params: { slug: activeAttemptForDelete.lab } }" class="underline hover:text-amber-100">{{ activeAttemptForDelete.lab_name }}</RouterLink>). Decommission it before deleting your account.
+          </div>
           <div class="flex flex-col gap-1.5 mb-4">
             <label class="text-xs font-medium text-slate-400 uppercase tracking-wide">Password</label>
             <input

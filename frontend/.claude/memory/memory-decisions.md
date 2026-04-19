@@ -18,5 +18,8 @@ Client-side input validation (required fields, email format, password min length
 ## `signUp` auto-logs in
 `signUp` calls `register` then `login` in sequence and sets `user` directly. Rejected: register-only (worse UX, forces a separate login step).
 
+## Separate `historyLoading` for paginated secondary data
+When a store loads both a primary record (e.g. `lastAttempt`) and a paginated list (e.g. `history`), use a second `withHistoryLoading` helper with its own `historyLoading` flag so the main UI is not blocked by history fetches. Both helpers share the same `error` ref. Added in `useAttemptsStore`.
+
 ## Test mocking strategy
 API tests mock `@/lib/pb` directly. Store tests mock `@/api/*`. Using `vi.hoisted()` for mock variables referenced inside `vi.mock()` factories.

@@ -3,9 +3,14 @@ import { onMounted } from 'vue'
 import { RouterView } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import { useUserStore } from '@/stores/user'
+import { useAttemptsStore } from '@/stores/attempts'
 
 const userStore = useUserStore()
-onMounted(() => userStore.init())
+const attemptsStore = useAttemptsStore()
+onMounted(() => {
+  userStore.init()
+  if (userStore.isAuthenticated) attemptsStore.loadActiveAttempt()
+})
 </script>
 
 <template>

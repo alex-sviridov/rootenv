@@ -106,6 +106,7 @@ content:
       **Task:** Add the NFS mount to `/etc/fstab` with `_netdev`, then unmount and remount via `mount -a` to confirm the entry is correct.
 
 environment:
+  duration: 30
   servers:
     - name: server-0
       cpu: 1

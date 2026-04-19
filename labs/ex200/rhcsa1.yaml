@@ -92,6 +92,7 @@ content:
       **Task:** Set `umask 027`, create `/tmp/umasktest`, confirm it has `640` permissions.
 
 environment:
+  duration: 90
   servers:
     - name: server-0
       cpu: 1

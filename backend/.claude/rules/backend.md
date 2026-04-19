@@ -9,18 +9,22 @@
 - `servers` — one per server in lab environment YAML; linked to attempt; stores state, status, SSH details
 - `commands` — queue for server lifecycle ops (start/stop/reboot); orchestrator watches and calls cloud provider API
 
+## Server State Machine
+`pending → provisioning → provisioned → decommissioning → decommissioned`
+
 ## Provision Flow
-1. "Start Lab" → attempt created along with server records (`new`)
-3. Hook per server `new`: mock sets server to `available`/`running` with hardcoded connection details
-4. All servers `available` → attempt `provisioned`
+1. "Start Lab" → attempt created along with server records (`pending`)
+2. `afterCreate` hook: `pending → provisioning`
+3. `afterUpdate` hook: `provisioning → provisioned`
+4. All servers `provisioned` → attempt `provisioned`
 
 ## Decommission Flow
-1. Decommission → attempt `decommissioning`
-2. Hook: servers move through decommission states → `terminated`
-3. All servers `terminated` → attempt `decommissioned`
+1. Decommission → servers set to `decommissioning`
+2. `afterUpdate` hook: `decommissioning → decommissioned`
+3. All servers `decommissioned` → attempt `decommissioned`
 
 ## Current Provisioning
-Mock only — servers skip cloud provisioning and go directly to `available`/`running`.
+Mock only — hooks immediately advance state without real cloud calls.
 
 ## Memory Maintenance
 At the start of any backend work, read `/home/alex/linuxlab/backend/.claude/memory/MEMORY.md`.

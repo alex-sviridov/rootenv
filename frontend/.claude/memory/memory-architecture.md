@@ -16,6 +16,12 @@ paths:
 ## Store loading pattern
 Each store has a private `withLoading(fn)` that owns the try/catch/finally for `loading` and `error` state. Actions pass async closures into it rather than duplicating the boilerplate.
 
+## Realtime subscriptions in stores
+`subscribeToAttempt` (and similar) returns a Promise resolving to an unsubscribe function. Stores keep an unsubscribe fn in a plain `let _unsubscribe = null` (not reactive, not returned). `startWatching` must call `stopWatching` first to prevent subscription leaks on re-calls.
+
+## 404-as-empty-state pattern
+When PocketBase `getFirstListItem` finds no record it throws `{ status: 404 }`. This is not an error — it means the resource doesn't exist yet. Handle it inside the `withLoading` closure with an inner try/catch: intercept `e?.status === 404` → set state to null, re-throw everything else so `withLoading` captures it in `error`.
+
 ## Auth flow
 - `src/api/auth.js` — `login`, `register`, `logout`, `getAuthStore`
 - `src/stores/user.js` — `signIn`, `signUp`, `signOut`, `init`

@@ -97,6 +97,7 @@ content:
       **Task:** Lock `carol`'s account, verify the `!` prefix in `/etc/shadow`, then unlock it.
 
 environment:
+  duration: 60
   servers:
     - name: server-0
       cpu: 1
