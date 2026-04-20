@@ -162,7 +162,7 @@ func TestGetAttempt_notFound(t *testing.T) {
 
 func TestNewWithCredentials_success(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/admins/auth-with-password", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/collections/users/auth-with-password", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Identity string `json:"identity"`
 			Password string `json:"password"`
@@ -188,7 +188,7 @@ func TestNewWithCredentials_success(t *testing.T) {
 
 func TestNewWithCredentials_badPassword(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/admins/auth-with-password", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/api/collections/users/auth-with-password", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 	})
 	ts := httptest.NewServer(mux)

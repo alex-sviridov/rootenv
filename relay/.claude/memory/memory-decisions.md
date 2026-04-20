@@ -8,6 +8,17 @@ paths:
 
 _Record decisions here as they are made — include what was decided, why, and what alternatives were rejected._
 
+## Iteration 3 — SSH Proxying
+
+- **SSH auth:** public-key only via `RELAY_PRIVATE_KEY_PATH`; `InsecureIgnoreHostKey` used intentionally — lab VMs are ephemeral and network-isolated (Docker/VPC is the trust boundary).
+- **PTY:** `xterm-256color`, 24×80 initial size. Resize deferred to Iteration 4.
+- **Backpressure:** SSH stdout → `chan []byte` with capacity 512; if the channel is full for >10 s the connection is dropped with `StatusGoingAway`. Generous buffer handles `cat large_file` without OOM.
+- **Idle timeout:** `RELAY_IDLE_TIMEOUT` (default 30 m); timer reset on every WebSocket read. Closes with `StatusGoingAway`.
+- **Rate limiting:** token-bucket on WebSocket→SSH stdin only (1 MB/s sustained, 256 KB burst). SSH→WS output is never rate-limited to avoid stream corruption.
+- **Goroutine layout:** three goroutines per session — SSH stdout→chan, chan→WS write, WS read→SSH stdin. Main `runProxy` blocks on idle timer / ctx cancel.
+- **`min` helper:** defined in `proxy.go` for Go <1.21 compatibility (module is `go 1.26` but kept explicit for clarity).
+- **pbclient test fix:** `TestNewWithCredentials_success` and `TestNewWithCredentials_badPassword` mocked `/api/admins/auth-with-password` but the client calls `/api/collections/users/auth-with-password` — corrected in Iteration 3.
+
 ## Iteration 2 — Auth & Authorization
 
 - **pbclient package:** `pkg/pbclient` — thin HTTP client wrapping PocketBase REST API. No PocketBase SDK dep; plain `net/http`.

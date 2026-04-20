@@ -24,6 +24,8 @@ type config struct {
 	revalidateInterval time.Duration
 	pingInterval       time.Duration
 	maxConnsPerUser    int
+	privateKeyPath     string
+	idleTimeout        time.Duration
 }
 
 func loadConfig() config {
@@ -68,6 +70,12 @@ func loadConfig() config {
 			maxConns = n
 		}
 	}
+	idle := 30 * time.Minute
+	if raw := os.Getenv("RELAY_IDLE_TIMEOUT"); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			idle = d
+		}
+	}
 	return config{
 		port:               port,
 		pocketbaseURL:      pbURL,
@@ -78,6 +86,8 @@ func loadConfig() config {
 		revalidateInterval: revalidate,
 		pingInterval:       ping,
 		maxConnsPerUser:    maxConns,
+		privateKeyPath:     os.Getenv("RELAY_PRIVATE_KEY_PATH"),
+		idleTimeout:        idle,
 	}
 }
 
@@ -104,15 +114,30 @@ func main() {
 		slog.Error("failed to authenticate with PocketBase", "err", err)
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", handleHealthz(ready))
-	mux.Handle("/{serverID}/", &relayHandler{
+	handler := &relayHandler{
 		pb:                 pb,
 		allowedOrigins:     cfg.allowedOrigins,
 		revalidateInterval: cfg.revalidateInterval,
 		pingInterval:       cfg.pingInterval,
+		idleTimeout:        cfg.idleTimeout,
 		limiter:            newConnLimiter(cfg.maxConnsPerUser),
-	})
+	}
+
+	if cfg.privateKeyPath != "" {
+		s, err := loadSigner(cfg.privateKeyPath)
+		if err != nil {
+			slog.Error("failed to load private key", "path", cfg.privateKeyPath, "err", err)
+			os.Exit(1)
+		}
+		handler.signer = s
+		slog.Info("loaded private key", "path", cfg.privateKeyPath)
+	} else {
+		slog.Warn("RELAY_PRIVATE_KEY_PATH not set; SSH connections will fail")
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", handleHealthz(ready))
+	mux.Handle("/{serverID}/", handler)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.port,

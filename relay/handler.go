@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/alexsviridov/linuxlab/relay/pkg/pbclient"
+	"golang.org/x/crypto/ssh"
 	"nhooyr.io/websocket"
 )
 
@@ -29,7 +30,9 @@ type relayHandler struct {
 	allowedOrigins     []string
 	revalidateInterval time.Duration
 	pingInterval       time.Duration
+	idleTimeout        time.Duration
 	limiter            *connLimiter
+	signer             ssh.Signer
 }
 
 func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -45,8 +48,6 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build logger early so every event — including handshake failures — carries
-	// origin and remote for correlation. Never log the token itself.
 	log := slog.With(
 		"server_id", serverID,
 		"remote", r.RemoteAddr,
@@ -62,17 +63,11 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	conn, err := websocket.Accept(w, r, acceptOpts)
 	if err != nil {
-		// Accept already wrote HTTP error response; origin rejection lands here too.
 		log.Warn("ws accept failed", "err", err)
 		return
 	}
-	// TODO Iteration 3: log StatusMessageTooBig close reason from the read loop
-	// when it is added — the library closes automatically but we won't see it until
-	// we own the read path.
 	conn.SetReadLimit(maxMessageBytes)
 
-	// Read token from the first message. The token is never passed in the URL or
-	// headers so it does not appear in nginx access logs or browser history.
 	authCtx, authCancel := context.WithTimeout(r.Context(), authTimeout)
 	_, tokenBytes, err := conn.Read(authCtx)
 	authCancel()
@@ -135,11 +130,48 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Info("ws disconnected", "duration_s", time.Since(connectedAt).Seconds())
 	}()
 
+	// Parse connection details from the server record.
+	srvConn, err := parseConnection(server.Connection)
+	if err != nil {
+		log.Error("invalid server connection data", "err", err)
+		_ = conn.Close(websocket.StatusInternalError, "internal error")
+		return
+	}
+
+	// Dial SSH.
+	sshClient, err := dialSSH(srvConn, h.signer)
+	if err != nil {
+		log.Error("ssh dial failed", "err", err, "host", srvConn.Host)
+		_ = conn.Close(websocket.StatusInternalError, "ssh unavailable")
+		return
+	}
+	defer sshClient.Close()
+
+	session, err := openShell(sshClient)
+	if err != nil {
+		log.Error("ssh shell failed", "err", err)
+		_ = conn.Close(websocket.StatusInternalError, "ssh unavailable")
+		return
+	}
+	defer session.Close()
+
+	sshStdin, err := session.StdinPipe()
+	if err != nil {
+		log.Error("ssh stdin pipe failed", "err", err)
+		_ = conn.Close(websocket.StatusInternalError, "ssh unavailable")
+		return
+	}
+	sshStdout, err := session.StdoutPipe()
+	if err != nil {
+		log.Error("ssh stdout pipe failed", "err", err)
+		_ = conn.Close(websocket.StatusInternalError, "ssh unavailable")
+		return
+	}
+
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
 	// Heartbeat: send a ping on each interval; close if pong doesn't arrive within pingTimeout.
-	// Must run concurrently with any Reader (library requirement).
 	pingTicker := time.NewTicker(h.pingInterval)
 	defer pingTicker.Stop()
 	go func() {
@@ -161,35 +193,28 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Drain incoming frames so the library can process control frames (close, ping/pong).
-	// Without an active reader the WebSocket close frame from a tab close is never read,
-	// so r.Context() is never cancelled and disconnection is never logged.
-	// Iteration 3 will replace this with the real SSH stdin pump.
+	// Periodic revalidation: close if the user's PocketBase session expires.
+	revalidateTicker := time.NewTicker(h.revalidateInterval)
+	defer revalidateTicker.Stop()
 	go func() {
 		for {
-			_, _, err := conn.Read(ctx)
-			if err != nil {
-				cancel()
+			select {
+			case <-ctx.Done():
 				return
+			case <-revalidateTicker.C:
+				if _, err := h.pb.ValidateToken(token); err != nil {
+					log.Info("auth: session expired, closing connection", "err", err)
+					cancel()
+					_ = conn.Close(websocket.StatusPolicyViolation, "session expired")
+					return
+				}
 			}
 		}
 	}()
 
-	// TODO Iteration 3: establish SSH and proxy terminal I/O
-	// For now hold the connection open until client closes or session expires.
-	revalidateTicker := time.NewTicker(h.revalidateInterval)
-	defer revalidateTicker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			_ = conn.Close(websocket.StatusNormalClosure, "")
-			return
-		case <-revalidateTicker.C:
-			if _, err := h.pb.ValidateToken(token); err != nil {
-				log.Info("auth: session expired, closing connection", "err", err)
-				_ = conn.Close(websocket.StatusPolicyViolation, "session expired")
-				return
-			}
-		}
-	}
+	runProxy(ctx, cancel, conn, sshStdin, sshStdout, proxyConfig{
+		idleTimeout: h.idleTimeout,
+	}, log)
+
+	_ = conn.Close(websocket.StatusNormalClosure, "")
 }
