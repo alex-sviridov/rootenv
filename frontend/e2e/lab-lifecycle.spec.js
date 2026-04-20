@@ -61,6 +61,13 @@ test.describe.serial('lab lifecycle flow', () => {
         await expect(page.getByRole('button', { name: 'Provision Lab', exact: true })).toBeVisible({ timeout: 30_000 })
       }
     }
+    // Delete the test account
+    await page.goto('/account')
+    await expect(page.locator('text=Loading…')).not.toBeVisible({ timeout: 10_000 })
+    await page.getByPlaceholder('Enter your password to continue').fill(password)
+    await page.getByRole('button', { name: 'Delete account', exact: true }).click()
+    await page.getByRole('button', { name: 'Yes, delete my account', exact: true }).click()
+    await expect(page).toHaveURL('/login', { timeout: 10_000 })
     await page.context().close()
   })
 

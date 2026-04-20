@@ -17,6 +17,8 @@ const props = defineProps({
   labName: { type: String, required: true },
 })
 
+const emit = defineEmits(['open-terminal'])
+
 const router = useRouter()
 const attempts = useAttemptsStore()
 const serversStore = useServersStore()
@@ -152,7 +154,12 @@ function goToLab(attempt) {
             ]"
           />
           <!-- Name -->
-          <span class="text-xs font-medium text-slate-200 truncate flex-1">{{ server.name }}</span>
+          <button
+            v-if="server.state === 'provisioned'"
+            class="text-xs font-medium text-slate-200 truncate flex-1 text-left hover:text-indigo-300 transition-colors"
+            @click="emit('open-terminal', server)"
+          >{{ server.name }}</button>
+          <span v-else class="text-xs font-medium text-slate-200 truncate flex-1">{{ server.name }}</span>
           <!-- Provision state label (pending / provisioning) -->
           <span
             v-if="server.state === 'pending' || server.state === 'provisioning'"

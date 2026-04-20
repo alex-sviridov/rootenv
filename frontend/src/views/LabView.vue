@@ -21,6 +21,23 @@ const lab = ref(null)
 const selectedTask = ref(0)
 const error = ref(null)
 
+const tabs = ref([])
+const activeTabId = ref(null)
+
+function openTerminal(server) {
+  if (!tabs.value.find(t => t.id === server.id)) {
+    tabs.value.push({ id: server.id, label: server.name })
+  }
+  activeTabId.value = server.id
+}
+
+function closeTab(serverId) {
+  tabs.value = tabs.value.filter(t => t.id !== serverId)
+  if (activeTabId.value === serverId) {
+    activeTabId.value = tabs.value.at(-1)?.id ?? null
+  }
+}
+
 const currentTask = computed(() => lab.value?.content?.[selectedTask.value] ?? null)
 
 watch(() => attemptsStore.lastAttempt, (attempt, prev) => {
@@ -83,8 +100,14 @@ onUnmounted(() => {
       :lab="lab"
       :selected-task="selectedTask"
       @select-task="selectedTask = $event"
+      @open-terminal="openTerminal"
     />
     <LabContent :task="currentTask" />
-    <LabConsole />
+    <LabConsole
+      :tabs="tabs"
+      :active-tab-id="activeTabId"
+      @select-tab="activeTabId = $event"
+      @close-tab="closeTab"
+    />
   </div>
 </template>

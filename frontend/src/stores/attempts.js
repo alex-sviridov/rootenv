@@ -71,6 +71,11 @@ export const useAttemptsStore = defineStore('attempts', () => {
     if (_unsubscribe) await stopWatching()
     _unsubscribe = await subscribeToAttempt(labId, (record) => {
       lastAttempt.value = record
+      if (record.state !== 'decommissioned' && record.state !== 'decommissioning') {
+        activeAttempt.value = record
+      } else if (record.state === 'decommissioned') {
+        activeAttempt.value = null
+      }
     })
   }
 

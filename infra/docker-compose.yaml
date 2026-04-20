@@ -1,0 +1,48 @@
+services:
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    environment:
+      VITE_API_URL: ${VITE_API_URL}
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    ports:
+      - "8090:8090"
+    volumes:
+      - ../backend/pb_data:/app/pb_data
+      - ../backend/pb_migrations:/app/pb_migrations
+    environment:
+      PB_ORIGINS: '*'
+      PB_SUPERUSER_EMAIL: ${PB_SUPERUSER_EMAIL}
+      PB_SUPERUSER_PASSWORD: ${PB_SUPERUSER_PASSWORD}
+    restart: unless-stopped
+
+  relay:
+    build:
+      context: ../relay
+      dockerfile: Dockerfile
+    environment:
+      RELAY_BACKEND_URL: http://backend:8090
+      RELAY_BACKEND_USERNAME: svc_relay
+      RELAY_BACKEND_PASSWORD: Secret123456
+      PORT: "8080"
+      LOG_LEVEL: info
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - frontend
+      - relay
+    restart: unless-stopped

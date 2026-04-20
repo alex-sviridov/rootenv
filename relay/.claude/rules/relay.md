@@ -1,15 +1,28 @@
 # Relay
 
-**Stack:** Go — single long-running process.
+**Stack:** Go — single long-running process. Docker containrized.
 
 ## Responsibilities
 - Accepts WebSocket connections from frontend (xterm.js)
 - Validates PocketBase auth token before allowing connection
-- Resolves target: looks up user's active attempt, selects server by URL index
+- Performs authorization check to ensure user has access to requested server (server related to attempt owned by user)
 - Proxies terminal over SSH to lab VM
+- uses connection json from PocketBase to determine connection details (host, port, username, private key)
+- Forwards terminal output back to frontend in real time
+- Forwards terminal input from frontend to lab VM in real time
+- Allows multiple isolated concurrent connection, including multiple connections to the same server by same user
+- Logs connection metadata (user, server, timestamps) to stdout for auditing and analytics
+- Handles connection errors gracefully, sending error messages back to frontend and closing connections cleanly
+- Enforces security and isolation between connections, ensuring users can only access servers they are authorized for and cannot interfere with other users' sessions
+- Designed to be horizontally scalable, allowing multiple relay instances to run in parallel behind a load balancer if needed as user base grows
+- Minimal latency and overhead to provide a responsive terminal experience for users interacting with their lab VMs through the web interface
+- Designed for maintainability and extensibility, with clear code structure and documentation to allow future developers to easily understand and modify the relay's behavior as requirements evolve
+- Provides a secure and efficient bridge between the frontend terminal interface and the backend lab VMs, enabling users to interact with their servers in real time through the web application while ensuring robust authentication, authorization, and session management.
+- Hide server connection details from the frontend, only exposing a generic WebSocket interface for terminal input/output, while all connection logic and credentials management is handled securely on the backend relay service.
+
 
 ## Connection URL
-`/relay/<index>/` — 0-based server index. Single-server labs always use `/relay/0/`.
+`/relay/<serverid>/` — server id, primary key in table servers
 
 ## Constraints
 - SSH connections only (no exec or other transports)

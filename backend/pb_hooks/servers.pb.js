@@ -10,6 +10,7 @@ onRecordAfterCreateSuccess((e) => {
             console.log(`[attempt:${attempt.id}] creating server: ${serverDef.name}`)
             const server = new Record(serverCollection)
             server.set("attempt", attempt.id)
+            server.set("connection", "")
             server.set("name", serverDef.name)
             server.set("state", "pending")
             server.set("status", "poweredoff")
@@ -42,12 +43,14 @@ onRecordAfterCreateSuccess((e) => {
 
 // after server is updated, check if we need to move it to provisioned or decommissioned, and if decommissioned check if attempt is finished
 onRecordAfterUpdateSuccess((e) => {
+    const connection = JSON.stringify({ user: "user", host: "hostname.example.com", port: 22 })
     const server = e.record
     // provisioning > provisioned
     if (server.getString("state") === "provisioning") {
         const serverId = server.getString("id")
         try {
             server.set("state", "provisioned")
+            server.set("connection", connection)
             $app.save(server)
             console.log(`[server:${serverId}] provisioned server`)
         } catch (err) {
