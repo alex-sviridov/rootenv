@@ -1,31 +1,68 @@
 <script setup>
+import { ref } from 'vue'
 import TerminalPanel from '@/components/lab/TerminalPanel.vue'
 
 defineProps({
   tabs: { type: Array, required: true },
   activeTabId: { type: String, default: null },
+  limitError: { type: String, default: null },
 })
 
-const emit = defineEmits(['select-tab', 'close-tab'])
+const emit = defineEmits(['select-tab', 'close-tab', 'move-tab'])
+
+const dragFrom = ref(null)
+
+function onDragStart(e, tabId) {
+  dragFrom.value = tabId
+  e.dataTransfer.effectAllowed = 'move'
+}
+
+function onDragOver(e, tabId) {
+  if (dragFrom.value && dragFrom.value !== tabId) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }
+}
+
+function onDrop(e, tabId) {
+  e.preventDefault()
+  if (dragFrom.value && dragFrom.value !== tabId) {
+    emit('move-tab', { from: dragFrom.value, to: tabId })
+  }
+  dragFrom.value = null
+}
+
+function onDragEnd() {
+  dragFrom.value = null
+}
 </script>
 
 <template>
   <div class="w-2/5 shrink-0 border-l border-slate-800 bg-slate-950 flex flex-col overflow-hidden">
 
     <!-- Tab bar -->
-    <div v-if="tabs.length" class="flex items-center border-b border-slate-800 overflow-x-auto shrink-0">
+    <div v-if="tabs.length" class="flex flex-wrap items-center border-b border-slate-800 shrink-0">
       <button
         v-for="tab in tabs"
         :key="tab.id"
-        class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-r border-slate-800 shrink-0 transition-colors"
-        :class="tab.id === activeTabId
-          ? 'bg-slate-900 text-slate-200'
-          : 'text-slate-500 hover:text-slate-300 hover:bg-slate-900/50'"
+        draggable="true"
+        class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-r border-slate-800 shrink-0 transition-colors cursor-grab active:cursor-grabbing select-none"
+        :class="[
+          tab.id === activeTabId
+            ? 'bg-slate-900 text-slate-200'
+            : 'text-slate-500 hover:text-slate-300 hover:bg-slate-900/50',
+          dragFrom === tab.id ? 'opacity-40' : '',
+        ]"
         @click="emit('select-tab', tab.id)"
+        @mousedown.middle.prevent="emit('close-tab', tab.id)"
+        @dragstart="onDragStart($event, tab.id)"
+        @dragover="onDragOver($event, tab.id)"
+        @drop="onDrop($event, tab.id)"
+        @dragend="onDragEnd"
       >
         <span class="truncate max-w-24">{{ tab.label }}</span>
         <span
-          class="text-slate-600 hover:text-slate-300 transition-colors leading-none"
+          class="text-slate-600 hover:text-slate-300 transition-colors leading-none cursor-pointer"
           @click.stop="emit('close-tab', tab.id)"
         >×</span>
       </button>
@@ -38,11 +75,12 @@ const emit = defineEmits(['select-tab', 'close-tab'])
           v-for="tab in tabs"
           v-show="tab.id === activeTabId"
           :key="tab.id"
-          :server-id="tab.id"
+          :server-id="tab.serverId"
         />
       </template>
-      <div v-else class="flex items-center justify-center h-full">
-        <span class="text-xs text-slate-600">No terminals open — click a provisioned server to connect.</span>
+      <div v-else class="flex items-center justify-center h-full px-6 text-center">
+        <span v-if="limitError" class="text-xs text-amber-400">{{ limitError }}</span>
+        <span v-else class="text-xs text-slate-600">No terminals open — click a provisioned server to connect.</span>
       </div>
     </div>
 

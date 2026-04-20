@@ -27,12 +27,16 @@ services:
     build:
       context: ../relay
       dockerfile: Dockerfile
+    volumes:
+      - server.key:/app/id_rsa
     environment:
       RELAY_BACKEND_URL: http://backend:8090
       RELAY_BACKEND_USERNAME: svc_relay
       RELAY_BACKEND_PASSWORD: Secret123456
+      RELAY_PRIVATE_KEY_PATH: /app/id_rsa
       PORT: "8080"
       LOG_LEVEL: info
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
     restart: unless-stopped
 
   nginx:

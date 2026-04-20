@@ -6,7 +6,9 @@ import { useLabsStore } from '@/stores/labs'
 import { useAttemptsStore } from '@/stores/attempts'
 import { useServersStore } from '@/stores/servers'
 import { fetchLab } from '@/api/labs'
-import LabSidebar from '@/components/lab/LabSidebar.vue'
+import { useTerminalTabs } from '@/composables/useTerminalTabs'
+import LabNavigation from '@/components/lab/LabNavigation.vue'
+import LabControls from '@/components/lab/LabControls.vue'
 import LabContent from '@/components/lab/LabContent.vue'
 import LabConsole from '@/components/lab/LabConsole.vue'
 
@@ -21,31 +23,18 @@ const lab = ref(null)
 const selectedTask = ref(0)
 const error = ref(null)
 
-const tabs = ref([])
-const activeTabId = ref(null)
-
-function openTerminal(server) {
-  if (!tabs.value.find(t => t.id === server.id)) {
-    tabs.value.push({ id: server.id, label: server.name })
-  }
-  activeTabId.value = server.id
-}
-
-function closeTab(serverId) {
-  tabs.value = tabs.value.filter(t => t.id !== serverId)
-  if (activeTabId.value === serverId) {
-    activeTabId.value = tabs.value.at(-1)?.id ?? null
-  }
-}
+const { tabs, activeTabId, limitError, openTerminal, closeTab, moveTab, resetTabs } = useTerminalTabs()
 
 const currentTask = computed(() => lab.value?.content?.[selectedTask.value] ?? null)
 
 watch(() => attemptsStore.lastAttempt, (attempt, prev) => {
   if (attempt?.state === 'decommissioned' || !attempt) {
     serversStore.stopWatching()
+    resetTabs()
   } else if (attempt?.id !== prev?.id) {
     serversStore.loadServers(attempt.id)
     serversStore.startWatching(attempt.id)
+    resetTabs()
   }
 })
 
@@ -53,6 +42,7 @@ async function initLab(slug) {
   lab.value = null
   error.value = null
   selectedTask.value = 0
+  resetTabs()
   try {
     lab.value = await fetchLab(slug)
 
@@ -96,18 +86,18 @@ onUnmounted(() => {
   <div v-if="error" class="p-8 text-sm text-red-400">{{ error }}</div>
   <div v-else-if="!lab" class="p-8 text-sm text-slate-500">Loading…</div>
   <div v-else class="flex h-full overflow-hidden">
-    <LabSidebar
-      :lab="lab"
-      :selected-task="selectedTask"
-      @select-task="selectedTask = $event"
-      @open-terminal="openTerminal"
-    />
+    <aside class="w-64 shrink-0 border-r border-slate-800 flex flex-col overflow-hidden">
+      <LabNavigation :lab="lab" :selected-task="selectedTask" @select-task="selectedTask = $event" />
+      <LabControls :lab-id="lab.id" :lab-name="lab.title" @open-terminal="openTerminal" />
+    </aside>
     <LabContent :task="currentTask" />
     <LabConsole
       :tabs="tabs"
       :active-tab-id="activeTabId"
+      :limit-error="limitError"
       @select-tab="activeTabId = $event"
       @close-tab="closeTab"
+      @move-tab="moveTab($event.from, $event.to)"
     />
   </div>
 </template>

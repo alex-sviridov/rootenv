@@ -45,6 +45,7 @@ services:
       RELAY_BACKEND_URL: http://backend:8090
       RELAY_BACKEND_USERNAME: svc_relay@relay.local
       RELAY_BACKEND_PASSWORD: Secret123456
+      RELAY_ALLOWED_ORIGINS: localhost:8080
       PORT: "8080"
       LOG_LEVEL: debug
     develop:

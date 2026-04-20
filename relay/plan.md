@@ -30,11 +30,17 @@ Done when: invalid tokens, unknown server IDs, and servers belonging to another 
 Iteration 3 — SSH Proxying
 Goal: Full bidirectional terminal session over WebSocket ↔ SSH.
 
-SSH dial using connection.{host, port, user, privateKey} from server record
+SSH dial using connection.{host, port, user} from server record and default private-key RELAY_PRIVATE_KEY_PATH
 Allocate PTY, request interactive shell
 Goroutine pair: WebSocket→SSH stdin, SSH stdout→WebSocket (raw binary frames)
 Tear down both sides cleanly on either end closing
-Done when: opening a WebSocket to a real server yields a live shell; closing the tab terminates the SSH session.
+
+Security work deferred from earlier iterations (implement here, alongside the read/write pump):
+- Idle timeout: reset a timer on every read; close with StatusGoingAway if no data flows for N minutes (default 30m, env RELAY_IDLE_TIMEOUT). Requires an active reader loop — not possible in the stub.
+- Backpressure: bound the SSH→WebSocket write buffer (e.g. channel of fixed capacity); drop the connection if the buffer stays full for longer than a deadline rather than letting memory grow unbounded. Fast producers (e.g. cat large_file) are normal SSH traffic, so the buffer must be generous before dropping.
+- Rate limiting: if needed, apply token-bucket rate limiting on the WebSocket→SSH write path (stdin direction), not on reads. Terminal output (SSH→WS) must never be rate-limited as it would corrupt the stream.
+
+Done when: opening a WebSocket to a real server yields a live shell; closing the tab terminates the SSH session; idle connections close automatically; a flood of inbound data does not grow relay memory without bound.
 
 Iteration 4 — Terminal Resize
 Goal: Window resize events from xterm.js propagate to the PTY.

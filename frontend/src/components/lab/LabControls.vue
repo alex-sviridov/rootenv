@@ -1,16 +1,17 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAttemptsStore } from '@/stores/attempts'
 import { useServersStore } from '@/stores/servers'
+import { ArrowPathIcon } from '@heroicons/vue/24/outline'
 import {
+  attemptConfig,
+  serverStateConfig,
+  serverStatusConfig,
   ClockIcon,
-  ArrowPathIcon,
-  CheckCircleIcon,
-  BoltIcon,
   BoltSlashIcon,
   ExclamationTriangleIcon,
-} from '@heroicons/vue/24/outline'
+} from '@/config/labStates'
 
 const props = defineProps({
   labId: { type: String, required: true },
@@ -34,53 +35,26 @@ const activeAttempt = computed(() => {
   return a && a.state !== 'decommissioned' ? a : null
 })
 
-const attemptConfig = {
-  new:             { label: 'Starting',      dot: 'bg-slate-400',  text: 'text-slate-400',  ping: false },
-  provisioning:    { label: 'Provisioning',  dot: 'bg-yellow-400', text: 'text-yellow-400', ping: true  },
-  provisioned:     { label: 'Running',       dot: 'bg-green-400',  text: 'text-green-400',  ping: true  },
-  decommissioning: { label: 'Shutting down', dot: 'bg-orange-400', text: 'text-orange-400', ping: true  },
-}
-
-const serverStateConfig = {
-  pending:         { icon: ClockIcon,        iconCls: 'text-slate-500',  label: 'Pending',      labelCls: 'text-slate-500'  },
-  provisioning:    { icon: ArrowPathIcon,    iconCls: 'text-yellow-400', label: 'Provisioning', labelCls: 'text-yellow-400', spin: true },
-  provisioned:     { icon: CheckCircleIcon,  iconCls: 'text-green-400',  label: 'Ready',        labelCls: 'text-green-400'  },
-  decommissioning: { icon: ArrowPathIcon,    iconCls: 'text-orange-400', label: 'Stopping',     labelCls: 'text-orange-400', spin: true },
-}
-
-const serverStatusConfig = {
-  poweredon:  { icon: BoltIcon,      iconCls: 'text-green-400',  label: 'On',       labelCls: 'text-green-400'  },
-  poweredoff: { icon: BoltSlashIcon, iconCls: 'text-slate-500',  label: 'Off',      labelCls: 'text-slate-500'  },
-  rebooting:  { icon: ArrowPathIcon, iconCls: 'text-yellow-400', label: 'Rebooting', labelCls: 'text-yellow-400', spin: true },
-}
+const canDecommission = computed(() =>
+  activeAttempt.value &&
+  activeAttempt.value.state !== 'decommissioning' &&
+  !anotherLabRunning.value &&
+  !attempts.loading
+)
 
 async function refresh() {
   await Promise.all([
     attempts.loadLastAttempt(props.labId),
     attempts.loadActiveAttempt(),
   ])
-  if (activeAttempt.value) {
-    await serversStore.loadServers(activeAttempt.value.id)
-  }
 }
-
-const decomissioning = ref(false)
-
-const canDecommission = computed(() =>
-  activeAttempt.value &&
-  activeAttempt.value.state !== 'decommissioning' &&
-  !anotherLabRunning.value &&
-  !decomissioning.value
-)
 
 function provision() {
   attempts.addAttempt(props.labId, props.labName)
 }
 
-async function decommission() {
-  decomissioning.value = true
-  await attempts.removeAttempt(serversStore.servers.map(s => s.id))
-  decomissioning.value = false
+function decommission() {
+  attempts.removeAttempt(serversStore.servers.map(s => s.id))
 }
 
 function goToLab(attempt) {

@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -13,11 +15,15 @@ import (
 )
 
 type config struct {
-	port           string
-	pocketbaseURL  string
-	pbUsername     string
-	pbPassword     string
-	logLevel       slog.Level
+	port               string
+	pocketbaseURL      string
+	pbUsername         string
+	pbPassword         string
+	logLevel           slog.Level
+	allowedOrigins     []string
+	revalidateInterval time.Duration
+	pingInterval       time.Duration
+	maxConnsPerUser    int
 }
 
 func loadConfig() config {
@@ -36,16 +42,46 @@ func loadConfig() config {
 	if pbURL == "" {
 		pbURL = "http://backend:8090"
 	}
+	var allowedOrigins []string
+	if raw := os.Getenv("RELAY_ALLOWED_ORIGINS"); raw != "" {
+		for _, o := range strings.Split(raw, ",") {
+			if o = strings.TrimSpace(o); o != "" {
+				allowedOrigins = append(allowedOrigins, o)
+			}
+		}
+	}
+	revalidate := 30 * time.Minute
+	if raw := os.Getenv("RELAY_REVALIDATE_INTERVAL"); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			revalidate = d
+		}
+	}
+	ping := 30 * time.Second
+	if raw := os.Getenv("RELAY_PING_INTERVAL"); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			ping = d
+		}
+	}
+	maxConns := 16
+	if raw := os.Getenv("RELAY_MAX_CONNS_PER_USER"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			maxConns = n
+		}
+	}
 	return config{
-		port:          port,
-		pocketbaseURL: pbURL,
-		pbUsername:    os.Getenv("RELAY_BACKEND_USERNAME"),
-		pbPassword:    os.Getenv("RELAY_BACKEND_PASSWORD"),
-		logLevel:      level,
+		port:               port,
+		pocketbaseURL:      pbURL,
+		pbUsername:         os.Getenv("RELAY_BACKEND_USERNAME"),
+		pbPassword:         os.Getenv("RELAY_BACKEND_PASSWORD"),
+		logLevel:           level,
+		allowedOrigins:     allowedOrigins,
+		revalidateInterval: revalidate,
+		pingInterval:       ping,
+		maxConnsPerUser:    maxConns,
 	}
 }
 
-func healthzHandler(ready bool) http.HandlerFunc {
+func handleHealthz(ready bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		if !ready {
 			w.WriteHeader(http.StatusServiceUnavailable)
@@ -69,8 +105,14 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", healthzHandler(ready))
-	mux.Handle("/{serverID}/", &relayHandler{pb: pb})
+	mux.HandleFunc("/healthz", handleHealthz(ready))
+	mux.Handle("/{serverID}/", &relayHandler{
+		pb:                 pb,
+		allowedOrigins:     cfg.allowedOrigins,
+		revalidateInterval: cfg.revalidateInterval,
+		pingInterval:       cfg.pingInterval,
+		limiter:            newConnLimiter(cfg.maxConnsPerUser),
+	})
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.port,

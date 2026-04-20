@@ -13,8 +13,8 @@ description: Relay WebSocket interface contract — update whenever the relay AP
 **URL:** `ws(s)://<host>/relay/<serverID>/`
 
 - `<serverID>` — PocketBase `servers` record primary key (15-char string)
-- Auth token passed as `Authorization` header **or** `?token=<pb_auth_token>` query param
-- Token validated once at connection time against PocketBase
+- No token in URL or headers — token is sent as the **first WebSocket message** after `onopen`
+- Relay reads the first message (10s timeout), validates it against PocketBase, closes with 1008 if invalid
 - Authorization: relay fetches `servers` record, then its linked `attempts` record, and asserts `attempt.user == tokenUserID`
 
 ## Protocol
@@ -36,8 +36,9 @@ No structured error payload — close event with a WebSocket close code is the s
 
 | Mechanism | Detail |
 |-----------|--------|
-| Token | Query param `?token=` |
-| Validated against | PocketBase `/api/collections/users/auth-refresh` (or equivalent) |
+| Token | First WebSocket message after `onopen` (plain text frame) |
+| Validated against | PocketBase `/api/collections/users/auth-refresh` |
+| Auth timeout | 10 seconds — relay closes if no message received |
 
 ## Known Constraints
 
