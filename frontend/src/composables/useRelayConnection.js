@@ -1,42 +1,74 @@
-import { ref, onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
+import { Terminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
+import '@xterm/xterm/css/xterm.css'
 import { pb } from '@/lib/pb'
 
 export function useRelayConnection(serverId) {
-  const status = ref('Checking relay…')
+  const terminal = new Terminal({
+    cursorBlink: true,
+    cursorStyle: 'block',
+    fontFamily: 'monospace',
+    fontSize: 12,
+    theme: {
+      background: '#0f172a',
+      foreground: '#cbd5e1',
+      cursor: '#cbd5e1',
+    },
+  })
+
+  const fitAddon = new FitAddon()
+  terminal.loadAddon(fitAddon)
+
   let ws = null
 
   onMounted(async () => {
+    terminal.writeln('Checking relay…')
+
     try {
       const res = await fetch('/relay/healthz')
       if (!res.ok) {
         const body = await res.text()
-        status.value = `Relay unavailable (HTTP ${res.status}): ${body || 'no details'}`
+        terminal.writeln(`\r\nRelay unavailable (HTTP ${res.status}): ${body || 'no details'}`)
         return
       }
     } catch {
-      status.value = 'Relay unavailable: could not reach /relay/healthz'
+      terminal.writeln('\r\nRelay unavailable: could not reach /relay/healthz')
       return
     }
 
+    terminal.writeln('Connecting…')
+
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
     const url = `${proto}://${location.host}/relay/${serverId}/`
-    status.value = 'Connecting…'
     ws = new WebSocket(url)
+
+    ws.binaryType = 'arraybuffer'
 
     ws.onopen = () => {
       ws.send(pb.authStore.token)
-      status.value = 'Connected'
     }
+
+    ws.onmessage = (e) => {
+      terminal.write(new Uint8Array(e.data))
+    }
+
     ws.onclose = (e) => {
       const reason = e.reason ? `: ${e.reason}` : ''
-      status.value = `Disconnected (code ${e.code}${reason})`
+      terminal.writeln(`\r\nDisconnected (code ${e.code}${reason})`)
     }
-    ws.onerror = () => { status.value = 'Connection error' }
+
+    ws.onerror = () => {
+      terminal.writeln('\r\nConnection error')
+    }
   })
 
   onUnmounted(() => {
-    if (ws && ws.readyState < WebSocket.CLOSING) ws.close(1000, 'tab closed')
+    if (ws && ws.readyState < WebSocket.CLOSING) {
+      ws.close(1000, 'tab closed')
+    }
+    terminal.dispose()
   })
 
-  return { status, ws: () => ws }
+  return { terminal, fitAddon }
 }

@@ -27,8 +27,11 @@ Tab state (`tabs`, `activeTabId`) lives in LabView, not LabConsole. LabConsole i
 ## TerminalPanel uses v-show, not v-if
 All tab panels are mounted once and toggled with `v-show` so the WebSocket connection stays alive when switching tabs. `v-if` would teardown/recreate the WS on every switch.
 
-## Relay WebSocket URL in TerminalPanel
-`${proto}://${location.host}/relay/${serverId}/?token=${pb.authStore.token}` — uses `location.host` so it works in both dev (through nginx-dev proxy) and production without config. Token passed as query param because browser WebSocket API does not support custom headers.
+## Relay WebSocket URL and auth
+`${proto}://${location.host}/relay/${serverId}/` — uses `location.host` so it works in both dev (through nginx-dev proxy) and production without config. Token is sent as the first WebSocket message (plain text frame) after `onopen`, not in the URL, per the relay interface contract in `memory-relay-interface.md`.
+
+## xterm.js integration
+`@xterm/xterm` + `@xterm/addon-fit` for terminal rendering. Status messages (connecting, errors, disconnection) are written to the terminal buffer itself via `terminal.writeln()` — not HTML overlays — so they render like real terminal output. WebSocket binary frames are passed as `Uint8Array` to `terminal.write()`. `FitAddon` resizes the terminal to fill its container; `ResizeObserver` on the terminal DOM element ensures fit updates when the sidebar/panels resize. `cursorBlink: true`, `cursorStyle: 'block'`, `fontSize: 12` with Tailwind slate theme.
 
 ## Test mocking strategy
 API tests mock `@/lib/pb` directly. Store tests mock `@/api/*`. Using `vi.hoisted()` for mock variables referenced inside `vi.mock()` factories.

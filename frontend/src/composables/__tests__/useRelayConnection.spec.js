@@ -8,6 +8,31 @@ vi.mock('@/lib/pb', () => ({
   pb: { authStore: { get token() { return mockToken } } },
 }))
 
+vi.mock('@xterm/xterm', () => {
+  class MockTerminal {
+    constructor() {
+      this.buffer = []
+    }
+    writeln(text) {
+      this.buffer.push(text)
+    }
+    write(data) {
+      this.buffer.push(data)
+    }
+    loadAddon() {}
+    dispose() {}
+    open() {}
+  }
+  return { Terminal: MockTerminal }
+})
+
+vi.mock('@xterm/addon-fit', () => {
+  class MockFitAddon {
+    fit() {}
+  }
+  return { FitAddon: MockFitAddon }
+})
+
 import { useRelayConnection } from '../useRelayConnection'
 
 // Minimal WebSocket mock
@@ -16,6 +41,7 @@ class MockWebSocket {
     this.url = url
     this.readyState = WebSocket.CONNECTING
     this.sent = []
+    this.binaryType = null
     MockWebSocket.lastInstance = this
   }
   send(data) { this.sent.push(data) }
@@ -40,14 +66,15 @@ afterEach(() => {
 })
 
 describe('health check fails with non-ok response', () => {
-  it('sets status to relay unavailable with status code and body', async () => {
+  it('writes error to terminal with status code and body', async () => {
     fetch.mockResolvedValue({ ok: false, status: 503, text: () => Promise.resolve('not ready') })
 
     const { result, unmount } = withSetup(() => useRelayConnection('server1'))
     await flushPromises()
 
-    expect(result.status.value).toContain('503')
-    expect(result.status.value).toContain('not ready')
+    const output = result.terminal.buffer.join('\n')
+    expect(output).toContain('503')
+    expect(output).toContain('not ready')
     expect(MockWebSocket.lastInstance).toBeNull()
     unmount()
   })
@@ -58,19 +85,19 @@ describe('health check fails with non-ok response', () => {
     const { result, unmount } = withSetup(() => useRelayConnection('server1'))
     await flushPromises()
 
-    expect(result.status.value).toContain('no details')
+    expect(result.terminal.buffer.some(msg => msg.includes('no details'))).toBe(true)
     unmount()
   })
 })
 
 describe('health check throws (network error)', () => {
-  it('sets status to could not reach healthz', async () => {
+  it('writes error to terminal when healthz unreachable', async () => {
     fetch.mockRejectedValue(new Error('network error'))
 
     const { result, unmount } = withSetup(() => useRelayConnection('server1'))
     await flushPromises()
 
-    expect(result.status.value).toContain('/relay/healthz')
+    expect(result.terminal.buffer.some(msg => msg.includes('/relay/healthz'))).toBe(true)
     expect(MockWebSocket.lastInstance).toBeNull()
     unmount()
   })
@@ -101,6 +128,14 @@ describe('health check passes', () => {
     unmount()
   })
 
+  it('sets binaryType to arraybuffer', async () => {
+    const { unmount } = withSetup(() => useRelayConnection('server1'))
+    await flushPromises()
+
+    expect(MockWebSocket.lastInstance.binaryType).toBe('arraybuffer')
+    unmount()
+  })
+
   it('sends token as first message on open', async () => {
     const { unmount } = withSetup(() => useRelayConnection('server1'))
     await flushPromises()
@@ -111,53 +146,48 @@ describe('health check passes', () => {
     unmount()
   })
 
-  it('sets status to Connecting… before open', async () => {
+  it('writes binary data from ws messages to terminal', async () => {
     const { result, unmount } = withSetup(() => useRelayConnection('server1'))
     await flushPromises()
 
-    expect(result.status.value).toBe('Connecting…')
+    const testData = new ArrayBuffer(5)
+    MockWebSocket.lastInstance.onmessage({ data: testData })
+
+    expect(result.terminal.buffer.some(item => item instanceof Uint8Array)).toBe(true)
     unmount()
   })
 
-  it('sets status to Connected on ws.onopen', async () => {
-    const { result, unmount } = withSetup(() => useRelayConnection('server1'))
-    await flushPromises()
-
-    MockWebSocket.lastInstance.onopen()
-
-    expect(result.status.value).toBe('Connected')
-    unmount()
-  })
-
-  it('sets status with code and reason on ws.onclose', async () => {
+  it('writes disconnect message to terminal on close with code and reason', async () => {
     const { result, unmount } = withSetup(() => useRelayConnection('server1'))
     await flushPromises()
 
     MockWebSocket.lastInstance.onclose({ code: 1008, reason: 'unauthorized' })
 
-    expect(result.status.value).toContain('1008')
-    expect(result.status.value).toContain('unauthorized')
+    const output = result.terminal.buffer.join('\n')
+    expect(output).toContain('1008')
+    expect(output).toContain('unauthorized')
     unmount()
   })
 
-  it('sets status with code only when reason is empty', async () => {
+  it('writes disconnect message with code only when reason is empty', async () => {
     const { result, unmount } = withSetup(() => useRelayConnection('server1'))
     await flushPromises()
 
     MockWebSocket.lastInstance.onclose({ code: 1000, reason: '' })
 
-    expect(result.status.value).toContain('1000')
-    expect(result.status.value).not.toContain(':')
+    const output = result.terminal.buffer.join('\n')
+    expect(output).toContain('1000')
+    expect(output).not.toMatch(/1000.*:/)
     unmount()
   })
 
-  it('sets status to Connection error on ws.onerror', async () => {
+  it('writes connection error to terminal on ws error', async () => {
     const { result, unmount } = withSetup(() => useRelayConnection('server1'))
     await flushPromises()
 
     MockWebSocket.lastInstance.onerror()
 
-    expect(result.status.value).toBe('Connection error')
+    expect(result.terminal.buffer.some(msg => msg.includes('Connection error'))).toBe(true)
     unmount()
   })
 })
@@ -166,7 +196,7 @@ describe('cleanup on unmount', () => {
   it('closes WebSocket with code 1000 when unmounted while open', async () => {
     fetch.mockResolvedValue({ ok: true })
 
-    const { unmount } = withSetup(() => useRelayConnection('server1'))
+    const { result, unmount } = withSetup(() => useRelayConnection('server1'))
     await flushPromises()
 
     MockWebSocket.lastInstance.readyState = MockWebSocket.OPEN
@@ -178,7 +208,7 @@ describe('cleanup on unmount', () => {
   it('does not close WebSocket when already closing', async () => {
     fetch.mockResolvedValue({ ok: true })
 
-    const { unmount } = withSetup(() => useRelayConnection('server1'))
+    const { result, unmount } = withSetup(() => useRelayConnection('server1'))
     await flushPromises()
 
     MockWebSocket.lastInstance.readyState = MockWebSocket.CLOSING
@@ -187,13 +217,24 @@ describe('cleanup on unmount', () => {
     expect(MockWebSocket.lastInstance._closedWith).toBeUndefined()
   })
 
-  it('does not close WebSocket when health check failed (no ws created)', async () => {
+  it('disposes terminal on unmount', async () => {
+    fetch.mockResolvedValue({ ok: true })
+
+    const { result, unmount } = withSetup(() => useRelayConnection('server1'))
+    await flushPromises()
+
+    const disposeSpy = vi.spyOn(result.terminal, 'dispose')
+    unmount()
+
+    expect(disposeSpy).toHaveBeenCalled()
+  })
+
+  it('does not throw when health check failed (no ws created)', async () => {
     fetch.mockResolvedValue({ ok: false, status: 503, text: () => Promise.resolve('') })
 
     const { unmount } = withSetup(() => useRelayConnection('server1'))
     await flushPromises()
 
-    // Should not throw
     expect(() => unmount()).not.toThrow()
   })
 })
