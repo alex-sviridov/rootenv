@@ -1,12 +1,17 @@
 <script setup>
 import { computed } from 'vue'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 
 const { task } = defineProps({
   task: { type: Object, default: null },
 })
 
-const html = computed(() => (task ? marked.parse(task.content) : ''))
+const html = computed(() => {
+  if (!task) return ''
+  const dirty = marked.parse(task.content)
+  return DOMPurify.sanitize(dirty)
+})
 </script>
 
 <template>

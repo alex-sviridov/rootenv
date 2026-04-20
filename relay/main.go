@@ -8,10 +8,13 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/alexsviridov/linuxlab/relay/pkg/pbclient"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type config struct {
@@ -114,6 +117,10 @@ func main() {
 		slog.Error("failed to authenticate with PocketBase", "err", err)
 	}
 
+	registry := prometheus.NewRegistry()
+	metrics := newRelayMetrics(registry)
+
+	var wg sync.WaitGroup
 	handler := &relayHandler{
 		pb:                 pb,
 		allowedOrigins:     cfg.allowedOrigins,
@@ -121,6 +128,8 @@ func main() {
 		pingInterval:       cfg.pingInterval,
 		idleTimeout:        cfg.idleTimeout,
 		limiter:            newConnLimiter(cfg.maxConnsPerUser),
+		wg:                 &wg,
+		metrics:            metrics,
 	}
 
 	if cfg.privateKeyPath != "" {
@@ -137,6 +146,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", handleHealthz(ready))
+	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 	mux.Handle("/{serverID}/", handler)
 
 	srv := &http.Server{
@@ -163,5 +173,18 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Error("shutdown error", "err", err)
+	}
+
+	// Wait for all active sessions to finish, bounded by shutdownCtx deadline.
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		slog.Info("all sessions drained")
+	case <-shutdownCtx.Done():
+		slog.Warn("shutdown timeout: sessions still active")
 	}
 }

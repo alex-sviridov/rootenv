@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -54,7 +56,7 @@ func loadSigner(path string) (ssh.Signer, error) {
 }
 
 // dialSSH establishes an SSH client connection using public-key auth.
-func dialSSH(conn *serverConnection, signer ssh.Signer) (*ssh.Client, error) {
+func dialSSH(conn *serverConnection, signer ssh.Signer, m *relayMetrics) (*ssh.Client, error) {
 	cfg := &ssh.ClientConfig{
 		User: conn.User,
 		Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)},
@@ -64,19 +66,27 @@ func dialSSH(conn *serverConnection, signer ssh.Signer) (*ssh.Client, error) {
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec
 	}
 	addr := net.JoinHostPort(conn.Host, fmt.Sprintf("%d", conn.Port))
+	start := time.Now()
 	client, err := ssh.Dial("tcp", addr, cfg)
 	if err != nil {
+		if m != nil {
+			m.sshDialErrors.Inc()
+		}
 		return nil, fmt.Errorf("ssh dial %s: %w", addr, err)
+	}
+	if m != nil {
+		m.sshDialDuration.Observe(time.Since(start).Seconds())
 	}
 	return client, nil
 }
 
-// openShell opens a new SSH session with a PTY and interactive shell.
-// Caller is responsible for closing both session and client.
-func openShell(client *ssh.Client) (*ssh.Session, error) {
+// openShellWithPipes opens a new SSH session with a PTY, gets stdin/stdout pipes,
+// and starts the interactive shell. Pipes must be obtained before Shell() is called.
+// Caller is responsible for closing the session and client.
+func openShellWithPipes(client *ssh.Client, m *relayMetrics) (*ssh.Session, io.WriteCloser, io.Reader, error) {
 	session, err := client.NewSession()
 	if err != nil {
-		return nil, fmt.Errorf("new session: %w", err)
+		return nil, nil, nil, fmt.Errorf("new session: %w", err)
 	}
 
 	modes := ssh.TerminalModes{
@@ -86,11 +96,27 @@ func openShell(client *ssh.Client) (*ssh.Session, error) {
 	}
 	if err := session.RequestPty("xterm-256color", 24, 80, modes); err != nil {
 		session.Close()
-		return nil, fmt.Errorf("request pty: %w", err)
+		return nil, nil, nil, fmt.Errorf("request pty: %w", err)
 	}
+
+	// Get pipes before calling Shell().
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		session.Close()
+		return nil, nil, nil, fmt.Errorf("stdin pipe: %w", err)
+	}
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		session.Close()
+		return nil, nil, nil, fmt.Errorf("stdout pipe: %w", err)
+	}
+
 	if err := session.Shell(); err != nil {
 		session.Close()
-		return nil, fmt.Errorf("start shell: %w", err)
+		return nil, nil, nil, fmt.Errorf("start shell: %w", err)
 	}
-	return session, nil
+	if m != nil {
+		m.sshShellsStarted.Inc()
+	}
+	return session, stdin, stdout, nil
 }

@@ -30,6 +30,22 @@
 - Token validated once at connection time
 - Stateless: no in-memory session or server state; all active attempt/server data lives in PocketBase, so multiple relay instances can run in parallel behind a load balancer
 
+## WebSocket Protocol
+
+### Framing
+Single control-byte prefix distinguishes control frames from stdin:
+
+| First byte | Meaning           | Payload                                |
+|------------|-------------------|----------------------------------------|
+| `\x01`     | Terminal resize   | 4 bytes: cols (uint16 LE), rows (uint16 LE) |
+| `\x00`     | Token refresh     | `REFRESH\n<token>` (8+ bytes)           |
+| Any other  | stdin data        | Forward to SSH session as-is           |
+
+### Resize
+- Frontend sends `\x01` frame when xterm.Terminal.onResize fires (browser window resized, fitAddon.fit() called)
+- Relay detects frame, extracts cols/rows, calls `session.WindowChange(rows, cols)`
+- Buffered channel (capacity 1) — resize frames drop if full (last resize wins during burst)
+
 ## Memory Maintenance
 At the start of any relay work, read `/home/alex/linuxlab/relay/.claude/memory/MEMORY.md`.
 Write immediately when a decision, invariant, or preference is discovered — not at session end:

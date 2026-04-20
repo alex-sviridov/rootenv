@@ -27,13 +27,13 @@ const { tabs, activeTabId, limitError, openTerminal, closeTab, moveTab, resetTab
 
 const currentTask = computed(() => lab.value?.content?.[selectedTask.value] ?? null)
 
-watch(() => attemptsStore.lastAttempt, (attempt, prev) => {
+watch(() => attemptsStore.lastAttempt, async (attempt, prev) => {
   if (attempt?.state === 'decommissioned' || !attempt) {
-    serversStore.stopWatching()
+    await serversStore.stopWatching()
     resetTabs()
   } else if (attempt?.id !== prev?.id) {
-    serversStore.loadServers(attempt.id)
-    serversStore.startWatching(attempt.id)
+    await serversStore.loadServers(attempt.id)
+    await serversStore.startWatching(attempt.id)
     resetTabs()
   }
 })
@@ -76,9 +76,9 @@ watch(() => route.params.slug, (slug) => { if (slug) initLab(slug) })
 
 onMounted(() => initLab(route.params.slug))
 
-onUnmounted(() => {
-  attemptsStore.stopWatching()
-  serversStore.stopWatching()
+onUnmounted(async () => {
+  await attemptsStore.stopWatching()
+  await serversStore.stopWatching()
 })
 </script>
 

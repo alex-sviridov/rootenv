@@ -12,12 +12,16 @@ vi.mock('@xterm/xterm', () => {
   class MockTerminal {
     constructor() {
       this.buffer = []
+      this.dataHandler = null
     }
     writeln(text) {
       this.buffer.push(text)
     }
     write(data) {
       this.buffer.push(data)
+    }
+    onData(handler) {
+      this.dataHandler = handler
     }
     loadAddon() {}
     dispose() {}
@@ -154,6 +158,30 @@ describe('health check passes', () => {
     MockWebSocket.lastInstance.onmessage({ data: testData })
 
     expect(result.terminal.buffer.some(item => item instanceof Uint8Array)).toBe(true)
+    unmount()
+  })
+
+  it('registers onData handler to forward terminal input to ws', async () => {
+    const { result, unmount } = withSetup(() => useRelayConnection('server1'))
+    await flushPromises()
+
+    MockWebSocket.lastInstance.onopen()
+
+    expect(result.terminal.dataHandler).not.toBeNull()
+    expect(typeof result.terminal.dataHandler).toBe('function')
+    unmount()
+  })
+
+  it('sends terminal input through ws when onData fires', async () => {
+    const { result, unmount } = withSetup(() => useRelayConnection('server1'))
+    await flushPromises()
+
+    MockWebSocket.lastInstance.readyState = MockWebSocket.OPEN
+    MockWebSocket.lastInstance.onopen()
+
+    result.terminal.dataHandler('echo hello')
+
+    expect(MockWebSocket.lastInstance.sent).toContain('echo hello')
     unmount()
   })
 

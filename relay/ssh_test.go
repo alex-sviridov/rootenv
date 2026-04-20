@@ -93,7 +93,7 @@ func TestLoadSigner_invalidKey(t *testing.T) {
 func TestDialSSH_refusedConnection(t *testing.T) {
 	signer := generateTestSigner(t)
 	conn := &serverConnection{Host: "127.0.0.1", Port: 19999, User: "nobody"}
-	_, err := dialSSH(conn, signer)
+	_, err := dialSSH(conn, signer, nil)
 	if err == nil {
 		t.Fatal("expected error dialing non-existent SSH server")
 	}

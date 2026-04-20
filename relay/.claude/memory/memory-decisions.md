@@ -8,6 +8,13 @@ paths:
 
 _Record decisions here as they are made — include what was decided, why, and what alternatives were rejected._
 
+## Iteration 4 — Terminal Resize
+
+- **Framing protocol:** Single control-byte prefix on WebSocket messages — `\x01` for resize (cols uint16 LE, rows uint16 LE), `\x00` for token refresh, else stdin.
+- **Resize handling:** New goroutine in `runProxy` consumes `resizeChan` and calls `session.WindowChange(rows, cols)`. Testable via `windowChangeFn` callback (defaults to `session.WindowChange`).
+- **Frontend:** `terminal.onResize` triggers binary frame send. `fitAddon.fit()` called on connect + `window.addEventListener('resize')` to fit on browser resize.
+- **Capacity:** `resizeChan` buffered to 1; resize frames drop if channel full (last resize wins during burst).
+
 ## Iteration 3 — SSH Proxying
 
 - **SSH auth:** public-key only via `RELAY_PRIVATE_KEY_PATH`; `InsecureIgnoreHostKey` used intentionally — lab VMs are ephemeral and network-isolated (Docker/VPC is the trust boundary).

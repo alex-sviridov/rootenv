@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"io"
 	"log/slog"
+	"sync"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -33,14 +35,20 @@ const (
 
 type proxyConfig struct {
 	idleTimeout time.Duration
+	metrics     *relayMetrics // nil-safe
 }
 
 // runProxy bridges a WebSocket connection to an open SSH session's stdin/stdout.
-// It blocks until the session ends, then returns. cancel() is called on any
-// terminal error so that the caller's context is also cancelled.
+// It blocks until the session ends, then returns a reason string describing why
+// the connection closed. cancel() is called on any terminal error so that the
+// caller's context is also cancelled.
 //
 // The SSH session must already have a shell running; caller owns Close on both
 // session and ssh.Client.
+//
+// Special message formats:
+//   - \x00REFRESH\n<token> — token refresh request (not forwarded to SSH)
+//   - \x01 + cols (uint16 LE) + rows (uint16 LE) — resize frame (forwarded to windowChangeFn)
 func runProxy(
 	ctx context.Context,
 	cancel context.CancelFunc,
@@ -48,12 +56,26 @@ func runProxy(
 	sshStdin io.WriteCloser,
 	sshStdout io.Reader,
 	cfg proxyConfig,
+	tokenRefreshChan chan string,
+	resizeChan chan [2]uint16,
+	windowChangeFn func(rows, cols int) error,
 	log *slog.Logger,
-) {
+) string {
 	limiter := rate.NewLimiter(stdinRateLimit, stdinBurst)
 
 	// sshOut carries chunks from the SSH stdout reader to the WebSocket writer.
 	sshOut := make(chan []byte, sshOutBufSize)
+
+	// closeReason tracks why the connection is closing.
+	var closeReasonMu sync.Mutex
+	var closeReason string = "normal"
+	setCloseReason := func(reason string) {
+		closeReasonMu.Lock()
+		if closeReason == "normal" {
+			closeReason = reason
+		}
+		closeReasonMu.Unlock()
+	}
 
 	// Goroutine 1: SSH stdout → channel
 	go func() {
@@ -63,6 +85,9 @@ func runProxy(
 			if n > 0 {
 				chunk := make([]byte, n)
 				copy(chunk, buf[:n])
+				if cfg.metrics != nil {
+					cfg.metrics.bytesOut.Add(float64(n))
+				}
 
 				// Try to enqueue; if the channel is full wait up to backpressureDeadline
 				// before dropping the connection.
@@ -70,6 +95,10 @@ func runProxy(
 				case sshOut <- chunk:
 				case <-time.After(backpressureDeadline):
 					log.Warn("backpressure: client too slow, dropping connection")
+					if cfg.metrics != nil {
+						cfg.metrics.backpressureDrops.Inc()
+					}
+					setCloseReason("backpressure")
 					cancel()
 					_ = conn.Close(websocket.StatusGoingAway, "client too slow")
 					return
@@ -108,6 +137,7 @@ func runProxy(
 
 	// Goroutine 3: WebSocket → SSH stdin (client → server)
 	// Owns the idle timer reset and rate limiting.
+	// Also intercepts control messages (token refresh and resize frames).
 	idleTimer := time.NewTimer(cfg.idleTimeout)
 	defer idleTimer.Stop()
 
@@ -118,6 +148,31 @@ func runProxy(
 				log.Debug("ws read error", "err", err)
 				cancel()
 				return
+			}
+
+			// Check for resize control frame: \x01 + cols (uint16 LE) + rows (uint16 LE)
+			if len(data) == 5 && data[0] == 0x01 {
+				cols := binary.LittleEndian.Uint16(data[1:3])
+				rows := binary.LittleEndian.Uint16(data[3:5])
+				if resizeChan != nil {
+					select {
+					case resizeChan <- [2]uint16{cols, rows}:
+					default: // drop if channel full — last resize wins
+					}
+				}
+				continue
+			}
+
+			// Check for token refresh control message: \x00REFRESH\n<token>
+			if len(data) > 10 && data[0] == 0x00 && string(data[1:9]) == "REFRESH\n" {
+				newToken := string(data[9:])
+				select {
+				case tokenRefreshChan <- newToken:
+					log.Debug("token refresh requested")
+				case <-ctx.Done():
+					return
+				}
+				continue
 			}
 
 			// Reset idle timer on every incoming frame.
@@ -140,6 +195,27 @@ func runProxy(
 				cancel()
 				return
 			}
+			if cfg.metrics != nil {
+				cfg.metrics.bytesIn.Add(float64(len(data)))
+			}
+		}
+	}()
+
+	// Goroutine 4: resize handler
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case dim := <-resizeChan:
+				if windowChangeFn != nil {
+					rows := int(dim[1])
+					cols := int(dim[0])
+					if err := windowChangeFn(rows, cols); err != nil {
+						log.Debug("window change failed", "err", err)
+					}
+				}
+			}
 		}
 	}()
 
@@ -148,11 +224,15 @@ func runProxy(
 		select {
 		case <-idleTimer.C:
 			log.Info("idle timeout, closing connection")
+			setCloseReason("idle timeout")
 			cancel()
 			_ = conn.Close(websocket.StatusGoingAway, "idle timeout")
-			return
+			return closeReason
 		case <-ctx.Done():
-			return
+			closeReasonMu.Lock()
+			reason := closeReason
+			closeReasonMu.Unlock()
+			return reason
 		}
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alexsviridov/linuxlab/relay/pkg/pbclient"
@@ -33,6 +34,8 @@ type relayHandler struct {
 	idleTimeout        time.Duration
 	limiter            *connLimiter
 	signer             ssh.Signer
+	wg                 *sync.WaitGroup
+	metrics            *relayMetrics // nil-safe
 }
 
 func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +58,9 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	)
 	log.Info("ws handshake", "method", r.Method, "path", r.URL.Path)
 
+	h.wg.Add(1)
+	defer h.wg.Done()
+
 	acceptOpts := &websocket.AcceptOptions{}
 	if len(h.allowedOrigins) > 0 {
 		acceptOpts.OriginPatterns = h.allowedOrigins
@@ -64,6 +70,9 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Accept(w, r, acceptOpts)
 	if err != nil {
 		log.Warn("ws accept failed", "err", err)
+		if h.metrics != nil {
+			h.metrics.wsAcceptErrors.Inc()
+		}
 		return
 	}
 	conn.SetReadLimit(maxMessageBytes)
@@ -73,6 +82,9 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	authCancel()
 	if err != nil {
 		log.Warn("auth failed: did not receive token", "err", err)
+		if h.metrics != nil {
+			h.metrics.authFailures.WithLabelValues("no_token").Inc()
+		}
 		_ = conn.Close(websocket.StatusPolicyViolation, "unauthorized")
 		return
 	}
@@ -81,6 +93,9 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	userID, err := h.pb.ValidateToken(token)
 	if err != nil {
 		log.Warn("auth failed: invalid token", "err", err)
+		if h.metrics != nil {
+			h.metrics.authFailures.WithLabelValues("invalid_token").Inc()
+		}
 		_ = conn.Close(websocket.StatusPolicyViolation, "unauthorized")
 		return
 	}
@@ -88,6 +103,9 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.limiter.Acquire(userID); err != nil {
 		log.Warn("security: connection limit exceeded")
+		if h.metrics != nil {
+			h.metrics.connLimitRejections.Inc()
+		}
 		_ = conn.Close(websocket.StatusPolicyViolation, "too many connections")
 		return
 	}
@@ -97,6 +115,9 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, pbclient.ErrNotFound) {
 			log.Warn("authz failed: server not found")
+			if h.metrics != nil {
+				h.metrics.authzFailures.WithLabelValues("server_not_found").Inc()
+			}
 			_ = conn.Close(websocket.StatusPolicyViolation, "server not found")
 		} else {
 			log.Error("get server error", "err", err)
@@ -109,6 +130,9 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, pbclient.ErrNotFound) {
 			log.Warn("authz failed: attempt not found", "attempt_id", server.Attempt)
+			if h.metrics != nil {
+				h.metrics.authzFailures.WithLabelValues("server_not_found").Inc()
+			}
 			_ = conn.Close(websocket.StatusPolicyViolation, "attempt not found")
 		} else {
 			log.Error("get attempt error", "err", err)
@@ -119,15 +143,31 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if attempt.User != userID {
 		log.Warn("authz failed: attempt owned by different user", "attempt_id", attempt.ID)
+		if h.metrics != nil {
+			h.metrics.authzFailures.WithLabelValues("forbidden").Inc()
+		}
 		_ = conn.Close(websocket.StatusPolicyViolation, "forbidden")
 		return
 	}
 
 	connectedAt := time.Now()
 	log = log.With("attempt_id", attempt.ID)
-	log.Info("ws connected")
+	log.Info("ws connected", "active_total", h.limiter.Total())
+	if h.metrics != nil {
+		h.metrics.activeConnections.Inc()
+	}
+	closeReason := "unknown"
 	defer func() {
-		log.Info("ws disconnected", "duration_s", time.Since(connectedAt).Seconds())
+		if h.metrics != nil {
+			h.metrics.activeConnections.Dec()
+			h.metrics.connDuration.Observe(time.Since(connectedAt).Seconds())
+			h.metrics.connCloseReasons.WithLabelValues(closeReason).Inc()
+		}
+		log.Info("ws disconnected",
+			"duration_s", time.Since(connectedAt).Seconds(),
+			"close_reason", closeReason,
+			"active_total", h.limiter.Total(),
+		)
 	}()
 
 	// Parse connection details from the server record.
@@ -139,7 +179,7 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Dial SSH.
-	sshClient, err := dialSSH(srvConn, h.signer)
+	sshClient, err := dialSSH(srvConn, h.signer, h.metrics)
 	if err != nil {
 		log.Error("ssh dial failed", "err", err, "host", srvConn.Host)
 		_ = conn.Close(websocket.StatusInternalError, "ssh unavailable")
@@ -147,26 +187,15 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer sshClient.Close()
 
-	session, err := openShell(sshClient)
+	// Create session and open shell.
+	// Get pipes before calling Shell() so they're available for proxying.
+	session, sshStdin, sshStdout, err := openShellWithPipes(sshClient, h.metrics)
 	if err != nil {
 		log.Error("ssh shell failed", "err", err)
 		_ = conn.Close(websocket.StatusInternalError, "ssh unavailable")
 		return
 	}
 	defer session.Close()
-
-	sshStdin, err := session.StdinPipe()
-	if err != nil {
-		log.Error("ssh stdin pipe failed", "err", err)
-		_ = conn.Close(websocket.StatusInternalError, "ssh unavailable")
-		return
-	}
-	sshStdout, err := session.StdoutPipe()
-	if err != nil {
-		log.Error("ssh stdout pipe failed", "err", err)
-		_ = conn.Close(websocket.StatusInternalError, "ssh unavailable")
-		return
-	}
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -194,8 +223,12 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Periodic revalidation: close if the user's PocketBase session expires.
+	// Also handles in-band token refresh requests from the client.
 	revalidateTicker := time.NewTicker(h.revalidateInterval)
 	defer revalidateTicker.Stop()
+	tokenRefreshChan := make(chan string, 1)
+	resizeChan := make(chan [2]uint16, 1)
+
 	go func() {
 		for {
 			select {
@@ -208,13 +241,36 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					_ = conn.Close(websocket.StatusPolicyViolation, "session expired")
 					return
 				}
+			case newToken := <-tokenRefreshChan:
+				newUserID, err := h.pb.ValidateToken(newToken)
+				if err != nil {
+					log.Warn("auth: token refresh failed", "err", err)
+					cancel()
+					_ = conn.Close(websocket.StatusPolicyViolation, "invalid token")
+					return
+				}
+				if newUserID != userID {
+					// Prevent token hijacking: new token must be for same user
+					log.Warn("auth: token refresh user mismatch", "old_user", userID, "new_user", newUserID)
+					cancel()
+					_ = conn.Close(websocket.StatusPolicyViolation, "token mismatch")
+					return
+				}
+				token = newToken
+				log.Info("auth: token refreshed")
 			}
 		}
 	}()
 
-	runProxy(ctx, cancel, conn, sshStdin, sshStdout, proxyConfig{
+	windowChangeFn := func(rows, cols int) error {
+		return session.WindowChange(rows, cols)
+	}
+
+	reason := runProxy(ctx, cancel, conn, sshStdin, sshStdout, proxyConfig{
 		idleTimeout: h.idleTimeout,
-	}, log)
+		metrics:     h.metrics,
+	}, tokenRefreshChan, resizeChan, windowChangeFn, log)
+	closeReason = reason
 
 	_ = conn.Close(websocket.StatusNormalClosure, "")
 }

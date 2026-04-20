@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRelayConnection } from '@/composables/useRelayConnection'
 
 const props = defineProps({
@@ -8,19 +8,23 @@ const props = defineProps({
 
 const termEl = ref(null)
 const { terminal, fitAddon } = useRelayConnection(props.serverId)
+let resizeObserver = null
 
 onMounted(() => {
   if (termEl.value) {
     terminal.open(termEl.value)
     fitAddon.fit()
 
-    const resizeObserver = new ResizeObserver(() => {
+    resizeObserver = new ResizeObserver(() => {
       fitAddon.fit()
     })
     resizeObserver.observe(termEl.value)
+  }
+})
 
-    const cleanup = () => resizeObserver.disconnect()
-    termEl.value._resizeObserverCleanup = cleanup
+onUnmounted(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect()
   }
 })
 </script>

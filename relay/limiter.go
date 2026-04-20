@@ -51,3 +51,14 @@ func (l *connLimiter) Release(userID string) {
 		atomic.AddInt64(counter, -1)
 	}
 }
+
+// Total returns the total number of active connections across all users.
+func (l *connLimiter) Total() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var total int64
+	for _, counter := range l.counts {
+		total += atomic.LoadInt64(counter)
+	}
+	return int(total)
+}

@@ -27,6 +27,12 @@ type proxyHarness struct {
 // The idle timeout is configurable; SSH stdout is controlled via harness.sshStdoutW.
 func newProxyHarness(t *testing.T, cfg proxyConfig) *proxyHarness {
 	t.Helper()
+	return newProxyHarnessWithFn(t, cfg, nil)
+}
+
+// newProxyHarnessWithFn is like newProxyHarness but accepts a custom windowChangeFn for testing.
+func newProxyHarnessWithFn(t *testing.T, cfg proxyConfig, windowChangeFn func(rows, cols int) error) *proxyHarness {
+	t.Helper()
 
 	sshStdoutR, sshStdoutW := io.Pipe()
 	sshStdinR, sshStdinW := io.Pipe()
@@ -46,7 +52,12 @@ func newProxyHarness(t *testing.T, cfg proxyConfig) *proxyHarness {
 			return
 		}
 		close(proxying)
-		runProxy(proxyCtx, proxyCancel, c, sshStdinW, sshStdoutR, cfg, slog.Default())
+		tokenRefreshChan := make(chan string, 1)
+		resizeChan := make(chan [2]uint16, 1)
+		if windowChangeFn == nil {
+			windowChangeFn = func(rows, cols int) error { return nil }
+		}
+		_ = runProxy(proxyCtx, proxyCancel, c, sshStdinW, sshStdoutR, cfg, tokenRefreshChan, resizeChan, windowChangeFn, slog.Default())
 	}))
 	t.Cleanup(func() {
 		proxyCancel()
@@ -182,4 +193,96 @@ func TestProxy_loadConfig_privateKeyPath(t *testing.T) {
 	if cfg.privateKeyPath != "/etc/relay/id_ed25519" {
 		t.Errorf("want /etc/relay/id_ed25519, got %s", cfg.privateKeyPath)
 	}
+}
+
+// TestProxy_resizeFrameCallsWindowChange verifies that a resize control frame
+// calls the windowChangeFn with the correct dimensions and is not forwarded to sshStdin.
+func TestProxy_resizeFrameCallsWindowChange(t *testing.T) {
+	var (
+		mu        sync.Mutex
+		callCount int
+		gotRows   int
+		gotCols   int
+	)
+	windowChangeFn := func(rows, cols int) error {
+		mu.Lock()
+		defer mu.Unlock()
+		callCount++
+		gotRows = rows
+		gotCols = cols
+		return nil
+	}
+
+	h := newProxyHarnessWithFn(t, proxyConfig{idleTimeout: 5 * time.Second}, windowChangeFn)
+	defer h.cancel()
+
+	ctx, done := context.WithTimeout(context.Background(), 3*time.Second)
+	defer done()
+
+	// Send a resize frame: \x01 + cols (80, uint16 LE) + rows (24, uint16 LE)
+	resizeFrame := []byte{0x01, 80, 0, 24, 0}
+	if err := h.client.Write(ctx, websocket.MessageBinary, resizeFrame); err != nil {
+		t.Fatalf("client write: %v", err)
+	}
+
+	// Give the resize handler a moment to process.
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify windowChangeFn was called with the correct dimensions.
+	mu.Lock()
+	defer mu.Unlock()
+	if callCount != 1 {
+		t.Errorf("want 1 call to windowChangeFn, got %d", callCount)
+	}
+	if gotRows != 24 {
+		t.Errorf("want rows=24, got %d", gotRows)
+	}
+	if gotCols != 80 {
+		t.Errorf("want cols=80, got %d", gotCols)
+	}
+
+	// Verify the frame was not forwarded to sshStdin.
+	if len(h.sshIn.Bytes()) > 0 {
+		t.Errorf("want sshStdin empty, got %q", h.sshIn.Bytes())
+	}
+}
+
+// TestProxy_resizeFrameIgnoredWhenInvalid verifies that frames that are not exactly
+// 5 bytes are treated as stdin data, not resize frames.
+func TestProxy_resizeFrameIgnoredWhenInvalid(t *testing.T) {
+	var callCount int
+	windowChangeFn := func(rows, cols int) error {
+		callCount++
+		return nil
+	}
+
+	h := newProxyHarnessWithFn(t, proxyConfig{idleTimeout: 5 * time.Second}, windowChangeFn)
+	defer h.cancel()
+
+	ctx, done := context.WithTimeout(context.Background(), 3*time.Second)
+	defer done()
+
+	// Send an incomplete resize frame (should be treated as stdin).
+	incompleteFrame := []byte{0x01, 80, 0}
+	if err := h.client.Write(ctx, websocket.MessageBinary, incompleteFrame); err != nil {
+		t.Fatalf("client write: %v", err)
+	}
+
+	// Give it a moment to process.
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify windowChangeFn was not called.
+	if callCount != 0 {
+		t.Errorf("want 0 calls to windowChangeFn, got %d", callCount)
+	}
+
+	// Verify the frame was forwarded to sshStdin.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if bytes.Equal(h.sshIn.Bytes(), incompleteFrame) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Errorf("want sshStdin %q, got %q", incompleteFrame, h.sshIn.Bytes())
 }

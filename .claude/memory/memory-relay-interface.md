@@ -19,7 +19,18 @@ description: Relay WebSocket interface contract — update whenever the relay AP
 
 ## Protocol
 
-Raw binary WebSocket frames — relay proxies stdin/stdout of an SSH session directly. No framing protocol on top; xterm.js writes/reads raw bytes.
+### Message Framing
+
+Raw binary WebSocket frames with control-byte prefix to distinguish control frames from stdin data:
+
+| First byte | Meaning           | Payload                                |
+|------------|-------------------|----------------------------------------|
+| `\x01`     | Terminal resize   | 4 bytes: cols (uint16 LE), rows (uint16 LE) |
+| `\x00`     | Token refresh     | `REFRESH\n<token>` (8+ bytes)           |
+| Any other  | stdin data        | Forward to SSH as-is                   |
+
+### Stdin/Stdout
+Relay proxies stdin/stdout of an SSH session directly. Plain bytes (first byte ≠ `\x00` or `\x01`) are forwarded to SSH as terminal input.
 
 ## Error Handling
 
@@ -40,8 +51,20 @@ No structured error payload — close event with a WebSocket close code is the s
 | Validated against | PocketBase `/api/collections/users/auth-refresh` |
 | Auth timeout | 10 seconds — relay closes if no message received |
 
+## Token Refresh
+
+If the relay detects that the token has expired during a session (via periodic revalidation), it closes the connection with:
+- Close code: 1002 (Policy Violation)
+- Reason: `"session expired"`
+
+The frontend should:
+1. Detect close code 1002 + reason "session expired"
+2. Call `pb.collection('users').authRefresh()` to get a fresh token
+3. Reconnect to the relay with the new token
+
+Alternative: Client can proactively send an in-band token refresh message (format: `\x00REFRESH\n<token>`) without closing the connection. Relay will validate the token and update its internal state without reconnecting.
+
 ## Known Constraints
 
 - One SSH session per WebSocket connection; multiple tabs = multiple connections
 - No multiplexing
-- No resize message protocol documented yet — update here when implemented
