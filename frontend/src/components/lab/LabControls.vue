@@ -89,7 +89,7 @@ function goToLab(attempt) {
       </button>
     </div>
 
-    <div class="p-4 space-y-3">
+    <div class="px-4 py-2 space-y-3">
 
     <!-- Another lab is running -->
     <div
@@ -112,7 +112,7 @@ function goToLab(attempt) {
     <div v-if="activeAttempt" class="space-y-2">
 
       <!-- Servers list -->
-      <div v-if="serversStore.servers.length" class="pt-2 mt-1 border-t border-slate-800 space-y-1">
+      <div v-if="serversStore.servers.length" class="space-y-1 pb-1">
         <div
           v-for="server in serversStore.servers"
           :key="server.id"

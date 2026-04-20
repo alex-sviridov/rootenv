@@ -34,9 +34,10 @@ services:
       RELAY_BACKEND_USERNAME: svc_relay
       RELAY_BACKEND_PASSWORD: Secret123456
       RELAY_PRIVATE_KEY_PATH: /app/id_rsa
+      RELAY_IDLE_TIMEOUT: ${RELAY_IDLE_TIMEOUT:-30m}
       PORT: "8080"
       LOG_LEVEL: info
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      RELAY_ALLOWED_ORIGINS: ${RELAY_ALLOWED_ORIGINS:-}
     restart: unless-stopped
 
   nginx:

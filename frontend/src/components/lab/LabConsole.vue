@@ -80,7 +80,7 @@ function onDragEnd() {
       </template>
       <div v-else class="flex items-center justify-center h-full px-6 text-center">
         <span v-if="limitError" class="text-xs text-amber-400">{{ limitError }}</span>
-        <span v-else class="text-xs text-slate-600">No terminals open — click a provisioned server to connect.</span>
+        <span v-else class="text-xl text-slate-600">No active terminal connection — click a provisioned server to connect.</span>
       </div>
     </div>
 

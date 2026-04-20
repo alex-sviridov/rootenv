@@ -68,7 +68,7 @@ func (c *Client) authenticate(username, password string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("admin auth failed: status %d", resp.StatusCode)
+		return "", fmt.Errorf("svc auth failed: status %d", resp.StatusCode)
 	}
 
 	var result struct {
@@ -78,7 +78,7 @@ func (c *Client) authenticate(username, password string) (string, error) {
 		return "", err
 	}
 	if result.Token == "" {
-		return "", fmt.Errorf("admin auth returned empty token")
+		return "", fmt.Errorf("svc auth returned empty token")
 	}
 	return result.Token, nil
 }
