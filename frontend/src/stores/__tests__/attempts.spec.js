@@ -37,30 +37,6 @@ describe('initial state', () => {
   })
 })
 
-describe('canProvision', () => {
-  it('returns true when lastAttempt is null', () => {
-    const store = useAttemptsStore()
-    expect(store.canProvision).toBe(true)
-  })
-
-  it('returns true when lastAttempt.status is "decommissioned"', () => {
-    const store = useAttemptsStore()
-    store.lastAttempt = { id: 'a1', state: 'decommissioned' }
-    expect(store.canProvision).toBe(true)
-  })
-
-  it('returns false when lastAttempt status is "running"', () => {
-    const store = useAttemptsStore()
-    store.lastAttempt = { id: 'a1', state: 'running' }
-    expect(store.canProvision).toBe(false)
-  })
-
-  it('returns false when lastAttempt status is "provisioning"', () => {
-    const store = useAttemptsStore()
-    store.lastAttempt = { id: 'a1', state: 'provisioning' }
-    expect(store.canProvision).toBe(false)
-  })
-})
 
 describe('loadLastAttempt', () => {
   it('fetches and sets lastAttempt on success', async () => {
@@ -227,27 +203,6 @@ describe('addAttempt', () => {
     expect(store.error).toBeNull()
   })
 
-  it('sets error and skips API call when canProvision is false', async () => {
-    const store = useAttemptsStore()
-    store.lastAttempt = { id: 'a1', state: 'running' }
-
-    await store.addAttempt('lab-1', 'My Lab')
-
-    expect(createAttempt).not.toHaveBeenCalled()
-    expect(store.error).toBeTruthy()
-  })
-
-  it('allows creation when lastAttempt.status is "decommissioned"', async () => {
-    const created = { id: 'a2', state: 'provisioning', lab: 'lab-1', lab_name: 'My Lab' }
-    createAttempt.mockResolvedValue(created)
-
-    const store = useAttemptsStore()
-    store.lastAttempt = { id: 'a1', state: 'decommissioned' }
-    await store.addAttempt('lab-1', 'My Lab')
-
-    expect(createAttempt).toHaveBeenCalledWith('lab-1', 'My Lab')
-    expect(store.lastAttempt).toEqual(created)
-  })
 
   it('sets loading true while in-flight, false after', async () => {
     let resolve
@@ -283,7 +238,7 @@ describe('loadActiveAttempt', () => {
     expect(store.activeAttempt).toEqual(attempt)
   })
 
-  it('sets activeAttempt to null when no active attempt exists (null returned)', async () => {
+  it('sets activeAttempt to null when no active attempt', async () => {
     fetchActiveAttempt.mockResolvedValue(null)
 
     const store = useAttemptsStore()

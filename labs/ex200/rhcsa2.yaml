@@ -98,8 +98,11 @@ content:
 
 environment:
   duration: 60
-  servers:
+  assets:
     - name: server-0
+      image: hermsi/alpine-sshd
+      platform: container
+      ssh_user: lab
       cpu: 1
       memory: 512MB
       disk: 5GB

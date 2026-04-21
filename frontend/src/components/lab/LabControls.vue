@@ -24,6 +24,22 @@ const router = useRouter()
 const attempts = useAttemptsStore()
 const serversStore = useServersStore()
 
+// derive attempt state from live server list — same logic as attempts_userview
+const attemptState = computed(() => {
+  const servers = serversStore.servers
+  if (!servers.length) return attempts.lastAttempt?.state ?? null
+  if (servers.every(s => s.state === 'decommissioned')) return 'decommissioned'
+  if (servers.some(s => s.state === 'decommissioning')) return 'decommissioning'
+  if (servers.every(s => s.state === 'provisioned')) return 'provisioned'
+  return 'provisioning'
+})
+
+const canProvision = computed(() =>
+  !attempts.lastAttempt ||
+  attemptState.value === 'decommissioned' ||
+  attemptState.value === 'decommissioning'
+)
+
 const anotherLabRunning = computed(() => {
   const a = attempts.activeAttempt
   const last = attempts.lastAttempt
@@ -32,12 +48,12 @@ const anotherLabRunning = computed(() => {
 
 const activeAttempt = computed(() => {
   const a = attempts.lastAttempt
-  return a && a.state !== 'decommissioned' ? a : null
+  return a && attemptState.value !== 'decommissioned' ? a : null
 })
 
 const canDecommission = computed(() =>
   activeAttempt.value &&
-  activeAttempt.value.state !== 'decommissioning' &&
+  attemptState.value !== 'decommissioning' &&
   !anotherLabRunning.value &&
   !attempts.loading
 )
@@ -70,14 +86,14 @@ function goToLab(attempt) {
       <div v-if="activeAttempt" class="flex items-center gap-1.5 min-w-0">
         <span class="relative flex h-2 w-2 shrink-0">
           <span
-            v-if="attemptConfig[activeAttempt.state]?.ping"
+            v-if="attemptConfig[attemptState]?.ping"
             class="absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping"
-            :class="attemptConfig[activeAttempt.state]?.dot"
+            :class="attemptConfig[attemptState]?.dot"
           />
-          <span class="relative inline-flex rounded-full h-2 w-2" :class="attemptConfig[activeAttempt.state]?.dot ?? 'bg-slate-400'" />
+          <span class="relative inline-flex rounded-full h-2 w-2" :class="attemptConfig[attemptState]?.dot ?? 'bg-slate-400'" />
         </span>
-        <span class="text-xs truncate" :class="attemptConfig[activeAttempt.state]?.text ?? 'text-slate-400'">
-          {{ attemptConfig[activeAttempt.state]?.label ?? activeAttempt.state }}
+        <span class="text-xs truncate" :class="attemptConfig[attemptState]?.text ?? 'text-slate-400'">
+          {{ attemptConfig[attemptState]?.label ?? attemptState }}
         </span>
       </div>
       <button
@@ -175,7 +191,7 @@ function goToLab(attempt) {
 
     <!-- Provision button -->
     <button
-      v-if="attempts.canProvision"
+      v-if="canProvision"
       class="w-full py-2 px-3 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       :disabled="attempts.loading || !!anotherLabRunning"
       @click="provision"

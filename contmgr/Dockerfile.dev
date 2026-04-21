@@ -1,0 +1,7 @@
+FROM golang:1.26
+RUN go install github.com/air-verse/air@v1.65.1
+WORKDIR /app
+COPY go.mod go.sum .air.toml ./
+RUN go mod download
+COPY . .
+CMD ["air", "-c", ".air.toml"]

@@ -20,10 +20,11 @@ export const useServersStore = defineStore('servers', () => {
   }
 
   function handleServerEvent(event) {
+    const idx = servers.value.findIndex(s => s.id === event.record.id)
     if (event.action === 'delete') {
-      servers.value = servers.value.filter(s => s.id !== event.record.id)
+      // record left the view — it became decommissioned
+      if (idx !== -1) servers.value[idx] = { ...servers.value[idx], state: 'decommissioned' }
     } else {
-      const idx = servers.value.findIndex(s => s.id === event.record.id)
       if (idx !== -1) servers.value[idx] = event.record
       else servers.value.push(event.record)
     }

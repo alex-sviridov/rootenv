@@ -34,7 +34,10 @@ onRecordCreateRequest((e) => {
         throw new BadRequestError("active attempt already exists: " + active[0].getString("lab_name"))
     }
 
-    console.log(`[session:new] user=${auth.id} lab=${e.record.getString("lab")} → starting`)
+    console.log(`[attempt:new] user=${auth.id} lab=${e.record.getString("lab")} → starting`)
     e.next()
 }, "attempts")
 
+onRecordAfterCreateSuccess((e) => {
+    e.next()
+}, "attempts")

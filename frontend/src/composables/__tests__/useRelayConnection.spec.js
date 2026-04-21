@@ -23,6 +23,9 @@ vi.mock('@xterm/xterm', () => {
     onData(handler) {
       this.dataHandler = handler
     }
+    onResize(handler) {
+      this.resizeHandler = handler
+    }
     loadAddon() {}
     dispose() {}
     open() {}
@@ -140,13 +143,13 @@ describe('health check passes', () => {
     unmount()
   })
 
-  it('sends token as first message on open', async () => {
-    const { unmount } = withSetup(() => useRelayConnection('server1'))
+  it('sends token\\nsecret as first message on open', async () => {
+    const { unmount } = withSetup(() => useRelayConnection('server1', 'mysecret'))
     await flushPromises()
 
     MockWebSocket.lastInstance.onopen()
 
-    expect(MockWebSocket.lastInstance.sent).toEqual([mockToken])
+    expect(MockWebSocket.lastInstance.sent).toEqual([`${mockToken}\nmysecret`])
     unmount()
   })
 

@@ -6,7 +6,7 @@ import { pb } from '@/lib/pb'
 
 const POLICY_VIOLATION = 1002
 
-export function useRelayConnection(serverId) {
+export function useRelayConnection(serverId, secret) {
   const terminal = new Terminal({
     cursorBlink: true,
     cursorStyle: 'block',
@@ -33,7 +33,7 @@ export function useRelayConnection(serverId) {
     ws.binaryType = 'arraybuffer'
 
     ws.onopen = () => {
-      ws.send(pb.authStore.token)
+      ws.send(pb.authStore.token + '\n' + secret)
       onDataHandler = (data) => {
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(data)

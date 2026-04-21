@@ -125,9 +125,16 @@ def validate_lab(path: Path) -> bool:
                         if not task.get("content"):
                             errors.append(f"content[{i}] missing content")
                 env = doc.get("environment", {})
-                servers = env.get("servers", []) if isinstance(env, dict) else []
-                if not servers:
-                    errors.append("environment.servers is empty")
+                assets = env.get("assets", []) if isinstance(env, dict) else []
+                if not assets:
+                    errors.append("environment.assets is empty")
+                else:
+                    names = [a.get("name") for a in assets if isinstance(a, dict)]
+                    seen = set()
+                    for n in names:
+                        if n in seen:
+                            errors.append(f"environment.assets has duplicate name '{n}'")
+                        seen.add(n)
         except yaml.YAMLError as e:
             errors.append(f"YAML parse error: {e}")
         except OSError as e:

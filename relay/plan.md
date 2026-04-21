@@ -13,3 +13,4 @@ SSH Key Rotation — Mechanism to rotate RELAY_PRIVATE_KEY_PATH without redeploy
 
 Connection Lifecycle Hooks — Callbacks (logging, quota tracking, analytics) when a connection opens/closes — useful for billing or abuse detection.
 
+hotkeys, ctrl+w etc, copy and paste

@@ -6,3 +6,20 @@
 - add lab timer
 - add attempts list
 
+# relay
+- protocol name in url
+- http forwarding into iframe2
+
+# contmgr
+
+- make separate network for each attempt
+
+- allow post-provision scripts
+
+- more clear definition of container registry used
+
+- muliple managers with coordinations (via betting? race conditions?)
+
+# backend
+
+- add svc users creation to migration

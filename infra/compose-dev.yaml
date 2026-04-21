@@ -39,14 +39,11 @@ services:
     build:
       context: ../relay
       dockerfile: Dockerfile.dev
-    volumes:
-      - ./server.key:/app/id_rsa:ro
     environment:
       RELAY_BACKEND_URL: ${RELAY_BACKEND_URL}
       RELAY_BACKEND_USERNAME: ${RELAY_BACKEND_USERNAME}
       RELAY_BACKEND_PASSWORD: ${RELAY_BACKEND_PASSWORD}
       RELAY_ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
-      RELAY_PRIVATE_KEY_PATH: /app/id_rsa
       RELAY_IDLE_TIMEOUT: ${RELAY_IDLE_TIMEOUT:-30m}
       PORT: "8080"
       LOG_LEVEL: debug
@@ -54,6 +51,29 @@ services:
       watch:
         - action: sync
           path: ../relay
+          target: /app
+          ignore:
+            - tmp
+
+  contmgr:
+    build:
+      context: ../contmgr
+      dockerfile: Dockerfile.dev
+    environment:
+      CONTMGR_BACKEND_URL: ${CONTMGR_BACKEND_URL}
+      CONTMGR_BACKEND_USERNAME: ${CONTMGR_BACKEND_USERNAME}
+      CONTMGR_BACKEND_PASSWORD: ${CONTMGR_BACKEND_PASSWORD}
+      CONTMGR_HOST_IP: ${CONTMGR_HOST_IP}
+      CONTMGR_POLL_INTERVAL: ${CONTMGR_POLL_INTERVAL}
+      CONTMGR_DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - backend
+    develop:
+      watch:
+        - action: sync
+          path: ../contmgr
           target: /app
           ignore:
             - tmp

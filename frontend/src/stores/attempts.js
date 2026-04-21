@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { fetchLastAttempt, fetchAttempts, createAttempt, subscribeToAttempt, fetchActiveAttempt, decommissionAttempt } from '@/api/attempts'
 
 export const useAttemptsStore = defineStore('attempts', () => {
@@ -10,12 +10,6 @@ export const useAttemptsStore = defineStore('attempts', () => {
   const historyLoading = ref(false)
   const error = ref(null)
   let _unsubscribe = null
-
-  const canProvision = computed(() =>
-    lastAttempt.value === null ||
-    lastAttempt.value.state === 'decommissioned' ||
-    lastAttempt.value.state === 'decommissioning'
-  )
 
   async function withLoading(fn) {
     loading.value = true
@@ -46,11 +40,8 @@ export const useAttemptsStore = defineStore('attempts', () => {
       try {
         lastAttempt.value = await fetchLastAttempt(labId)
       } catch (e) {
-        if (e?.status === 404) {
-          lastAttempt.value = null
-        } else {
-          throw e
-        }
+        if (e?.status === 404) lastAttempt.value = null
+        else throw e
       }
     })
 
@@ -61,54 +52,39 @@ export const useAttemptsStore = defineStore('attempts', () => {
     })
 
   const stopWatching = async () => {
-    if (_unsubscribe) {
-      await _unsubscribe()
-      _unsubscribe = null
-    }
+    if (_unsubscribe) { await _unsubscribe(); _unsubscribe = null }
   }
 
   const startWatching = async (labId) => {
     if (_unsubscribe) await stopWatching()
     _unsubscribe = await subscribeToAttempt(labId, (record) => {
       lastAttempt.value = record
-      if (record.state !== 'decommissioned' && record.state !== 'decommissioning') {
-        activeAttempt.value = record
-      } else if (record.state === 'decommissioned') {
-        activeAttempt.value = null
-      }
     })
   }
 
   const loadActiveAttempt = async () => {
     try {
       activeAttempt.value = await fetchActiveAttempt()
-    } catch (e) {
+    } catch {
       activeAttempt.value = null
     }
   }
 
-  const addAttempt = (labId, labName) => {
-    if (!canProvision.value) {
-      error.value = 'An active attempt already exists'
-      return
-    }
-    return withLoading(async () => {
-      lastAttempt.value = await createAttempt(labId, labName)
+  const addAttempt = (labId, labName) =>
+    withLoading(async () => {
+      const attempt = await createAttempt(labId, labName)
+      lastAttempt.value = attempt
     })
-  }
 
   const removeAttempt = (serverIds) => {
     if (!lastAttempt.value) return
     return withLoading(async () => {
       await decommissionAttempt(serverIds)
-      lastAttempt.value = { ...lastAttempt.value, state: 'decommissioning' }
-      activeAttempt.value = null
     })
   }
 
   return {
     lastAttempt, activeAttempt, history, loading, historyLoading, error,
-    canProvision,
     loadLastAttempt, loadActiveAttempt, loadHistory, startWatching, stopWatching, addAttempt, removeAttempt,
   }
 })

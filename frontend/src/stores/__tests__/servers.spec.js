@@ -117,8 +117,9 @@ describe('startWatching', () => {
 
     capturedCallback({ action: 'delete', record: { id: 's1' } })
 
-    expect(store.servers).toHaveLength(1)
-    expect(store.servers[0].id).toBe('s2')
+    expect(store.servers).toHaveLength(2)
+    expect(store.servers[0]).toMatchObject({ id: 's1', state: 'decommissioned' })
+    expect(store.servers[1].id).toBe('s2')
   })
 
   it('stops previous subscription before starting a new one', async () => {

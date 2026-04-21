@@ -4,10 +4,11 @@ import { useRelayConnection } from '@/composables/useRelayConnection'
 
 const props = defineProps({
   serverId: { type: String, required: true },
+  secret: { type: String, required: true },
 })
 
 const termEl = ref(null)
-const { terminal, fitAddon } = useRelayConnection(props.serverId)
+const { terminal, fitAddon } = useRelayConnection(props.serverId, props.secret)
 let resizeObserver = null
 
 onMounted(() => {

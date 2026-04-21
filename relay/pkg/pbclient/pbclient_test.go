@@ -83,7 +83,7 @@ func TestValidateToken_forbidden(t *testing.T) {
 
 func TestGetServer_found(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.Handle("/api/collections/servers/records/srv1",
+	mux.Handle("/api/collections/assets/records/srv1",
 		authMiddleware("admin-token", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_ = json.NewEncoder(w).Encode(pbclient.Server{
 				ID:      "srv1",
@@ -106,7 +106,7 @@ func TestGetServer_found(t *testing.T) {
 
 func TestGetServer_notFound(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.Handle("/api/collections/servers/records/unknown",
+	mux.Handle("/api/collections/assets/records/unknown",
 		authMiddleware("admin-token", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		})),
@@ -155,6 +155,93 @@ func TestGetAttempt_notFound(t *testing.T) {
 	_, err := c.GetAttempt("nope")
 	if err != pbclient.ErrNotFound {
 		t.Errorf("want ErrNotFound, got %v", err)
+	}
+}
+
+// ---- GetKeysByAttempt ----
+
+func TestGetKeysByAttempt_found(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.Handle("/api/collections/keys/records",
+		authMiddleware("admin-token", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get("filter") == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"items": []any{
+					map[string]any{"id": "key1", "key_encrypted": "abc123=="},
+				},
+				"totalItems": 1,
+			})
+		})),
+	)
+	_, c := newMockServer(t, mux)
+
+	rec, err := c.GetKeysByAttempt("att1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.ID != "key1" {
+		t.Errorf("want id key1, got %s", rec.ID)
+	}
+	if rec.KeyEncrypted != "abc123==" {
+		t.Errorf("want key_encrypted abc123==, got %s", rec.KeyEncrypted)
+	}
+}
+
+func TestGetKeysByAttempt_notFound(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.Handle("/api/collections/keys/records",
+		authMiddleware("admin-token", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"items":      []any{},
+				"totalItems": 0,
+			})
+		})),
+	)
+	_, c := newMockServer(t, mux)
+
+	_, err := c.GetKeysByAttempt("no-such-attempt")
+	if err != pbclient.ErrNotFound {
+		t.Errorf("want ErrNotFound, got %v", err)
+	}
+}
+
+func TestGetKeysByAttempt_serverError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.Handle("/api/collections/keys/records",
+		authMiddleware("admin-token", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		})),
+	)
+	_, c := newMockServer(t, mux)
+
+	_, err := c.GetKeysByAttempt("att1")
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
+}
+
+func TestGetKeysByAttempt_requiresAdminToken(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.Handle("/api/collections/keys/records",
+		authMiddleware("admin-token", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"items": []any{
+					map[string]any{"id": "key1", "key_encrypted": "enc"},
+				},
+			})
+		})),
+	)
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+
+	// Client with wrong token should get 401 from authMiddleware → non-OK status → error.
+	c := pbclient.New(ts.URL, "wrong-token")
+	_, err := c.GetKeysByAttempt("att1")
+	if err == nil {
+		t.Fatal("expected error with wrong admin token")
 	}
 }
 

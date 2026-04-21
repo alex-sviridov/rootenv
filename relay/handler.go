@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/alexsviridov/linuxlab/relay/pkg/pbclient"
-	"golang.org/x/crypto/ssh"
 	"nhooyr.io/websocket"
 )
 
@@ -33,7 +32,6 @@ type relayHandler struct {
 	pingInterval       time.Duration
 	idleTimeout        time.Duration
 	limiter            *connLimiter
-	signer             ssh.Signer
 	wg                 *sync.WaitGroup
 	metrics            *relayMetrics // nil-safe
 }
@@ -78,7 +76,7 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn.SetReadLimit(maxMessageBytes)
 
 	authCtx, authCancel := context.WithTimeout(r.Context(), authTimeout)
-	_, tokenBytes, err := conn.Read(authCtx)
+	_, msgBytes, err := conn.Read(authCtx)
 	authCancel()
 	if err != nil {
 		log.Warn("auth failed: did not receive token", "err", err)
@@ -88,7 +86,16 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = conn.Close(websocket.StatusPolicyViolation, "unauthorized")
 		return
 	}
-	token := strings.TrimSpace(string(tokenBytes))
+	parts := strings.SplitN(strings.TrimSpace(string(msgBytes)), "\n", 2)
+	if len(parts) != 2 {
+		log.Warn("auth failed: missing secret in auth message")
+		if h.metrics != nil {
+			h.metrics.authFailures.WithLabelValues("no_token").Inc()
+		}
+		_ = conn.Close(websocket.StatusPolicyViolation, "unauthorized")
+		return
+	}
+	token, secret := parts[0], parts[1]
 
 	userID, err := h.pb.ValidateToken(token)
 	if err != nil {
@@ -150,6 +157,19 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	keysRec, err := h.pb.GetKeysByAsset(server.ID)
+	if err != nil {
+		log.Error("get keys error", "err", err, "server_id", server.ID)
+		_ = conn.Close(websocket.StatusInternalError, "internal error")
+		return
+	}
+	signer, err := decryptPrivateKey(keysRec.KeyEncrypted, secret)
+	if err != nil {
+		log.Error("decrypt key error", "err", err, "server_id", server.ID)
+		_ = conn.Close(websocket.StatusInternalError, "internal error")
+		return
+	}
+
 	connectedAt := time.Now()
 	log = log.With("attempt_id", attempt.ID)
 	log.Info("ws connected", "active_total", h.limiter.Total())
@@ -179,7 +199,7 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Dial SSH.
-	sshClient, err := dialSSH(srvConn, h.signer, h.metrics)
+	sshClient, err := dialSSH(srvConn, signer, h.metrics)
 	if err != nil {
 		log.Error("ssh dial failed", "err", err, "host", srvConn.Host)
 		_ = conn.Close(websocket.StatusInternalError, "ssh unavailable")

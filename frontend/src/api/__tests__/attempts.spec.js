@@ -20,7 +20,7 @@ const {
   return { mockGetFirstListItem, mockGetList, mockCreate, mockSubscribe, mockCollection }
 })
 
-vi.mock('@/lib/pb', () => ({ pb: { collection: mockCollection, authStore: { record: { id: 'user-1' } } } }))
+vi.mock('@/lib/pb', () => ({ pb: { collection: mockCollection, authStore: { record: { id: 'user-1' }, token: 'tok' } } }))
 
 import {
   fetchLastAttempt,
@@ -29,6 +29,7 @@ import {
   subscribeToAttempt,
   fetchActiveAttempt,
   decommissionAttempt,
+  fetchAssetSecret,
 } from '../attempts'
 
 beforeEach(() => vi.clearAllMocks())
@@ -91,7 +92,7 @@ describe('createAttempt', () => {
 })
 
 describe('subscribeToAttempt', () => {
-  it('subscribes to both attempts and servers collections and returns unsub fn', async () => {
+  it('subscribes to attempts collection and returns unsub fn', async () => {
     const unsubFn = vi.fn()
     mockSubscribe.mockResolvedValue(unsubFn)
     mockGetFirstListItem.mockResolvedValue({ id: 'a1', state: 'provisioned' })
@@ -99,27 +100,26 @@ describe('subscribeToAttempt', () => {
     const result = await subscribeToAttempt('lab-1', vi.fn())
 
     expect(mockCollection).toHaveBeenCalledWith('attempts')
-    expect(mockCollection).toHaveBeenCalledWith('servers')
-    expect(mockSubscribe).toHaveBeenCalledTimes(2)
-    expect(typeof result).toBe('function')
+    expect(mockSubscribe).toHaveBeenCalledTimes(1)
+    expect(result).toBe(unsubFn)
   })
 
   it('re-fetches view and calls callback when attempt event lab matches', async () => {
-    const handlers = []
-    mockSubscribe.mockImplementation(async (_topic, fn) => { handlers.push(fn); return vi.fn() })
+    let handler
+    mockSubscribe.mockImplementation(async (_topic, fn) => { handler = fn; return vi.fn() })
     const fresh = { id: 'a1', state: 'provisioned' }
     mockGetFirstListItem.mockResolvedValue(fresh)
     const callback = vi.fn()
 
     await subscribeToAttempt('lab-1', callback)
-    await handlers[0]({ record: { lab: 'lab-1' } })
+    await handler({ record: { lab: 'lab-1' } })
 
     expect(callback).toHaveBeenCalledWith(fresh)
   })
 
   it('ignores attempt events for other labs', async () => {
-    const handlers = []
-    mockSubscribe.mockImplementation(async (_topic, fn) => { handlers.push(fn); return vi.fn() })
+    let handler
+    mockSubscribe.mockImplementation(async (_topic, fn) => { handler = fn; return vi.fn() })
     mockGetFirstListItem.mockResolvedValue({ id: 'a1', state: 'provisioned' })
     const callback = vi.fn()
 
@@ -127,48 +127,10 @@ describe('subscribeToAttempt', () => {
     callback.mockClear()
     mockGetFirstListItem.mockClear()
 
-    await handlers[0]({ record: { lab: 'lab-other' } })
+    await handler({ record: { lab: 'lab-other' } })
 
     expect(mockGetFirstListItem).not.toHaveBeenCalled()
     expect(callback).not.toHaveBeenCalled()
-  })
-
-  it('re-fetches view and calls callback on any server event', async () => {
-    const handlers = []
-    mockSubscribe.mockImplementation(async (_topic, fn) => { handlers.push(fn); return vi.fn() })
-    const fresh = { id: 'a1', state: 'decommissioning' }
-    mockGetFirstListItem.mockResolvedValue(fresh)
-    const callback = vi.fn()
-
-    await subscribeToAttempt('lab-1', callback)
-    await handlers[1]({ record: { id: 's1', attempt: 'a1' } })
-
-    expect(callback).toHaveBeenCalledWith(fresh)
-  })
-
-  it('does not call callback when view fetch returns null', async () => {
-    const handlers = []
-    mockSubscribe.mockImplementation(async (_topic, fn) => { handlers.push(fn); return vi.fn() })
-    mockGetFirstListItem.mockResolvedValue(null)
-    const callback = vi.fn()
-
-    await subscribeToAttempt('lab-1', callback)
-    await handlers[1]({ record: { id: 's1', attempt: 'a1' } })
-
-    expect(callback).not.toHaveBeenCalled()
-  })
-
-  it('returned unsub fn calls both unsub functions', async () => {
-    const unsub1 = vi.fn()
-    const unsub2 = vi.fn()
-    mockSubscribe.mockResolvedValueOnce(unsub1).mockResolvedValueOnce(unsub2)
-    mockGetFirstListItem.mockResolvedValue(null)
-
-    const unsub = await subscribeToAttempt('lab-1', vi.fn())
-    await unsub()
-
-    expect(unsub1).toHaveBeenCalled()
-    expect(unsub2).toHaveBeenCalled()
   })
 
   it('propagates errors', async () => {
@@ -185,13 +147,30 @@ describe('decommissionAttempt', () => {
 
     expect(mockCollection).toHaveBeenCalledWith('commands')
     expect(mockCreate).toHaveBeenCalledTimes(2)
-    expect(mockCreate).toHaveBeenCalledWith({ server: 's1', command: 'decommission', status: 'pending' }, { requestKey: 's1' })
-    expect(mockCreate).toHaveBeenCalledWith({ server: 's2', command: 'decommission', status: 'pending' }, { requestKey: 's2' })
+    expect(mockCreate).toHaveBeenCalledWith({ asset: 's1', command: 'decommission', status: 'pending' }, { requestKey: 's1' })
+    expect(mockCreate).toHaveBeenCalledWith({ asset: 's2', command: 'decommission', status: 'pending' }, { requestKey: 's2' })
   })
 
   it('propagates errors', async () => {
     mockCreate.mockRejectedValue(new Error('forbidden'))
     await expect(decommissionAttempt(['s1'])).rejects.toThrow('forbidden')
+  })
+})
+
+describe('fetchAssetSecret', () => {
+  it('queries keys_userview by asset and returns the secret field', async () => {
+    mockGetFirstListItem.mockResolvedValue({ id: 'k1', secret: 's3cr3t', asset: 'srv1' })
+
+    const result = await fetchAssetSecret('srv1')
+
+    expect(mockCollection).toHaveBeenCalledWith('keys_userview')
+    expect(mockGetFirstListItem).toHaveBeenCalledWith('asset = "srv1"')
+    expect(result).toBe('s3cr3t')
+  })
+
+  it('propagates errors', async () => {
+    mockGetFirstListItem.mockRejectedValue(new Error('not found'))
+    await expect(fetchAssetSecret('srv1')).rejects.toThrow('not found')
   })
 })
 

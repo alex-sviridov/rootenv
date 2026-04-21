@@ -6,6 +6,7 @@ import { useLabsStore } from '@/stores/labs'
 import { useAttemptsStore } from '@/stores/attempts'
 import { useServersStore } from '@/stores/servers'
 import { fetchLab } from '@/api/labs'
+import { fetchAssetSecret } from '@/api/attempts'
 import { useTerminalTabs } from '@/composables/useTerminalTabs'
 import LabNavigation from '@/components/lab/LabNavigation.vue'
 import LabControls from '@/components/lab/LabControls.vue'
@@ -22,21 +23,33 @@ const serversStore = useServersStore()
 const lab = ref(null)
 const selectedTask = ref(0)
 const error = ref(null)
+const secrets = ref({})
 
 const { tabs, activeTabId, limitError, openTerminal, closeTab, moveTab, resetTabs } = useTerminalTabs()
 
 const currentTask = computed(() => lab.value?.content?.[selectedTask.value] ?? null)
 
 watch(() => attemptsStore.lastAttempt, async (attempt, prev) => {
-  if (attempt?.state === 'decommissioned' || !attempt) {
+  if (!attempt || attempt.id !== prev?.id) {
     await serversStore.stopWatching()
+    secrets.value = {}
     resetTabs()
-  } else if (attempt?.id !== prev?.id) {
-    await serversStore.loadServers(attempt.id)
-    await serversStore.startWatching(attempt.id)
-    resetTabs()
+    if (attempt) {
+      await serversStore.loadServers(attempt.id)
+      await serversStore.startWatching(attempt.id)
+    }
   }
 })
+
+watch(() => serversStore.servers, (servers) => {
+  for (const server of servers) {
+    if (server.state === 'provisioned' && !secrets.value[server.id]) {
+      fetchAssetSecret(server.id)
+        .then(s => { secrets.value = { ...secrets.value, [server.id]: s } })
+        .catch(() => {})
+    }
+  }
+}, { deep: true })
 
 async function initLab(slug) {
   lab.value = null
@@ -95,6 +108,7 @@ onUnmounted(async () => {
       :tabs="tabs"
       :active-tab-id="activeTabId"
       :limit-error="limitError"
+      :secrets="secrets"
       @select-tab="activeTabId = $event"
       @close-tab="closeTab"
       @move-tab="moveTab($event.from, $event.to)"

@@ -19,13 +19,11 @@ export const subscribeToAttempt = async (labId, callback) => {
       .then(record => { if (record) callback(record) })
       .catch(() => {})
 
-  const attemptUnsub = await pb.collection('attempts').subscribe('*', (event) => {
+  const unsub = await pb.collection('attempts').subscribe('*', (event) => {
     if (event.record.lab === labId) refresh()
   })
 
-  const serverUnsub = await pb.collection('servers').subscribe('*', refresh)
-
-  return async () => { await attemptUnsub(); await serverUnsub() }
+  return unsub
 }
 
 export const fetchActiveAttempt = () =>
@@ -35,5 +33,10 @@ export const fetchActiveAttempt = () =>
 
 export const decommissionAttempt = (serverIds) =>
   Promise.all(serverIds.map(id =>
-    pb.collection('commands').create({ server: id, command: 'decommission', status: 'pending' }, { requestKey: id })
+    pb.collection('commands').create({ asset: id, command: 'decommission', status: 'pending' }, { requestKey: id })
   ))
+
+export const fetchAssetSecret = (assetId) =>
+  pb.collection('keys_userview')
+    .getFirstListItem(`asset = "${assetId}"`)
+    .then(r => r.secret)

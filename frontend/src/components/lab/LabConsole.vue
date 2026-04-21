@@ -6,6 +6,7 @@ defineProps({
   tabs: { type: Array, required: true },
   activeTabId: { type: String, default: null },
   limitError: { type: String, default: null },
+  secrets: { type: Object, default: () => ({}) },
 })
 
 const emit = defineEmits(['select-tab', 'close-tab', 'move-tab'])
@@ -76,6 +77,7 @@ function onDragEnd() {
           v-show="tab.id === activeTabId"
           :key="tab.id"
           :server-id="tab.serverId"
+          :secret="secrets[tab.serverId] ?? null"
         />
       </template>
       <div v-else class="flex items-center justify-center h-full px-6 text-center">

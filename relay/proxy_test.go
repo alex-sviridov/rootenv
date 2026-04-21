@@ -187,13 +187,6 @@ func TestProxy_loadConfig_idleTimeout_default(t *testing.T) {
 	}
 }
 
-func TestProxy_loadConfig_privateKeyPath(t *testing.T) {
-	t.Setenv("RELAY_PRIVATE_KEY_PATH", "/etc/relay/id_ed25519")
-	cfg := loadConfig()
-	if cfg.privateKeyPath != "/etc/relay/id_ed25519" {
-		t.Errorf("want /etc/relay/id_ed25519, got %s", cfg.privateKeyPath)
-	}
-}
 
 // TestProxy_resizeFrameCallsWindowChange verifies that a resize control frame
 // calls the windowChangeFn with the correct dimensions and is not forwarded to sshStdin.

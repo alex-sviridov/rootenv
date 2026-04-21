@@ -120,7 +120,7 @@ func (c *Client) ValidateToken(token string) (string, error) {
 
 // GetServer fetches a server record by ID using admin credentials.
 func (c *Client) GetServer(serverID string) (*Server, error) {
-	u := c.baseURL + "/api/collections/servers/records/" + url.PathEscape(serverID)
+	u := c.baseURL + "/api/collections/assets/records/" + url.PathEscape(serverID)
 	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
@@ -149,6 +149,45 @@ func (c *Client) GetServer(serverID string) (*Server, error) {
 		return nil, err
 	}
 	return &s, nil
+}
+
+type KeysRecord struct {
+	ID           string `json:"id"`
+	KeyEncrypted string `json:"key_encrypted"`
+}
+
+// GetKeysByAsset fetches the keys record for the given asset ID.
+func (c *Client) GetKeysByAsset(assetID string) (*KeysRecord, error) {
+	u := c.baseURL + "/api/collections/keys/records?filter=" + url.QueryEscape("(asset='"+assetID+"')")+"&perPage=1"
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", c.adminToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("get keys returned status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Items []KeysRecord `json:"items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	if len(result.Items) == 0 {
+		return nil, ErrNotFound
+	}
+	return &result.Items[0], nil
 }
 
 // GetAttempt fetches an attempt record by ID using admin credentials.
