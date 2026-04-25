@@ -1,0 +1,10 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-prefix-relay
+  namespace: rootenv-infra
+
+spec:
+  stripPrefix:
+    prefixes:
+      - /relay

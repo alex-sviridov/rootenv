@@ -1,0 +1,41 @@
+apiVersion: skaffold/v4beta14
+kind: Config
+metadata:
+  name: linuxlab
+build:
+  artifacts:
+    - image: docker.io/library/rootenv-backend
+      context: backend
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - src: 'pb_hooks/**/*.js'
+            dest: '/app/pb_hooks'
+        hooks:
+          after:
+            - container:
+                command: ["sh", "-c", "kill -HUP 1"]
+    - image: docker.io/library/rootenv-relay
+      context: relay
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - src: '.'
+            dest: '/app'
+    - image: docker.io/library/rootenv-frontend
+      context: frontend
+      docker:
+        dockerfile: Dockerfile.dev
+      sync:
+        manual:
+          - src: 'src/**'
+            dest: '/app'
+          - src: 'public/**'
+            dest: '/app'
+          - src: 'index.html'
+            dest: '/app'
+manifests:
+  rawYaml: 
+  - k8s/*.yaml

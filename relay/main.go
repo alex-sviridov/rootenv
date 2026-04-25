@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -92,9 +93,9 @@ func loadConfig() config {
 	}
 }
 
-func handleHealthz(ready bool) http.HandlerFunc {
+func handleHealthz(ready *atomic.Bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		if !ready {
+		if !ready.Load() {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte("relay not ready: PocketBase authentication failed"))
 			return
@@ -104,16 +105,43 @@ func handleHealthz(ready bool) http.HandlerFunc {
 	}
 }
 
+// connectWithBackoff attempts to authenticate pb in a loop with exponential backoff
+// (1s, 2s, 4s, … capped at 30s). Sets ready=true on success. Returns when ctx is cancelled.
+func connectWithBackoff(ctx context.Context, pb *pbclient.Client, username, password string, ready *atomic.Bool) {
+	const maxDelay = 30 * time.Second
+	delay := time.Second
+	for {
+		err := pb.Reconnect(username, password)
+		if err == nil {
+			ready.Store(true)
+			slog.Info("connected to PocketBase")
+			return
+		}
+		slog.Error("PocketBase authentication failed, retrying", "err", err, "retry_in", delay)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
+		delay *= 2
+		if delay > maxDelay {
+			delay = maxDelay
+		}
+	}
+}
+
 func main() {
 	cfg := loadConfig()
 
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.logLevel})))
 
-	pb, err := pbclient.NewWithCredentials(cfg.pocketbaseURL, cfg.pbUsername, cfg.pbPassword)
-	ready := err == nil
-	if err != nil {
-		slog.Error("failed to authenticate with PocketBase", "err", err)
-	}
+	pb := pbclient.NewUnauthenticated(cfg.pocketbaseURL)
+	var ready atomic.Bool
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	go connectWithBackoff(ctx, pb, cfg.pbUsername, cfg.pbPassword, &ready)
 
 	registry := prometheus.NewRegistry()
 	metrics := newRelayMetrics(registry)
@@ -121,6 +149,7 @@ func main() {
 	var wg sync.WaitGroup
 	handler := &relayHandler{
 		pb:                 pb,
+		ready:              &ready,
 		allowedOrigins:     cfg.allowedOrigins,
 		revalidateInterval: cfg.revalidateInterval,
 		pingInterval:       cfg.pingInterval,
@@ -131,7 +160,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", handleHealthz(ready))
+	mux.HandleFunc("/healthz", handleHealthz(&ready))
 	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 	mux.Handle("/{serverID}/", handler)
 
@@ -139,9 +168,6 @@ func main() {
 		Addr:    ":" + cfg.port,
 		Handler: mux,
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	go func() {
 		slog.Info("relay starting", "port", cfg.port, "pocketbase_url", cfg.pocketbaseURL)

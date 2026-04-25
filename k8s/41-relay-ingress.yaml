@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: relay-ingress
+  namespace: rootenv-infra
+  annotations:
+    kubernetes.io/ingress.class: traefik
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.middlewares: rootenv-infra-strip-prefix-relay@kubernetescrd
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /relay
+        pathType: Prefix
+        backend:
+          service:
+            name: relay-svc
+            port:
+              number: 8080
+status:
+  loadBalancer: {}

@@ -53,6 +53,25 @@ func NewWithCredentials(baseURL, username, password string) (*Client, error) {
 	return c, nil
 }
 
+// NewUnauthenticated creates a Client without performing authentication.
+// Call Reconnect before using the client for authorized requests.
+func NewUnauthenticated(baseURL string) *Client {
+	return &Client{
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		httpClient: &http.Client{Timeout: 10 * time.Second},
+	}
+}
+
+// Reconnect re-authenticates the client with new credentials, updating the admin token.
+func (c *Client) Reconnect(username, password string) error {
+	token, err := c.authenticate(username, password)
+	if err != nil {
+		return err
+	}
+	c.adminToken = token
+	return nil
+}
+
 func (c *Client) authenticate(username, password string) (string, error) {
 	body := fmt.Sprintf(`{"identity":%q,"password":%q}`, username, password)
 	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/collections/users/auth-with-password", strings.NewReader(body))

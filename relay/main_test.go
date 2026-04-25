@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 )
 
@@ -43,7 +44,9 @@ func TestHealthz(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
 
-	handleHealthz(true)(w, req)
+	var ready atomic.Bool
+	ready.Store(true)
+	handleHealthz(&ready)(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("want 200, got %d", w.Code)

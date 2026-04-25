@@ -158,9 +158,9 @@ func TestGetAttempt_notFound(t *testing.T) {
 	}
 }
 
-// ---- GetKeysByAttempt ----
+// ---- GetKeysByAsset ----
 
-func TestGetKeysByAttempt_found(t *testing.T) {
+func TestGetKeysByAsset_found(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.Handle("/api/collections/keys/records",
 		authMiddleware("admin-token", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -178,7 +178,7 @@ func TestGetKeysByAttempt_found(t *testing.T) {
 	)
 	_, c := newMockServer(t, mux)
 
-	rec, err := c.GetKeysByAttempt("att1")
+	rec, err := c.GetKeysByAsset("att1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestGetKeysByAttempt_found(t *testing.T) {
 	}
 }
 
-func TestGetKeysByAttempt_notFound(t *testing.T) {
+func TestGetKeysByAsset_notFound(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.Handle("/api/collections/keys/records",
 		authMiddleware("admin-token", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -202,13 +202,13 @@ func TestGetKeysByAttempt_notFound(t *testing.T) {
 	)
 	_, c := newMockServer(t, mux)
 
-	_, err := c.GetKeysByAttempt("no-such-attempt")
+	_, err := c.GetKeysByAsset("no-such-attempt")
 	if err != pbclient.ErrNotFound {
 		t.Errorf("want ErrNotFound, got %v", err)
 	}
 }
 
-func TestGetKeysByAttempt_serverError(t *testing.T) {
+func TestGetKeysByAsset_serverError(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.Handle("/api/collections/keys/records",
 		authMiddleware("admin-token", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -217,13 +217,13 @@ func TestGetKeysByAttempt_serverError(t *testing.T) {
 	)
 	_, c := newMockServer(t, mux)
 
-	_, err := c.GetKeysByAttempt("att1")
+	_, err := c.GetKeysByAsset("att1")
 	if err == nil {
 		t.Fatal("expected error for 500 response")
 	}
 }
 
-func TestGetKeysByAttempt_requiresAdminToken(t *testing.T) {
+func TestGetKeysByAsset_requiresAdminToken(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.Handle("/api/collections/keys/records",
 		authMiddleware("admin-token", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -239,7 +239,7 @@ func TestGetKeysByAttempt_requiresAdminToken(t *testing.T) {
 
 	// Client with wrong token should get 401 from authMiddleware → non-OK status → error.
 	c := pbclient.New(ts.URL, "wrong-token")
-	_, err := c.GetKeysByAttempt("att1")
+	_, err := c.GetKeysByAsset("att1")
 	if err == nil {
 		t.Fatal("expected error with wrong admin token")
 	}

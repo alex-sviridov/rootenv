@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/alexsviridov/linuxlab/relay/pkg/pbclient"
@@ -27,6 +28,7 @@ const pingTimeout = 10 * time.Second
 
 type relayHandler struct {
 	pb                 *pbclient.Client
+	ready              *atomic.Bool
 	allowedOrigins     []string
 	revalidateInterval time.Duration
 	pingInterval       time.Duration
@@ -37,7 +39,7 @@ type relayHandler struct {
 }
 
 func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if h.pb == nil {
+	if !h.ready.Load() {
 		http.Error(w, "relay not ready", http.StatusServiceUnavailable)
 		return
 	}

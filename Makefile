@@ -1,8 +1,8 @@
-dev:
-	docker compose -f infra/compose-dev.yaml watch
+migr-sync:
+	./backend/pull-migrations.sh
 
-dev-build:
-	docker compose -f infra/compose-dev.yaml build --no-cache
+dev:
+	skaffold dev --cleanup=false
 
 labs-sync:
 	python3 labs/sync.py
