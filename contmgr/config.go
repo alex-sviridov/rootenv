@@ -11,16 +11,22 @@ type config struct {
 	pbEmail         string
 	pbPassword      string
 	usersNamespace  string
+	infraNamespace  string
 	imagePullSecret string
 	pollInterval    time.Duration
 }
 
 func loadConfig() (config, error) {
+	infraNS := os.Getenv("CONTMGR_INFRA_NAMESPACE")
+	if infraNS == "" {
+		infraNS = "rootenv-infra"
+	}
 	cfg := config{
 		pbURL:           os.Getenv("CONTMGR_BACKEND_URL"),
 		pbEmail:         os.Getenv("CONTMGR_BACKEND_USERNAME"),
 		pbPassword:      os.Getenv("CONTMGR_BACKEND_PASSWORD"),
 		usersNamespace:  os.Getenv("CONTMGR_USERS_NAMESPACE"),
+		infraNamespace:  infraNS,
 		imagePullSecret: os.Getenv("CONTMGR_IMAGE_PULL_SECRET"),
 		pollInterval:    5 * time.Second,
 	}

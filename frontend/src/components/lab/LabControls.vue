@@ -24,20 +24,10 @@ const router = useRouter()
 const attempts = useAttemptsStore()
 const serversStore = useServersStore()
 
-// derive attempt state from live server list — same logic as attempts_userview
-const attemptState = computed(() => {
-  const servers = serversStore.servers
-  if (!servers.length) return attempts.lastAttempt?.state ?? null
-  if (servers.every(s => s.state === 'decommissioned')) return 'decommissioned'
-  if (servers.some(s => s.state === 'decommissioning')) return 'decommissioning'
-  if (servers.every(s => s.state === 'provisioned')) return 'provisioned'
-  return 'provisioning'
-})
+const attemptState = computed(() => attempts.lastAttempt?.state ?? null)
 
 const canProvision = computed(() =>
-  !attempts.lastAttempt ||
-  attemptState.value === 'decommissioned' ||
-  attemptState.value === 'decommissioning'
+  !attempts.lastAttempt || attemptState.value === 'decommissioned'
 )
 
 const anotherLabRunning = computed(() => {
@@ -46,13 +36,13 @@ const anotherLabRunning = computed(() => {
   return a && a.id !== last?.id ? a : null
 })
 
-const activeAttempt = computed(() => {
+const runningAttempt = computed(() => {
   const a = attempts.lastAttempt
   return a && attemptState.value !== 'decommissioned' ? a : null
 })
 
 const canDecommission = computed(() =>
-  activeAttempt.value &&
+  runningAttempt.value &&
   attemptState.value !== 'decommissioning' &&
   !anotherLabRunning.value &&
   !attempts.loading
@@ -83,7 +73,7 @@ function goToLab(attempt) {
 
     <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
       <p class="text-xs font-semibold text-slate-500 uppercase tracking-widest shrink-0">Lab Session</p>
-      <div v-if="activeAttempt" class="flex items-center gap-1.5 min-w-0">
+      <div v-if="runningAttempt" class="flex items-center gap-1.5 min-w-0">
         <span class="relative flex h-2 w-2 shrink-0">
           <span
             v-if="attemptConfig[attemptState]?.ping"
@@ -125,7 +115,7 @@ function goToLab(attempt) {
     </div>
 
     <!-- Active attempt panel -->
-    <div v-if="activeAttempt" class="space-y-2">
+    <div v-if="runningAttempt" class="space-y-2">
 
       <!-- Servers list -->
       <div v-if="serversStore.servers.length" class="space-y-1 pb-1">

@@ -3,6 +3,7 @@
 onRecordAfterCreateSuccess((e) => {
     const attempt = e.record
     const assetCollection = $app.findCollectionByNameOrId("assets")
+    const assetConfigCollection = $app.findCollectionByNameOrId("assets_configs")
     const environment = JSON.parse(attempt.get("environment"))
     const duration = environment.duration || 60
     if (environment.assets) {
@@ -10,15 +11,18 @@ onRecordAfterCreateSuccess((e) => {
             console.log(`[attempt:${attempt.id}] creating asset: ${assetDef.name} for user ${attempt.get("user")} with duration ${duration} minutes`)
             const asset = new Record(assetCollection)
             asset.set("attempt", attempt.id)
-            asset.set("user", attempt.get("user"))
-            asset.set("connection", "")
-            asset.set("configuration", JSON.stringify(assetDef))
             asset.set("name", assetDef.name)
-            asset.set("platform", assetDef.platform)
             asset.set("state", "pending")
+            asset.set("user", attempt.get("user"))
             asset.set("status", "poweredoff")
             asset.set("expires_at", new Date(Date.now() + duration * 60 * 1000).toISOString())
             $app.save(asset)
+
+            const cfg = new Record(assetConfigCollection)
+            cfg.set("asset", asset.id)
+            cfg.set("platform", assetDef.platform)
+            cfg.set("configuration", JSON.stringify(assetDef))
+            $app.save(cfg)
 
             const keysCollection = $app.findCollectionByNameOrId("keys")
             const key = new Record(keysCollection)
@@ -33,10 +37,8 @@ onRecordAfterCreateSuccess((e) => {
 
 // after asset is updated, check if attempt is finished
 onRecordAfterUpdateSuccess((e) => {
-    const connection = JSON.stringify({ user: "user", host: "hostname.example.com", port: 22 })
     const asset = e.record
 
-    // if decommissioned, check if all attempt assets are decommissioned and set attempt.finished
     if (asset.getString("state") === "decommissioned") {
         const attemptId = asset.getString("attempt")
         if (attemptId) {

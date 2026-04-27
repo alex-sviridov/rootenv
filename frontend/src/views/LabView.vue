@@ -29,19 +29,23 @@ const { tabs, activeTabId, limitError, openTerminal, closeTab, moveTab, resetTab
 
 const currentTask = computed(() => lab.value?.content?.[selectedTask.value] ?? null)
 
-watch(() => attemptsStore.lastAttempt, async (attempt, prev) => {
-  if (!attempt || attempt.id !== prev?.id) {
-    await serversStore.stopWatching()
-    secrets.value = {}
-    resetTabs()
-    if (attempt) {
-      await serversStore.loadServers(attempt.id)
-      await serversStore.startWatching(attempt.id)
-    }
+// Re-load servers when the attempt ID changes (new provision or lab switch).
+watch(() => attemptsStore.lastAttempt?.id, async (id) => {
+  await serversStore.stopWatching()
+  secrets.value = {}
+  resetTabs()
+  if (id) {
+    await serversStore.startWatching(attemptsStore.lastAttempt.id)
+    await serversStore.loadServers(attemptsStore.lastAttempt.id)
   }
 })
 
+// Fetch secrets for newly provisioned servers and refresh attempt state on every asset event.
 watch(() => serversStore.servers, (servers) => {
+  if (lab.value) {
+    attemptsStore.loadLastAttempt(lab.value.id)
+    attemptsStore.loadActiveAttempt()
+  }
   for (const server of servers) {
     if (server.state === 'provisioned' && !secrets.value[server.id]) {
       fetchAssetSecret(server.id)
@@ -68,17 +72,15 @@ async function initLab(slug) {
       { label: lab.value.title },
     ].filter(Boolean))
 
-    await attemptsStore.stopWatching()
     await serversStore.stopWatching()
     await Promise.all([
       attemptsStore.loadLastAttempt(lab.value.id),
       attemptsStore.loadActiveAttempt(),
     ])
-    await attemptsStore.startWatching(lab.value.id)
     const attempt = attemptsStore.lastAttempt
     if (attempt && attempt.state !== 'decommissioned') {
-      serversStore.loadServers(attempt.id)
-      serversStore.startWatching(attempt.id)
+      await serversStore.startWatching(attempt.id)
+      await serversStore.loadServers(attempt.id)
     }
   } catch {
     error.value = 'Lab not found.'
@@ -90,7 +92,6 @@ watch(() => route.params.slug, (slug) => { if (slug) initLab(slug) })
 onMounted(() => initLab(route.params.slug))
 
 onUnmounted(async () => {
-  await attemptsStore.stopWatching()
   await serversStore.stopWatching()
 })
 </script>

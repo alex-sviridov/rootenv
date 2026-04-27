@@ -194,8 +194,15 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		)
 	}()
 
-	// Parse connection details from the server record.
-	srvConn, err := parseConnection(server.Connection)
+	serverCfg, err := h.pb.GetServerConfig(server.ID)
+	if err != nil {
+		log.Error("get server config error", "err", err, "server_id", server.ID)
+		_ = conn.Close(websocket.StatusInternalError, "internal error")
+		return
+	}
+
+	// Parse connection details from the server config record.
+	srvConn, err := parseConnection(serverCfg.Connection)
 	if err != nil {
 		log.Error("invalid server connection data", "err", err)
 		_ = conn.Close(websocket.StatusInternalError, "internal error")

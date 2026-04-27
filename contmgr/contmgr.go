@@ -9,31 +9,41 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 )
 
 // pbDoer is the PocketBase operations contmgr needs.
 type pbDoer interface {
 	ListPendingAssets() ([]Asset, error)
 	GetAsset(id string) (*Asset, error)
+	GetAssetConfig(assetID string) (*AssetConfig, error)
 	GetKeysByAsset(assetID string) (*KeysRecord, error)
 	PatchAsset(id string, fields map[string]any) error
+	PatchAssetConfig(id string, fields map[string]any) error
 	PatchKeys(id string, fields map[string]any) error
 	ListPendingDecommissionCommands() ([]Command, error)
 	ListDecommissioningAssets() ([]Asset, error)
 	PatchCommand(id string, fields map[string]any) error
 	ListProvisionedAssetsByAttempt(attemptID string) ([]Asset, error)
+	GetAttempt(attemptID string) (*AttemptRecord, error)
+}
+
+type AttemptRecord struct {
+	ID   string `json:"id"`
+	User string `json:"user"`
 }
 
 type Contmgr struct {
-	pb           pbDoer
-	k8s          k8sDoer
-	namespace    string
-	pullSecret   string
-	needsReconn  atomic.Bool
+	pb             pbDoer
+	k8s            k8sDoer
+	namespace      string
+	infraNamespace string
+	pullSecret     string
+	needsReconn    atomic.Bool
 }
 
-func NewContmgr(pb *pbClient, k8s *K8sClient, namespace, pullSecret string) *Contmgr {
-	return &Contmgr{pb: pb, k8s: k8s, namespace: namespace, pullSecret: pullSecret}
+func NewContmgr(pb *pbClient, k8s *K8sClient, namespace, infraNamespace, pullSecret string) *Contmgr {
+	return &Contmgr{pb: pb, k8s: k8s, namespace: namespace, infraNamespace: infraNamespace, pullSecret: pullSecret}
 }
 
 func (p *Contmgr) NeedsReconnect() bool { return p.needsReconn.Swap(false) }
@@ -44,15 +54,26 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 		return fmt.Errorf("mark provisioning: %w", err)
 	}
 
-	def, err := asset.Def()
+	cfg, err := p.pb.GetAssetConfig(asset.ID)
+	if err != nil {
+		return fmt.Errorf("get asset config: %w", err)
+	}
+	def, err := cfg.Def()
 	if err != nil {
 		return fmt.Errorf("parse asset def: %w", err)
 	}
 
+	attempt, err := p.pb.GetAttempt(asset.Attempt)
+	if err != nil {
+		return fmt.Errorf("get attempt: %w", err)
+	}
+	userID := attempt.User
+
 	if err := p.k8s.EnsureNetworkPolicy(ctx, NetPolParams{
-		Namespace: p.namespace,
-		UserID:    asset.UserID,
-		AttemptID: asset.Attempt,
+		Namespace:      p.namespace,
+		UserID:         userID,
+		AttemptID:      asset.Attempt,
+		InfraNamespace: p.infraNamespace,
 	}); err != nil {
 		return fmt.Errorf("ensure network policy: %w", err)
 	}
@@ -64,12 +85,12 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 
 	params := PodParams{
 		Namespace:       p.namespace,
-		UserID:          asset.UserID,
+		UserID:          userID,
 		AttemptID:       asset.Attempt,
 		AssetName:       asset.Name,
 		Image:           def.Image,
 		SSHUser:         def.SSHUser,
-		CPU:             fmt.Sprintf("%v", def.CPU),
+		CPU:             def.CPU.String(),
 		Memory:          def.Memory,
 		ImagePullSecret: p.pullSecret,
 	}
@@ -82,21 +103,24 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 		return fmt.Errorf("create service: %w", err)
 	}
 
-	pName := podName(asset.UserID, asset.Attempt, asset.Name)
+	pName := podName(userID, asset.Attempt, asset.Name)
 	if err := p.k8s.WaitPodRunning(ctx, p.namespace, pName); err != nil {
 		return fmt.Errorf("wait pod running: %w", err)
 	}
 
 	pubKeyStr := strings.TrimSpace(string(pubKeyLine))
+	// chown uses numeric UID:GID (1000:1000) because the user may not yet exist
+	// in /etc/passwd when the pod reaches Running phase — the container init
+	// creates it asynchronously via SSH_USERS.
 	script := fmt.Sprintf(
-		"mkdir -p /home/%[1]s/.ssh && chown %[1]s:%[1]s /home/%[1]s/.ssh && chmod 700 /home/%[1]s/.ssh && printf '%%s' %[2]q > /home/%[1]s/.ssh/authorized_keys && chown %[1]s:%[1]s /home/%[1]s/.ssh/authorized_keys && chmod 600 /home/%[1]s/.ssh/authorized_keys",
+		"mkdir -p /home/%[1]s/.ssh && chown 1000:1000 /home/%[1]s/.ssh && chmod 700 /home/%[1]s/.ssh && printf '%%s' %[2]q > /home/%[1]s/.ssh/authorized_keys && chown 1000:1000 /home/%[1]s/.ssh/authorized_keys && chmod 600 /home/%[1]s/.ssh/authorized_keys",
 		def.SSHUser, pubKeyStr,
 	)
 	if err := p.k8s.ExecInPod(ctx, p.namespace, pName, []string{"sh", "-c", script}); err != nil {
 		return fmt.Errorf("write authorized_keys: %w", err)
 	}
 
-	host := svcDNS(svcName(asset.UserID, asset.Attempt, asset.Name), p.namespace)
+	host := svcDNS(svcName(userID, asset.Attempt, asset.Name), p.namespace)
 
 	keysRecord, err := p.pb.GetKeysByAsset(asset.ID)
 	if err != nil {
@@ -118,7 +142,7 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 		return fmt.Errorf("patch keys: %w", err)
 	}
 
-	if err := p.pb.PatchAsset(asset.ID, map[string]any{
+	if err := p.pb.PatchAssetConfig(cfg.ID, map[string]any{
 		"connection": map[string]any{
 			"host": host,
 			"port": 22,
@@ -127,41 +151,45 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 		"configuration": map[string]any{
 			"platform": "container",
 			"pod":      pName,
-			"svc":      svcName(asset.UserID, asset.Attempt, asset.Name),
-			"user_id":  asset.UserID,
+			"svc":      svcName(userID, asset.Attempt, asset.Name),
+			"user_id":  userID,
 		},
 	}); err != nil {
-		return fmt.Errorf("patch asset connection: %w", err)
+		return fmt.Errorf("patch asset config provisioned: %w", err)
 	}
 
-	if err := p.pb.PatchAsset(asset.ID, map[string]any{
-		"state": "provisioned",
-	}); err != nil {
-		return fmt.Errorf("patch asset state: %w", err)
+	if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "provisioned"}); err != nil {
+		return fmt.Errorf("patch asset state provisioned: %w", err)
 	}
 
-	slog.Info("provisioned", "asset", asset.ID, "pod", pName, "svc", svcName(asset.UserID, asset.Attempt, asset.Name))
+	slog.Info("provisioned", "asset", asset.ID, "pod", pName, "svc", svcName(userID, asset.Attempt, asset.Name))
 	return nil
 }
 
 func (p *Contmgr) DecommissionAsset(ctx context.Context, asset Asset) error {
-	if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "decommissioning"}); err != nil {
-		return fmt.Errorf("mark decommissioning: %w", err)
+	cfg, err := p.pb.GetAssetConfig(asset.ID)
+	if err != nil {
+		return fmt.Errorf("get asset config: %w", err)
 	}
 
-	var cfg struct {
+	var cfgData struct {
 		Pod    string `json:"pod"`
 		Svc    string `json:"svc"`
 		UserID string `json:"user_id"`
 	}
-	if len(asset.Configuration) > 0 {
-		_ = json.Unmarshal(asset.Configuration, &cfg)
+	if len(cfg.Configuration) > 0 {
+		_ = json.Unmarshal(cfg.Configuration, &cfgData)
 	}
-	if err := p.k8s.DeletePod(ctx, p.namespace, cfg.Pod); err != nil {
+
+	if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "decommissioning"}); err != nil {
+		return fmt.Errorf("mark decommissioning: %w", err)
+	}
+
+	if err := p.k8s.DeletePod(ctx, p.namespace, cfgData.Pod); err != nil {
 		return fmt.Errorf("delete pod: %w", err)
 	}
 
-	if err := p.k8s.DeleteService(ctx, p.namespace, cfg.Svc); err != nil {
+	if err := p.k8s.DeleteService(ctx, p.namespace, cfgData.Svc); err != nil {
 		return fmt.Errorf("delete service: %w", err)
 	}
 
@@ -169,7 +197,7 @@ func (p *Contmgr) DecommissionAsset(ctx context.Context, asset Asset) error {
 	if err != nil {
 		slog.Warn("could not check remaining assets for attempt; skipping netpol cleanup", "attempt", asset.Attempt, "err", err)
 	} else if len(remaining) == 0 {
-		if err := p.k8s.DeleteNetworkPolicy(ctx, p.namespace, netpolName(asset.UserID, asset.Attempt)); err != nil {
+		if err := p.k8s.DeleteNetworkPolicy(ctx, p.namespace, netpolName(cfgData.UserID, asset.Attempt)); err != nil {
 			return fmt.Errorf("delete network policy: %w", err)
 		}
 	}
@@ -178,11 +206,13 @@ func (p *Contmgr) DecommissionAsset(ctx context.Context, asset Asset) error {
 		return fmt.Errorf("patch asset state: %w", err)
 	}
 
-	slog.Info("decommissioned", "asset", asset.ID, "pod", cfg.Pod)
+	slog.Info("decommissioned", "asset", asset.ID, "pod", cfgData.Pod)
 	return nil
 }
 
 func (p *Contmgr) RunOnce(ctx context.Context) error {
+	const maxConcurrent = 10
+	sem := semaphore.NewWeighted(maxConcurrent)
 	eg, ctx := errgroup.WithContext(ctx)
 
 	assets, err := p.pb.ListPendingAssets()
@@ -192,7 +222,11 @@ func (p *Contmgr) RunOnce(ctx context.Context) error {
 	}
 	for _, asset := range assets {
 		asset := asset
+		if err := sem.Acquire(ctx, 1); err != nil {
+			break
+		}
 		eg.Go(func() error {
+			defer sem.Release(1)
 			if err := p.ProvisionAsset(ctx, asset); err != nil {
 				slog.Error("provision asset", "asset", asset.ID, "err", err)
 			}
@@ -207,7 +241,11 @@ func (p *Contmgr) RunOnce(ctx context.Context) error {
 	}
 	for _, cmd := range commands {
 		cmd := cmd
+		if err := sem.Acquire(ctx, 1); err != nil {
+			break
+		}
 		eg.Go(func() error {
+			defer sem.Release(1)
 			if err := p.pb.PatchCommand(cmd.ID, map[string]any{"status": "running"}); err != nil {
 				slog.Error("patch command running", "cmd", cmd.ID, "err", err)
 				return nil
@@ -243,7 +281,11 @@ func (p *Contmgr) RunOnce(ctx context.Context) error {
 	}
 	for _, asset := range stuck {
 		asset := asset
+		if err := sem.Acquire(ctx, 1); err != nil {
+			break
+		}
 		eg.Go(func() error {
+			defer sem.Release(1)
 			slog.Info("resuming stuck decommission", "asset", asset.ID)
 			if err := p.DecommissionAsset(ctx, asset); err != nil {
 				slog.Error("resume decommission asset", "asset", asset.ID, "err", err)

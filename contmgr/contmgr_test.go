@@ -9,14 +9,14 @@ import (
 // --- fakes ---
 
 type fakeK8s struct {
-	ensureNetworkPolicyFunc func(ctx context.Context, p NetPolParams) error
-	createPodFunc          func(ctx context.Context, p PodParams) error
-	createServiceFunc      func(ctx context.Context, p PodParams) error
-	waitPodRunningFunc     func(ctx context.Context, namespace, podName string) error
-	execInPodFunc          func(ctx context.Context, namespace, podName string, cmd []string) error
-	deletePodFunc          func(ctx context.Context, namespace, podName string) error
-	deleteServiceFunc      func(ctx context.Context, namespace, svcName string) error
-	deleteNetworkPolicyFunc func(ctx context.Context, namespace, netpolName string) error
+	ensureNetworkPolicyFunc  func(ctx context.Context, p NetPolParams) error
+	createPodFunc            func(ctx context.Context, p PodParams) error
+	createServiceFunc        func(ctx context.Context, p PodParams) error
+	waitPodRunningFunc       func(ctx context.Context, namespace, podName string) error
+	execInPodFunc            func(ctx context.Context, namespace, podName string, cmd []string) error
+	deletePodFunc            func(ctx context.Context, namespace, podName string) error
+	deleteServiceFunc        func(ctx context.Context, namespace, svcName string) error
+	deleteNetworkPolicyFunc  func(ctx context.Context, namespace, netpolName string) error
 }
 
 func (f *fakeK8s) EnsureNetworkPolicy(ctx context.Context, p NetPolParams) error {
@@ -76,13 +76,16 @@ func (f *fakeK8s) DeleteNetworkPolicy(ctx context.Context, namespace, name strin
 }
 
 type fakePB struct {
-	assets   map[string]*Asset
-	keys     map[string]*KeysRecord // keyed by assetID
-	commands map[string]*Command
+	assets       map[string]*Asset
+	assetConfigs map[string]*AssetConfig // keyed by assetID
+	keys         map[string]*KeysRecord  // keyed by assetID
+	commands     map[string]*Command
+	attempts     map[string]*AttemptRecord
 
-	patchAssetCalls   []patchCall
-	patchKeysCalls    []patchCall
-	patchCommandCalls []patchCall
+	patchAssetCalls       []patchCall
+	patchAssetConfigCalls []patchCall
+	patchKeysCalls        []patchCall
+	patchCommandCalls     []patchCall
 }
 
 type patchCall struct {
@@ -92,18 +95,25 @@ type patchCall struct {
 
 func newFakePB() *fakePB {
 	return &fakePB{
-		assets:   make(map[string]*Asset),
-		keys:     make(map[string]*KeysRecord),
-		commands: make(map[string]*Command),
+		assets:       make(map[string]*Asset),
+		assetConfigs: make(map[string]*AssetConfig),
+		keys:         make(map[string]*KeysRecord),
+		commands:     make(map[string]*Command),
+		attempts:     make(map[string]*AttemptRecord),
 	}
 }
 
 func (f *fakePB) addAsset(a Asset) { f.assets[a.ID] = &a }
+func (f *fakePB) addAssetConfig(assetID string, c AssetConfig) {
+	c2 := c
+	f.assetConfigs[assetID] = &c2
+}
 func (f *fakePB) addKeys(assetID string, k KeysRecord) {
 	k2 := k
 	f.keys[assetID] = &k2
 }
 func (f *fakePB) addCommand(c Command) { f.commands[c.ID] = &c }
+func (f *fakePB) addAttempt(a AttemptRecord) { f.attempts[a.ID] = &a }
 
 func (f *fakePB) ListPendingAssets() ([]Asset, error) {
 	var out []Asset
@@ -123,12 +133,28 @@ func (f *fakePB) GetAsset(id string) (*Asset, error) {
 	return a, nil
 }
 
+func (f *fakePB) GetAssetConfig(assetID string) (*AssetConfig, error) {
+	c, ok := f.assetConfigs[assetID]
+	if !ok {
+		return nil, errors.New("no asset config for " + assetID)
+	}
+	return c, nil
+}
+
 func (f *fakePB) GetKeysByAsset(assetID string) (*KeysRecord, error) {
 	k, ok := f.keys[assetID]
 	if !ok {
 		return nil, errors.New("no keys for " + assetID)
 	}
 	return k, nil
+}
+
+func (f *fakePB) GetAttempt(attemptID string) (*AttemptRecord, error) {
+	a, ok := f.attempts[attemptID]
+	if !ok {
+		return nil, errors.New("no attempt for " + attemptID)
+	}
+	return a, nil
 }
 
 func (f *fakePB) PatchAsset(id string, fields map[string]any) error {
@@ -138,6 +164,11 @@ func (f *fakePB) PatchAsset(id string, fields map[string]any) error {
 			a.State = s
 		}
 	}
+	return nil
+}
+
+func (f *fakePB) PatchAssetConfig(id string, fields map[string]any) error {
+	f.patchAssetConfigCalls = append(f.patchAssetConfigCalls, patchCall{id, fields})
 	return nil
 }
 
@@ -166,6 +197,16 @@ func (f *fakePB) PatchCommand(id string, fields map[string]any) error {
 	return nil
 }
 
+func (f *fakePB) ListDecommissioningAssets() ([]Asset, error) {
+	var out []Asset
+	for _, a := range f.assets {
+		if a.State == "decommissioning" {
+			out = append(out, *a)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakePB) ListProvisionedAssetsByAttempt(attemptID string) ([]Asset, error) {
 	var out []Asset
 	for _, a := range f.assets {
@@ -179,31 +220,30 @@ func (f *fakePB) ListProvisionedAssetsByAttempt(attemptID string) ([]Asset, erro
 // --- helpers ---
 
 func newTestContmgr(pb pbDoer, k8s k8sDoer) *Contmgr {
-	return &Contmgr{pb: pb, k8s: k8s, namespace: "rootenv-users"}
+	return &Contmgr{pb: pb, k8s: k8s, namespace: "rootenv-users", infraNamespace: "rootenv-infra"}
 }
 
-func containerAsset(id, attemptID, name, userID string) Asset {
-	return Asset{
-		ID:            id,
-		Attempt:       attemptID,
-		Name:          name,
-		State:         "pending",
+func addProvisionFixtures(pb *fakePB, assetID, attemptID, name, userID string) {
+	pb.addAsset(Asset{ID: assetID, Attempt: attemptID, Name: name, State: "pending"})
+	pb.addAttempt(AttemptRecord{ID: attemptID, User: userID})
+	pb.addAssetConfig(assetID, AssetConfig{
+		ID:            assetID + "-cfg",
+		Asset:         assetID,
 		Platform:      "container",
-		UserID:        userID,
 		Configuration: []byte(`{"image":"alpine","ssh_user":"lab","cpu":"1","memory":"128MB"}`),
-	}
+	})
+	pb.addKeys(assetID, KeysRecord{ID: "keys-" + assetID, Secret: "secretsecretsecretsecretsecretsec"})
 }
 
-func containerAssetDecommission(id, attemptID, name, userID, pod, svc string) Asset {
-	return Asset{
-		ID:            id,
-		Attempt:       attemptID,
-		Name:          name,
-		State:         "provisioned",
+func addDecommissionFixtures(pb *fakePB, assetID, attemptID, name, userID, pod, svc string) {
+	pb.addAsset(Asset{ID: assetID, Attempt: attemptID, Name: name, State: "provisioned"})
+	pb.addAttempt(AttemptRecord{ID: attemptID, User: userID})
+	pb.addAssetConfig(assetID, AssetConfig{
+		ID:            assetID + "-cfg",
+		Asset:         assetID,
 		Platform:      "container",
-		UserID:        userID,
-		Configuration: []byte(`{"platform":"container","pod":"` + pod + `","svc":"` + svc + `"}`),
-	}
+		Configuration: []byte(`{"platform":"container","pod":"` + pod + `","svc":"` + svc + `","user_id":"` + userID + `"}`),
+	})
 }
 
 // --- naming helpers ---
@@ -230,9 +270,7 @@ func TestNetpolName(t *testing.T) {
 
 func TestProvisionEnsuresNetworkPolicy(t *testing.T) {
 	pb := newFakePB()
-	asset := containerAsset("asset1", "attempt1", "server-0", "user1")
-	pb.addAsset(asset)
-	pb.addKeys("asset1", KeysRecord{ID: "keys1", Secret: "secretsecretsecretsecretsecretsec"})
+	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
 
 	var gotParams NetPolParams
 	k8s := &fakeK8s{
@@ -243,7 +281,7 @@ func TestProvisionEnsuresNetworkPolicy(t *testing.T) {
 	}
 
 	mgr := newTestContmgr(pb, k8s)
-	if err := mgr.ProvisionAsset(context.Background(), asset); err != nil {
+	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
 		t.Fatal(err)
 	}
 
@@ -262,9 +300,7 @@ func TestProvisionEnsuresNetworkPolicy(t *testing.T) {
 
 func TestProvisionCreatesPodAndService(t *testing.T) {
 	pb := newFakePB()
-	asset := containerAsset("asset1", "attempt1", "server-0", "user1")
-	pb.addAsset(asset)
-	pb.addKeys("asset1", KeysRecord{ID: "keys1", Secret: "secretsecretsecretsecretsecretsec"})
+	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
 
 	var gotPod, gotSvc PodParams
 	k8s := &fakeK8s{
@@ -279,27 +315,23 @@ func TestProvisionCreatesPodAndService(t *testing.T) {
 	}
 
 	mgr := newTestContmgr(pb, k8s)
-	if err := mgr.ProvisionAsset(context.Background(), asset); err != nil {
+	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
 		t.Fatal(err)
 	}
 
-	wantPodName := "user1-attempt1-server-0"
 	if gotPod.UserID != "user1" || gotPod.AttemptID != "attempt1" || gotPod.AssetName != "server-0" {
 		t.Errorf("pod params wrong: %+v", gotPod)
 	}
 	if gotSvc.UserID != "user1" || gotSvc.AttemptID != "attempt1" || gotSvc.AssetName != "server-0" {
 		t.Errorf("svc params wrong: %+v", gotSvc)
 	}
-	_ = wantPodName
 }
 
 // --- provision: network policy creation failure aborts ---
 
 func TestProvisionNetpolFailureAborts(t *testing.T) {
 	pb := newFakePB()
-	asset := containerAsset("asset1", "attempt1", "server-0", "user1")
-	pb.addAsset(asset)
-	pb.addKeys("asset1", KeysRecord{ID: "keys1", Secret: "secretsecretsecretsecretsecretsec"})
+	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
 
 	k8s := &fakeK8s{
 		ensureNetworkPolicyFunc: func(_ context.Context, _ NetPolParams) error {
@@ -308,35 +340,31 @@ func TestProvisionNetpolFailureAborts(t *testing.T) {
 	}
 
 	mgr := newTestContmgr(pb, k8s)
-	if err := mgr.ProvisionAsset(context.Background(), asset); err == nil {
+	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err == nil {
 		t.Fatal("expected error when network policy creation fails")
 	}
 }
 
-// --- provision: connection stored with service DNS and port 22 ---
+// --- provision: connection stored in assets_configs with service DNS and port 22 ---
 
 func TestProvisionStoresServiceConnection(t *testing.T) {
 	pb := newFakePB()
-	asset := containerAsset("asset1", "attempt1", "server-0", "user1")
-	pb.addAsset(asset)
-	pb.addKeys("asset1", KeysRecord{ID: "keys1", Secret: "secretsecretsecretsecretsecretsec"})
+	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
 
 	mgr := newTestContmgr(pb, &fakeK8s{})
-	if err := mgr.ProvisionAsset(context.Background(), asset); err != nil {
+	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
 		t.Fatal(err)
 	}
 
-	// find the patch call that sets connection
+	// find the patch call that sets connection on assets_configs
 	var connPatch map[string]any
-	for _, c := range pb.patchAssetCalls {
-		if c.id == "asset1" {
-			if conn, ok := c.fields["connection"]; ok {
-				connPatch = conn.(map[string]any)
-			}
+	for _, c := range pb.patchAssetConfigCalls {
+		if conn, ok := c.fields["connection"]; ok {
+			connPatch = conn.(map[string]any)
 		}
 	}
 	if connPatch == nil {
-		t.Fatal("no connection patch found")
+		t.Fatal("no connection patch found in assets_configs")
 	}
 
 	wantHost := "user1-attempt1-server-0-svc.rootenv-users.svc.cluster.local"
@@ -352,9 +380,8 @@ func TestProvisionStoresServiceConnection(t *testing.T) {
 
 func TestDecommissionDeletesPodAndService(t *testing.T) {
 	pb := newFakePB()
-	asset := containerAssetDecommission("asset1", "attempt1", "server-0", "user1",
+	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
 		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
-	pb.addAsset(asset)
 
 	var deletedPods, deletedSvcs []string
 	k8s := &fakeK8s{
@@ -369,7 +396,7 @@ func TestDecommissionDeletesPodAndService(t *testing.T) {
 	}
 
 	mgr := newTestContmgr(pb, k8s)
-	if err := mgr.DecommissionAsset(context.Background(), asset); err != nil {
+	if err := mgr.DecommissionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
 		t.Fatal(err)
 	}
 
@@ -385,9 +412,8 @@ func TestDecommissionDeletesPodAndService(t *testing.T) {
 
 func TestDecommissionDeletesNetpolWhenLastAsset(t *testing.T) {
 	pb := newFakePB()
-	asset := containerAssetDecommission("asset1", "attempt1", "server-0", "user1",
+	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
 		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
-	pb.addAsset(asset)
 
 	var deletedNetpols []string
 	k8s := &fakeK8s{
@@ -398,7 +424,7 @@ func TestDecommissionDeletesNetpolWhenLastAsset(t *testing.T) {
 	}
 
 	mgr := newTestContmgr(pb, k8s)
-	if err := mgr.DecommissionAsset(context.Background(), asset); err != nil {
+	if err := mgr.DecommissionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
 		t.Fatal(err)
 	}
 
@@ -411,17 +437,14 @@ func TestDecommissionDeletesNetpolWhenLastAsset(t *testing.T) {
 
 func TestDecommissionKeepsNetpolWhenOtherAssetsRemain(t *testing.T) {
 	pb := newFakePB()
-	// asset1 is being decommissioned (will be set to decommissioning)
-	asset1 := containerAssetDecommission("asset1", "attempt1", "server-0", "user1",
+	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
 		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
-	// asset2 is still provisioned — same attempt
-	asset2 := Asset{
-		ID: "asset2", Attempt: "attempt1", Name: "server-1",
-		State: "provisioned", UserID: "user1",
-		Configuration: []byte(`{"platform":"container","pod":"user1-attempt1-server-1","svc":"user1-attempt1-server-1-svc"}`),
-	}
-	pb.addAsset(asset1)
-	pb.addAsset(asset2)
+	// asset2 still provisioned — same attempt
+	pb.addAsset(Asset{ID: "asset2", Attempt: "attempt1", Name: "server-1", State: "provisioned"})
+	pb.addAssetConfig("asset2", AssetConfig{
+		ID: "asset2-cfg", Asset: "asset2",
+		Configuration: []byte(`{"platform":"container","pod":"user1-attempt1-server-1","svc":"user1-attempt1-server-1-svc","user_id":"user1"}`),
+	})
 
 	var deletedNetpols []string
 	k8s := &fakeK8s{
@@ -432,7 +455,7 @@ func TestDecommissionKeepsNetpolWhenOtherAssetsRemain(t *testing.T) {
 	}
 
 	mgr := newTestContmgr(pb, k8s)
-	if err := mgr.DecommissionAsset(context.Background(), asset1); err != nil {
+	if err := mgr.DecommissionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
 		t.Fatal(err)
 	}
 
@@ -445,15 +468,12 @@ func TestDecommissionKeepsNetpolWhenOtherAssetsRemain(t *testing.T) {
 
 func TestDecommissionHandlesMissingPodSvc(t *testing.T) {
 	pb := newFakePB()
-	asset := Asset{
-		ID: "asset1", Attempt: "attempt1", Name: "server-0",
-		State: "provisioned", UserID: "user1",
-		Configuration: []byte(`{}`),
-	}
-	pb.addAsset(asset)
+	pb.addAsset(Asset{ID: "asset1", Attempt: "attempt1", Name: "server-0", State: "provisioned"})
+	pb.addAttempt(AttemptRecord{ID: "attempt1", User: "user1"})
+	pb.addAssetConfig("asset1", AssetConfig{ID: "asset1-cfg", Asset: "asset1", Configuration: []byte(`{}`)})
 
 	mgr := newTestContmgr(pb, &fakeK8s{})
-	if err := mgr.DecommissionAsset(context.Background(), asset); err != nil {
+	if err := mgr.DecommissionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
 		t.Fatal(err)
 	}
 }

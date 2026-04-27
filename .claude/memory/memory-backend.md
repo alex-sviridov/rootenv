@@ -14,6 +14,7 @@ rule: Always read this file before writing any backend migration, hook, or API h
 | verified | bool | |
 | name | text | |
 | avatar | file | image types only |
+| svc_role | text | `relay` or `contmgr` for service accounts |
 | password / tokenKey | hidden | auth internals |
 
 ## labs (base)
@@ -40,23 +41,24 @@ One record per lab run per user. Denormalized at provision time.
 | user | relation → users | |
 | lab | relation → labs | |
 | lab_name | text | copied from labs.title at provision |
-| finished | date | set when all servers decommissioned |
+| environment | json | copied from labs.environment at provision |
+| finished | date | set when all assets decommissioned |
 
-Constraint: at most one active attempt per user.
+Rules: `listRule/viewRule` = relay only. `createRule` = `@request.auth.id = user.id`.
 
 ## attempts_userview (view)
-Selects `id, created, updated, finished, user, lab_name, lab, state`.  
-`state` is computed from linked servers:
-- `new` — no servers yet
-- `provisioning` — any server in `provisioning`
-- `provisioned` — all servers `provisioned`
-- `decommissioning` — any server in `decommissioning`
-- `decommissioned` — all servers `decommissioned` OR `finished` is set
+Selects `id, created, updated, finished, user, lab_name, lab, state`.
+`state` is computed from linked assets:
+- `new` — no assets yet
+- `provisioning` — any asset pending/provisioning
+- `provisioned` — all assets provisioned
+- `decommissioning` — any asset decommissioning
+- `decommissioned` — all assets decommissioned OR `finished` is set
 
-`listRule`: `@request.auth.id = user.id`
+`listRule/viewRule`: `@request.auth.id = user`
 
-## servers (base)
-One record per server in the lab's `environment` YAML.
+## assets (base)
+One record per server in the lab's `environment` YAML. User-facing fields only.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -64,20 +66,56 @@ One record per server in the lab's `environment` YAML.
 | name | text | from YAML environment |
 | state | select | `pending` → `provisioning` → `provisioned` → `decommissioning` → `decommissioned` |
 | status | select | `poweredon` \| `rebooting` \| `poweredoff` |
-| connection | json | `{user, host, port, privateKey}` — SSH details |
+| expires_at | date | set at provision time; cron creates decommission command when expired |
 
-## servers_userview (view)
-Selects `s.id, s.name, a.user, s.status, s.state, a.id as attempt_id` from servers where `state != 'decommissioned'`.
+Rules:
+- `listRule`: `@request.auth.id = attempt.user.id` — owner can list AND subscribe
+- `viewRule`: `@request.auth.id = attempt.user.id || svc_role = relay || svc_role = contmgr`
+- `updateRule`: `svc_role = contmgr`
+- `createRule`: null (hooks create as admin)
 
-## commands (base)
-Queue for server lifecycle ops. Watched by hooks.
+## assets_configs (base)
+Service-only sensitive config for each asset. Cascade-deleted when asset is deleted.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| server | relation → servers | |
+| asset | relation → assets (cascade delete) | |
+| connection | json | `{host, port, user}` — SSH connection details; written by contmgr after provisioning |
+| configuration | json | `{platform, pod, svc, user_id}` — runtime config; written by contmgr after provisioning |
+| platform | text | `container` |
+
+All rules: `svc_role = relay || svc_role = contmgr`
+
+## commands (base)
+Queue for server lifecycle ops. Watched by hooks and contmgr.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| asset | relation → assets | |
 | command | select | `start` \| `stop` \| `restart` \| `decommission` |
 | status | select | `pending` → `running` → `done` \| `error` |
 
+`createRule`: `@request.auth.id = asset.attempt.user.id && status = 'pending'`
+
+## keys (base)
+SSH key material per asset. Service-only.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| asset | relation → assets (cascade delete) | |
+| secret | text | 32-char alphanumeric; auto-generated; used as AES key material |
+| key_encrypted | text | AES-256-GCM encrypted private key (base64); written by contmgr |
+
+Rules: `svc_role = relay || svc_role = contmgr`
+
+## keys_userview (view)
+Joins keys → assets → attempts to expose `secret` to the asset's owner.
+Fields: `id, asset, attempt, user, secret`
+
+`listRule/viewRule`: `@request.auth.id = user.id`
+
 ## Hooks
-State transitions automated in `pb_hooks/`: `servers.pb.js`, `attempts.pb.js`, `commands.pb.js`.  
-Migrations source of truth: `backend/pb_migrations/`.
+State transitions automated in `pb_hooks/`:
+- `assets.pb.js` — creates assets + assets_configs + keys records on attempt create; checks attempt finished on asset decommission; cron decommissions expired assets
+- `attempts.pb.js` — validates active attempt constraint; populates lab_name + environment from labs on create
+- `commands.pb.js` — sets asset state to `decommissioning` when decommission command created

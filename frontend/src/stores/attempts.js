@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { fetchLastAttempt, fetchAttempts, createAttempt, subscribeToAttempt, fetchActiveAttempt, decommissionAttempt } from '@/api/attempts'
+import { fetchLastAttempt, fetchAttempts, createAttempt, fetchActiveAttempt, decommissionAttempt } from '@/api/attempts'
 
 export const useAttemptsStore = defineStore('attempts', () => {
   const lastAttempt = ref(null)
@@ -9,7 +9,6 @@ export const useAttemptsStore = defineStore('attempts', () => {
   const loading = ref(false)
   const historyLoading = ref(false)
   const error = ref(null)
-  let _unsubscribe = null
 
   async function withLoading(fn) {
     loading.value = true
@@ -17,7 +16,7 @@ export const useAttemptsStore = defineStore('attempts', () => {
     try {
       await fn()
     } catch (e) {
-      error.value = e.message
+      if (!e?.isAbort) error.value = e.message
     } finally {
       loading.value = false
     }
@@ -29,7 +28,7 @@ export const useAttemptsStore = defineStore('attempts', () => {
     try {
       await fn()
     } catch (e) {
-      error.value = e.message
+      if (!e?.isAbort) error.value = e.message
     } finally {
       historyLoading.value = false
     }
@@ -50,17 +49,6 @@ export const useAttemptsStore = defineStore('attempts', () => {
       const result = await fetchAttempts(labId, page, perPage)
       history.value = { items: result.items, page: result.page, totalPages: result.totalPages }
     })
-
-  const stopWatching = async () => {
-    if (_unsubscribe) { await _unsubscribe(); _unsubscribe = null }
-  }
-
-  const startWatching = async (labId) => {
-    if (_unsubscribe) await stopWatching()
-    _unsubscribe = await subscribeToAttempt(labId, (record) => {
-      lastAttempt.value = record
-    })
-  }
 
   const loadActiveAttempt = async () => {
     try {
@@ -85,6 +73,6 @@ export const useAttemptsStore = defineStore('attempts', () => {
 
   return {
     lastAttempt, activeAttempt, history, loading, historyLoading, error,
-    loadLastAttempt, loadActiveAttempt, loadHistory, startWatching, stopWatching, addAttempt, removeAttempt,
+    loadLastAttempt, loadActiveAttempt, loadHistory, addAttempt, removeAttempt,
   }
 })

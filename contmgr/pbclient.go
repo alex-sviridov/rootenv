@@ -18,29 +18,33 @@ type pbClient struct {
 }
 
 type Asset struct {
-	ID            string          `json:"id"`
-	Attempt       string          `json:"attempt"`
-	Name          string          `json:"name"`
-	State         string          `json:"state"`
-	Platform      string          `json:"platform"`
-	Configuration json.RawMessage `json:"configuration"`
-	UserID        string          `json:"user"`
+	ID      string `json:"id"`
+	Attempt string `json:"attempt"`
+	Name    string `json:"name"`
+	State   string `json:"state"`
 }
 
-func (a *Asset) Def() (*AssetDef, error) {
+type AssetConfig struct {
+	ID            string          `json:"id"`
+	Asset         string          `json:"asset"`
+	Platform      string          `json:"platform"`
+	Configuration json.RawMessage `json:"configuration"`
+}
+
+func (c *AssetConfig) Def() (*AssetDef, error) {
 	var def AssetDef
-	if err := json.Unmarshal(a.Configuration, &def); err != nil {
+	if err := json.Unmarshal(c.Configuration, &def); err != nil {
 		return nil, fmt.Errorf("parse configuration: %w", err)
 	}
 	return &def, nil
 }
 
 type AssetDef struct {
-	Name    string `json:"name"`
-	Image   string `json:"image"`
-	SSHUser string `json:"ssh_user"`
-	CPU     any    `json:"cpu"`
-	Memory  string `json:"memory"`
+	Name    string          `json:"name"`
+	Image   string          `json:"image"`
+	SSHUser string          `json:"ssh_user"`
+	CPU     json.Number     `json:"cpu"`
+	Memory  string          `json:"memory"`
 }
 
 type KeysRecord struct {
@@ -150,6 +154,20 @@ func (c *pbClient) GetAsset(id string) (*Asset, error) {
 	return &a, nil
 }
 
+func (c *pbClient) GetAssetConfig(assetID string) (*AssetConfig, error) {
+	var result struct {
+		Items []AssetConfig `json:"items"`
+	}
+	filter := url.QueryEscape("(asset='" + assetID + "')")
+	if err := c.get("/api/collections/assets_configs/records?filter="+filter+"&perPage=1", &result); err != nil {
+		return nil, err
+	}
+	if len(result.Items) == 0 {
+		return nil, fmt.Errorf("no assets_configs record for asset %s", assetID)
+	}
+	return &result.Items[0], nil
+}
+
 func (c *pbClient) GetKeysByAsset(assetID string) (*KeysRecord, error) {
 	var result struct {
 		Items []KeysRecord `json:"items"`
@@ -166,6 +184,10 @@ func (c *pbClient) GetKeysByAsset(assetID string) (*KeysRecord, error) {
 
 func (c *pbClient) PatchAsset(id string, fields map[string]any) error {
 	return c.patch("/api/collections/assets/records/"+url.PathEscape(id), fields)
+}
+
+func (c *pbClient) PatchAssetConfig(id string, fields map[string]any) error {
+	return c.patch("/api/collections/assets_configs/records/"+url.PathEscape(id), fields)
 }
 
 func (c *pbClient) PatchKeys(id string, fields map[string]any) error {
@@ -207,4 +229,12 @@ func (c *pbClient) ListProvisionedAssetsByAttempt(attemptID string) ([]Asset, er
 		return nil, err
 	}
 	return result.Items, nil
+}
+
+func (c *pbClient) GetAttempt(attemptID string) (*AttemptRecord, error) {
+	var a AttemptRecord
+	if err := c.get("/api/collections/attempts/records/"+url.PathEscape(attemptID), &a); err != nil {
+		return nil, err
+	}
+	return &a, nil
 }

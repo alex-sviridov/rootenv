@@ -24,14 +24,14 @@ import { fetchServers, subscribeToServers } from '../servers'
 beforeEach(() => vi.clearAllMocks())
 
 describe('fetchServers', () => {
-  it('queries assets_userview filtered by attemptId', async () => {
+  it('queries assets collection filtered by attemptId', async () => {
     const servers = [{ id: 's1', name: 'web', state: 'provisioned', status: 'poweredon' }]
     mockGetFullList.mockResolvedValue(servers)
 
     const result = await fetchServers('attempt-1')
 
-    expect(mockCollection).toHaveBeenCalledWith('assets_userview')
-    expect(mockGetFullList).toHaveBeenCalledWith({ filter: 'attempt_id = "attempt-1"' })
+    expect(mockCollection).toHaveBeenCalledWith('assets')
+    expect(mockGetFullList).toHaveBeenCalledWith({ filter: 'attempt = "attempt-1"' })
     expect(result).toEqual(servers)
   })
 
@@ -59,42 +59,37 @@ describe('subscribeToServers', () => {
     expect(result).toBe(unsubFn)
   })
 
-  it('re-fetches from assets_userview and calls callback on update event', async () => {
+  it('calls callback with update action for matching attempt on update event', async () => {
     let innerHandler
     mockSubscribe.mockImplementation(async (_topic, fn) => { innerHandler = fn; return vi.fn() })
-    const fresh = { id: 's1', name: 'web', state: 'provisioned', status: 'poweredon', attempt_id: 'attempt-1' }
-    mockGetFirstListItem.mockResolvedValue(fresh)
+    const record = { id: 's1', name: 'web', state: 'provisioned', status: 'poweredon', attempt: 'attempt-1' }
     const callback = vi.fn()
 
     await subscribeToServers('attempt-1', callback)
-    await innerHandler({ action: 'update', record: { id: 's1' } })
+    innerHandler({ action: 'update', record })
 
-    expect(mockCollection).toHaveBeenCalledWith('assets_userview')
-    expect(mockGetFirstListItem).toHaveBeenCalledWith('id = "s1" && attempt_id = "attempt-1"', { requestKey: null })
-    expect(callback).toHaveBeenCalledWith({ action: 'update', record: fresh })
+    expect(callback).toHaveBeenCalledWith({ action: 'update', record })
   })
 
-  it('calls callback with delete action on delete event without re-fetching', async () => {
+  it('calls callback with delete action for matching attempt on delete event', async () => {
     let innerHandler
     mockSubscribe.mockImplementation(async (_topic, fn) => { innerHandler = fn; return vi.fn() })
     const callback = vi.fn()
 
     await subscribeToServers('attempt-1', callback)
-    await innerHandler({ action: 'delete', record: { id: 's1' } })
+    innerHandler({ action: 'delete', record: { id: 's1', attempt: 'attempt-1' } })
 
-    expect(mockGetFirstListItem).not.toHaveBeenCalled()
     expect(callback).toHaveBeenCalledWith({ action: 'delete', record: { id: 's1' } })
   })
 
-  it('silently ignores re-fetch errors', async () => {
+  it('ignores events for a different attempt', async () => {
     let innerHandler
     mockSubscribe.mockImplementation(async (_topic, fn) => { innerHandler = fn; return vi.fn() })
-    mockGetFirstListItem.mockRejectedValue(new Error('not found'))
     const callback = vi.fn()
 
     await subscribeToServers('attempt-1', callback)
-    innerHandler({ action: 'update', record: { id: 's1' } })
-    await Promise.resolve()
+    innerHandler({ action: 'update', record: { id: 's2', attempt: 'attempt-other' } })
+
     expect(callback).not.toHaveBeenCalled()
   })
 

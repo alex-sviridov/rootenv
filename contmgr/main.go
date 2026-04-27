@@ -38,7 +38,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	mgr := NewContmgr(pb, k8s, cfg.usersNamespace, cfg.imagePullSecret)
+	mgr := NewContmgr(pb, k8s, cfg.usersNamespace, cfg.infraNamespace, cfg.imagePullSecret)
 
 	ticker := time.NewTicker(cfg.pollInterval)
 	defer ticker.Stop()

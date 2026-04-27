@@ -119,6 +119,56 @@ func TestGetServer_notFound(t *testing.T) {
 	}
 }
 
+// ---- GetServerConfig ----
+
+func TestGetServerConfig_found(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.Handle("/api/collections/assets_configs/records",
+		authMiddleware("admin-token", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get("filter") == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"items": []any{
+					map[string]any{
+						"id":         "cfg1",
+						"connection": map[string]any{"host": "10.0.0.1", "port": 22, "user": "lab"},
+					},
+				},
+				"totalItems": 1,
+			})
+		})),
+	)
+	_, c := newMockServer(t, mux)
+
+	cfg, err := c.GetServerConfig("srv1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ID != "cfg1" {
+		t.Errorf("want id cfg1, got %s", cfg.ID)
+	}
+	if cfg.Connection == nil {
+		t.Error("expected non-nil connection")
+	}
+}
+
+func TestGetServerConfig_notFound(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.Handle("/api/collections/assets_configs/records",
+		authMiddleware("admin-token", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": []any{}, "totalItems": 0})
+		})),
+	)
+	_, c := newMockServer(t, mux)
+
+	_, err := c.GetServerConfig("no-such-server")
+	if err != pbclient.ErrNotFound {
+		t.Errorf("want ErrNotFound, got %v", err)
+	}
+}
+
 // ---- GetAttempt ----
 
 func TestGetAttempt_found(t *testing.T) {

@@ -17,11 +17,15 @@ type Client struct {
 }
 
 type Server struct {
+	ID      string `json:"id"`
+	Attempt string `json:"attempt"`
+	Name    string `json:"name"`
+	State   string `json:"state"`
+	Status  string `json:"status"`
+}
+
+type ServerConfig struct {
 	ID         string          `json:"id"`
-	Attempt    string          `json:"attempt"`
-	Name       string          `json:"name"`
-	State      string          `json:"state"`
-	Status     string          `json:"status"`
 	Connection json.RawMessage `json:"connection"`
 }
 
@@ -168,6 +172,40 @@ func (c *Client) GetServer(serverID string) (*Server, error) {
 		return nil, err
 	}
 	return &s, nil
+}
+
+// GetServerConfig fetches the assets_configs record for the given asset ID.
+func (c *Client) GetServerConfig(serverID string) (*ServerConfig, error) {
+	u := c.baseURL + "/api/collections/assets_configs/records?filter=" + url.QueryEscape("(asset='"+serverID+"')")+"&perPage=1"
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", c.adminToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("get server config returned status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Items []ServerConfig `json:"items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	if len(result.Items) == 0 {
+		return nil, ErrNotFound
+	}
+	return &result.Items[0], nil
 }
 
 type KeysRecord struct {

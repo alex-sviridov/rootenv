@@ -5,8 +5,6 @@ vi.mock('@/api/attempts', () => ({
   fetchLastAttempt: vi.fn(),
   fetchAttempts: vi.fn(),
   createAttempt: vi.fn(),
-  subscribeToAttempt: vi.fn(),
-  unsubscribeFromAttempt: vi.fn(),
   fetchActiveAttempt: vi.fn(),
   decommissionAttempt: vi.fn(),
 }))
@@ -15,7 +13,6 @@ import {
   fetchLastAttempt,
   fetchAttempts,
   createAttempt,
-  subscribeToAttempt,
   fetchActiveAttempt,
 } from '@/api/attempts'
 import { useAttemptsStore } from '../attempts'
@@ -136,57 +133,6 @@ describe('loadHistory', () => {
     await store.loadHistory('lab-1')
 
     expect(store.error).toBe('history failed')
-  })
-})
-
-describe('startWatching', () => {
-  it('subscribes and updates lastAttempt via realtime callback', async () => {
-    let capturedCallback
-    subscribeToAttempt.mockImplementation(async (_labId, cb) => {
-      capturedCallback = cb
-      return vi.fn()
-    })
-
-    const store = useAttemptsStore()
-    await store.startWatching('lab-1')
-
-    const updated = { id: 'a1', state: 'running' }
-    capturedCallback(updated)
-
-    expect(store.lastAttempt).toEqual(updated)
-  })
-
-  it('calls stopWatching first if already subscribed', async () => {
-    const firstUnsub = vi.fn()
-    const secondUnsub = vi.fn()
-    subscribeToAttempt
-      .mockResolvedValueOnce(firstUnsub)
-      .mockResolvedValueOnce(secondUnsub)
-
-    const store = useAttemptsStore()
-    await store.startWatching('lab-1')
-    await store.startWatching('lab-1')
-
-    expect(firstUnsub).toHaveBeenCalled()
-    expect(subscribeToAttempt).toHaveBeenCalledTimes(2)
-  })
-})
-
-describe('stopWatching', () => {
-  it('calls and clears the stored unsubscribe function', async () => {
-    const unsubFn = vi.fn()
-    subscribeToAttempt.mockResolvedValue(unsubFn)
-
-    const store = useAttemptsStore()
-    await store.startWatching('lab-1')
-    await store.stopWatching()
-
-    expect(unsubFn).toHaveBeenCalled()
-  })
-
-  it('does nothing when not currently watching', async () => {
-    const store = useAttemptsStore()
-    await expect(store.stopWatching()).resolves.toBeUndefined()
   })
 })
 

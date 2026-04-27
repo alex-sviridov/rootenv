@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -13,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -33,9 +33,10 @@ type k8sDoer interface {
 }
 
 type NetPolParams struct {
-	Namespace string
-	UserID    string
-	AttemptID string
+	Namespace      string
+	UserID         string
+	AttemptID      string
+	InfraNamespace string
 }
 
 type PodParams struct {
@@ -136,7 +137,7 @@ func (k *K8sClient) EnsureNetworkPolicy(ctx context.Context, p NetPolParams) err
 					From: []networkingv1.NetworkPolicyPeer{{
 						NamespaceSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{
-								"kubernetes.io/metadata.name": "rootenv-infra",
+								"kubernetes.io/metadata.name": p.InfraNamespace,
 							},
 						},
 					}},
@@ -188,7 +189,11 @@ func (k *K8sClient) CreatePod(ctx context.Context, p PodParams) error {
 		return fmt.Errorf("parse memory: %w", err)
 	}
 	memQ := resource.NewQuantity(memBytes, resource.BinarySI)
-	cpuQ := resource.NewMilliQuantity(parseCPUMilli(p.CPU), resource.DecimalSI)
+	cpuMilli, err := parseCPUMilli(p.CPU)
+	if err != nil {
+		return fmt.Errorf("parse cpu: %w", err)
+	}
+	cpuQ := resource.NewMilliQuantity(cpuMilli, resource.DecimalSI)
 
 	labels := map[string]string{
 		"user-id":    p.UserID,
@@ -224,6 +229,9 @@ func (k *K8sClient) CreatePod(ctx context.Context, p PodParams) error {
 		pod.Spec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: p.ImagePullSecret}}
 	}
 	_, err = k.clientset.CoreV1().Pods(p.Namespace).Create(ctx, pod, metav1.CreateOptions{})
+	if k8serrors.IsAlreadyExists(err) {
+		return nil
+	}
 	return err
 }
 
@@ -251,30 +259,48 @@ func (k *K8sClient) CreateService(ctx context.Context, p PodParams) error {
 		},
 	}
 	_, err := k.clientset.CoreV1().Services(p.Namespace).Create(ctx, svc, metav1.CreateOptions{})
+	if k8serrors.IsAlreadyExists(err) {
+		return nil
+	}
 	return err
 }
 
 // --- WaitPodRunning ---
 
 func (k *K8sClient) WaitPodRunning(ctx context.Context, namespace, name string) error {
-	for range 60 {
-		pod, err := k.clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		switch pod.Status.Phase {
-		case corev1.PodRunning:
-			return nil
-		case corev1.PodFailed, corev1.PodSucceeded:
-			return fmt.Errorf("pod %s ended unexpectedly: phase=%s", name, pod.Status.Phase)
-		}
+	timeout := int64(120)
+	watcher, err := k.clientset.CoreV1().Pods(namespace).Watch(ctx, metav1.ListOptions{
+		FieldSelector:  "metadata.name=" + name,
+		TimeoutSeconds: &timeout,
+	})
+	if err != nil {
+		return fmt.Errorf("watch pod %s: %w", name, err)
+	}
+	defer watcher.Stop()
+
+	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(time.Second):
+		case event, ok := <-watcher.ResultChan():
+			if !ok {
+				return fmt.Errorf("pod %s watch channel closed before Running", name)
+			}
+			if event.Type == watch.Error {
+				return fmt.Errorf("pod %s watch error event", name)
+			}
+			pod, ok := event.Object.(*corev1.Pod)
+			if !ok {
+				continue
+			}
+			switch pod.Status.Phase {
+			case corev1.PodRunning:
+				return nil
+			case corev1.PodFailed, corev1.PodSucceeded:
+				return fmt.Errorf("pod %s ended unexpectedly: phase=%s", name, pod.Status.Phase)
+			}
 		}
 	}
-	return fmt.Errorf("pod %s not Running after 60s", name)
 }
 
 // --- ExecInPod ---
@@ -359,20 +385,23 @@ func dnsPorts() []networkingv1.NetworkPolicyPort {
 	}
 }
 
-// parseCPUMilli converts a CPU string like "1" or "0.5" to millicores.
-func parseCPUMilli(cpu string) int64 {
+// parseCPUMilli converts a CPU string like "1", "0.5", or "500m" to millicores.
+func parseCPUMilli(cpu string) (int64, error) {
 	if cpu == "" {
-		return 0
+		return 0, nil
 	}
-	// handle "500m" notation
 	if strings.HasSuffix(cpu, "m") {
 		var v int64
-		fmt.Sscanf(cpu[:len(cpu)-1], "%d", &v)
-		return v
+		if _, err := fmt.Sscanf(cpu[:len(cpu)-1], "%d", &v); err != nil {
+			return 0, fmt.Errorf("unrecognized cpu millicore format: %q", cpu)
+		}
+		return v, nil
 	}
 	var v float64
-	fmt.Sscanf(cpu, "%f", &v)
-	return int64(v * 1000)
+	if _, err := fmt.Sscanf(cpu, "%f", &v); err != nil {
+		return 0, fmt.Errorf("unrecognized cpu format: %q", cpu)
+	}
+	return int64(v * 1000), nil
 }
 
 // parseMemory converts strings like "512MB", "1GB", "256m" to bytes.
