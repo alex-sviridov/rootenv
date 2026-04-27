@@ -1,7 +1,7 @@
 ---
+name: Contmgr Architecture
 description: Non-obvious architectural details and invariants for the contmgr module
-paths:
-  - "contmgr/*"
+type: project
 ---
 
 # Contmgr Architecture
@@ -15,26 +15,44 @@ Contmgr authenticates as a regular user (`/api/collections/users/auth-with-passw
 Service account: `svc_contmgr@contmgr.local`, `svc_role="contmgr"`.
 Access rules on `assets`, `keys`, `attempts`, `commands` are gated on `svc_role = "contmgr"`.
 
-## Data Flow per Asset
-1. Asset enters `state=provisioning` (set by hook on attempt creation)
-2. Contmgr reads `attempt.environment.servers` to find the matching asset def (by `name`)
-3. Generates Ed25519 keypair → starts container → injects public key via docker exec
-4. Waits for SSH TCP readiness (poll `:22` via hostIP:hostPort, up to 30 attempts × 1s)
-5. Fetches `keys` record for the attempt → encrypts private key → patches `keys.key_encrypted`
-6. Patches `assets.connection` + `assets.configuration` → patches `assets.state=provisioned`
+## UserID Population
+`ListPendingAssets` uses `?expand=attempt` to populate `Asset.UserID` from the attempt relation.
+`GetAsset` does NOT expand — so assets fetched during decommission have `UserID=""`.
+**Fix:** `user_id` is stored in `assets.configuration` JSON at provision time and read back during decommission as a fallback.
 
-## Per-Attempt Docker Network
-Each attempt gets a dedicated Docker bridge network named `lab-<attemptID>`.
-- Created before the first container is started during provisioning.
-- Containers join the network at create time (via `NetworkingConfig`); `ContainerName` (= `asset.Name`) is set as hostname and DNS alias so containers resolve each other by name.
-- Removed after the container is removed during decommission, even if container ID is empty.
-- `networkName(attemptID)` in `docker.go` is the single source of truth for the name format.
+## Data Flow per Asset (Kubernetes)
+1. Asset enters `state=pending` (set by hook on attempt creation)
+2. Contmgr reads `asset.Configuration` to get image, ssh_user, CPU, memory
+3. Creates NetworkPolicy `{userID}-{attemptID}-netpol` (idempotent — skips if already exists)
+4. Generates Ed25519 keypair
+5. Creates Pod `{userID}-{attemptID}-{assetName}` and Service `{userID}-{attemptID}-{assetName}-svc` in `rootenv-users`
+6. Waits for pod phase `Running` (polls every 1s, up to 60s)
+7. Injects public key via pod exec: `sh -c "mkdir -p /conf.d/authorized_keys && printf '%s' <key> > /conf.d/authorized_keys/<user>"`
+8. Fetches `keys` record → encrypts private key → patches `keys.key_encrypted`
+9. Patches `assets.connection` (host = service DNS, port = 22) + `assets.configuration` (pod, svc, user_id) → patches `assets.state=provisioned`
+
+## Per-Attempt NetworkPolicy
+Each attempt gets a NetworkPolicy in `rootenv-users` named `{userID}-{attemptID}-netpol`.
+- **podSelector**: `user-id: {userID}`, `attempt-id: {attemptID}`
+- **Ingress**: from pods with same labels in same namespace; port 22/TCP from `rootenv-infra` namespace
+- **Egress**: to pods with same labels in same namespace; port 53 UDP+TCP to `kube-system` (DNS)
+- Both pod-to-pod peers use `NamespaceSelector` + `PodSelector` together — `PodSelector` alone would match pods in ALL namespaces
+- Created idempotently (AlreadyExists ignored); deleted only when last provisioned/provisioning asset for the attempt is gone
 
 ## Decommission Flow
-`commands` record with `command=decommission`, `status=pending` → contmgr sets `status=running` → removes container → removes network → sets `status=done` and `assets.state=decommissioned`.
+`commands` record with `command=decommission`, `status=pending` → contmgr sets `status=running` → deletes pod → deletes service → checks remaining provisioned assets for the attempt → deletes NetworkPolicy if none remain → sets `status=done` and `assets.state=decommissioned`.
 
 ## `assets.configuration` JSON Schema
 ```json
-{"platform": "container", "id": "<dockerContainerID>"}
+{"platform": "container", "pod": "<podName>", "svc": "<svcName>", "user_id": "<userID>"}
 ```
-Extensible for future platforms (vm, etc.).
+
+## Connection Info Stored in PocketBase
+```json
+{"host": "<svc>.rootenv-users.svc.cluster.local", "port": 22, "user": "<ssh_user>"}
+```
+The relay dials this host:port directly — no port forwarding or host IP needed.
+
+## ContMgr Never Dials SSH
+ContMgr communicates with pods exclusively through the Kubernetes API (pod phase polling + exec).
+It does not dial port 22 on the service or the pod IP. Only the relay does.

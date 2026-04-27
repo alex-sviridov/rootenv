@@ -1,21 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { mockAuthWithPassword, mockCreate, mockUpdate, mockDelete, mockClear, mockCollection, mockAuthStore } = vi.hoisted(() => {
+const { mockAuthWithPassword, mockCreate, mockUpdate, mockDelete, mockClear, mockAuthRefresh, mockCollection, mockAuthStore } = vi.hoisted(() => {
   const mockAuthWithPassword = vi.fn()
   const mockCreate = vi.fn()
   const mockUpdate = vi.fn()
   const mockDelete = vi.fn()
   const mockClear = vi.fn()
+  const mockAuthRefresh = vi.fn()
   const mockAuthStore = { clear: mockClear, isValid: false, model: null }
-  const mockCollection = vi.fn(() => ({ authWithPassword: mockAuthWithPassword, create: mockCreate, update: mockUpdate, delete: mockDelete }))
-  return { mockAuthWithPassword, mockCreate, mockUpdate, mockDelete, mockClear, mockCollection, mockAuthStore }
+  const mockCollection = vi.fn(() => ({ authWithPassword: mockAuthWithPassword, create: mockCreate, update: mockUpdate, delete: mockDelete, authRefresh: mockAuthRefresh }))
+  return { mockAuthWithPassword, mockCreate, mockUpdate, mockDelete, mockClear, mockAuthRefresh, mockCollection, mockAuthStore }
 })
 
 vi.mock('@/lib/pb', () => ({
   pb: { collection: mockCollection, authStore: mockAuthStore },
 }))
 
-import { login, register, logout, getAuthStore, changePassword, deleteAccount } from '../auth'
+import { login, register, logout, getAuthStore, changePassword, deleteAccount, authRefresh } from '../auth'
 
 beforeEach(() => vi.clearAllMocks())
 
@@ -99,5 +100,23 @@ describe('deleteAccount', () => {
   it('propagates errors', async () => {
     mockDelete.mockRejectedValue(new Error('not found'))
     await expect(deleteAccount('u1')).rejects.toThrow('not found')
+  })
+})
+
+describe('authRefresh', () => {
+  it('calls authRefresh on the users collection', async () => {
+    const result = { token: 'new-tok', record: { id: 'u1', email: 'a@b.com' } }
+    mockAuthRefresh.mockResolvedValue(result)
+
+    const r = await authRefresh()
+
+    expect(mockCollection).toHaveBeenCalledWith('users')
+    expect(mockAuthRefresh).toHaveBeenCalled()
+    expect(r).toEqual(result)
+  })
+
+  it('propagates errors', async () => {
+    mockAuthRefresh.mockRejectedValue(new Error('401'))
+    await expect(authRefresh()).rejects.toThrow('401')
   })
 })

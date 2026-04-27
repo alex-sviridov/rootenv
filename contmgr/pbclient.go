@@ -24,6 +24,7 @@ type Asset struct {
 	State         string          `json:"state"`
 	Platform      string          `json:"platform"`
 	Configuration json.RawMessage `json:"configuration"`
+	UserID        string          `json:"user"`
 }
 
 func (a *Asset) Def() (*AssetDef, error) {
@@ -141,7 +142,6 @@ func (c *pbClient) ListPendingAssets() ([]Asset, error) {
 	return result.Items, nil
 }
 
-
 func (c *pbClient) GetAsset(id string) (*Asset, error) {
 	var a Asset
 	if err := c.get("/api/collections/assets/records/"+url.PathEscape(id), &a); err != nil {
@@ -185,4 +185,26 @@ func (c *pbClient) ListPendingDecommissionCommands() ([]Command, error) {
 
 func (c *pbClient) PatchCommand(id string, fields map[string]any) error {
 	return c.patch("/api/collections/commands/records/"+url.PathEscape(id), fields)
+}
+
+func (c *pbClient) ListDecommissioningAssets() ([]Asset, error) {
+	var result struct {
+		Items []Asset `json:"items"`
+	}
+	filter := url.QueryEscape("(state='decommissioning')")
+	if err := c.get("/api/collections/assets/records?filter="+filter, &result); err != nil {
+		return nil, err
+	}
+	return result.Items, nil
+}
+
+func (c *pbClient) ListProvisionedAssetsByAttempt(attemptID string) ([]Asset, error) {
+	var result struct {
+		Items []Asset `json:"items"`
+	}
+	filter := url.QueryEscape("(attempt='" + attemptID + "'&&(state='provisioned'||state='provisioning'))")
+	if err := c.get("/api/collections/assets/records?filter="+filter, &result); err != nil {
+		return nil, err
+	}
+	return result.Items, nil
 }

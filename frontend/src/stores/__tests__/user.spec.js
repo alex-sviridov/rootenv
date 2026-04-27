@@ -8,9 +8,10 @@ vi.mock('@/api/auth', () => ({
   getAuthStore: vi.fn(),
   changePassword: vi.fn(),
   deleteAccount: vi.fn(),
+  authRefresh: vi.fn(),
 }))
 
-import { login, register, logout, getAuthStore, changePassword, deleteAccount as deleteAccountApi } from '@/api/auth'
+import { login, register, logout, getAuthStore, changePassword, deleteAccount as deleteAccountApi, authRefresh } from '@/api/auth'
 import { useUserStore } from '../user'
 
 beforeEach(() => {
@@ -255,18 +256,36 @@ describe('deleteAccount', () => {
 })
 
 describe('init', () => {
-  it('restores user from a valid auth store', () => {
-    const model = { id: 'u1', email: 'a@b.com' }
-    getAuthStore.mockReturnValue({ isValid: true, model })
-    const store = useUserStore()
-    store.init()
-    expect(store.user).toEqual(model)
-  })
-
-  it('leaves user null when auth store is invalid', () => {
+  it('leaves user null and resolves authReady when auth store is invalid', async () => {
     getAuthStore.mockReturnValue({ isValid: false, model: null })
     const store = useUserStore()
     store.init()
+    await store.authReady
     expect(store.user).toBeNull()
+    expect(authRefresh).not.toHaveBeenCalled()
+  })
+
+  it('restores user optimistically and updates from server on valid token', async () => {
+    const model = { id: 'u1', email: 'a@b.com' }
+    const refreshed = { id: 'u1', email: 'a@b.com', verified: true }
+    getAuthStore.mockReturnValue({ isValid: true, model })
+    authRefresh.mockResolvedValue({ token: 'new-tok', record: refreshed })
+    const store = useUserStore()
+    store.init()
+    expect(store.user).toEqual(model)
+    await store.authReady
+    expect(authRefresh).toHaveBeenCalled()
+    expect(store.user).toEqual(refreshed)
+  })
+
+  it('signs out when authRefresh fails (database wipe case)', async () => {
+    const model = { id: 'u1', email: 'a@b.com' }
+    getAuthStore.mockReturnValue({ isValid: true, model })
+    authRefresh.mockRejectedValue(new Error('404'))
+    const store = useUserStore()
+    store.init()
+    await store.authReady
+    expect(store.user).toBeNull()
+    expect(logout).toHaveBeenCalled()
   })
 })

@@ -7,22 +7,22 @@ import (
 )
 
 type config struct {
-	pbURL        string
-	pbEmail      string
-	pbPassword   string
-	hostIP       string
-	pollInterval time.Duration
-	dockerHost   string
+	pbURL           string
+	pbEmail         string
+	pbPassword      string
+	usersNamespace  string
+	imagePullSecret string
+	pollInterval    time.Duration
 }
 
 func loadConfig() (config, error) {
 	cfg := config{
-		pbURL:        os.Getenv("CONTMGR_BACKEND_URL"),
-		pbEmail:      os.Getenv("CONTMGR_BACKEND_USERNAME"),
-		pbPassword:   os.Getenv("CONTMGR_BACKEND_PASSWORD"),
-		hostIP:       os.Getenv("CONTMGR_HOST_IP"),
-		pollInterval: 5 * time.Second,
-		dockerHost:   os.Getenv("CONTMGR_DOCKER_HOST"),
+		pbURL:           os.Getenv("CONTMGR_BACKEND_URL"),
+		pbEmail:         os.Getenv("CONTMGR_BACKEND_USERNAME"),
+		pbPassword:      os.Getenv("CONTMGR_BACKEND_PASSWORD"),
+		usersNamespace:  os.Getenv("CONTMGR_USERS_NAMESPACE"),
+		imagePullSecret: os.Getenv("CONTMGR_IMAGE_PULL_SECRET"),
+		pollInterval:    5 * time.Second,
 	}
 	if cfg.pbURL == "" {
 		return config{}, fmt.Errorf("CONTMGR_BACKEND_URL is required")
@@ -33,11 +33,8 @@ func loadConfig() (config, error) {
 	if cfg.pbPassword == "" {
 		return config{}, fmt.Errorf("CONTMGR_BACKEND_PASSWORD is required")
 	}
-	if cfg.hostIP == "" {
-		return config{}, fmt.Errorf("CONTMGR_HOST_IP is required")
-	}
-	if cfg.dockerHost == "" {
-		cfg.dockerHost = "unix:///var/run/docker.sock"
+	if cfg.usersNamespace == "" {
+		return config{}, fmt.Errorf("CONTMGR_USERS_NAMESPACE is required")
 	}
 	if raw := os.Getenv("CONTMGR_POLL_INTERVAL"); raw != "" {
 		if d, err := time.ParseDuration(raw); err == nil && d > 0 {

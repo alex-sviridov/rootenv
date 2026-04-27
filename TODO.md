@@ -18,8 +18,6 @@
 
 - more clear definition of container registry used
 
-- muliple managers with coordinations (via betting? race conditions?)
-
 # backend
 
 - add svc users creation to migration

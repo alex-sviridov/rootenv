@@ -72,13 +72,15 @@ function onDragEnd() {
     <!-- Terminal panels (v-show keeps WS alive when switching) -->
     <div class="flex-1 overflow-hidden relative">
       <template v-if="tabs.length">
-        <TerminalPanel
-          v-for="tab in tabs"
-          v-show="tab.id === activeTabId"
-          :key="tab.id"
-          :server-id="tab.serverId"
-          :secret="secrets[tab.serverId] ?? null"
-        />
+        <template v-for="tab in tabs" :key="tab.id">
+          <TerminalPanel
+            v-if="secrets[tab.serverId]"
+            v-show="tab.id === activeTabId"
+            :key="tab.id"
+            :server-id="tab.serverId"
+            :secret="secrets[tab.serverId]"
+          />
+        </template>
       </template>
       <div v-else class="flex items-center justify-center h-full px-6 text-center">
         <span v-if="limitError" class="text-xs text-amber-400">{{ limitError }}</span>

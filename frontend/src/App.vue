@@ -7,8 +7,9 @@ import { useAttemptsStore } from '@/stores/attempts'
 
 const userStore = useUserStore()
 const attemptsStore = useAttemptsStore()
-onMounted(() => {
+onMounted(async () => {
   userStore.init()
+  await userStore.authReady
   if (userStore.isAuthenticated) attemptsStore.loadActiveAttempt()
 })
 </script>

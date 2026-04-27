@@ -8,37 +8,69 @@ import (
 
 // --- fakes ---
 
-type fakeDocker struct {
-	createAndStartFunc func(ctx context.Context, p ContainerParams) (string, int, error)
-	removeFunc         func(ctx context.Context, containerID string) error
-	createNetworkFunc  func(ctx context.Context, name string) error
-	removeNetworkFunc  func(ctx context.Context, name string) error
+type fakeK8s struct {
+	ensureNetworkPolicyFunc func(ctx context.Context, p NetPolParams) error
+	createPodFunc          func(ctx context.Context, p PodParams) error
+	createServiceFunc      func(ctx context.Context, p PodParams) error
+	waitPodRunningFunc     func(ctx context.Context, namespace, podName string) error
+	execInPodFunc          func(ctx context.Context, namespace, podName string, cmd []string) error
+	deletePodFunc          func(ctx context.Context, namespace, podName string) error
+	deleteServiceFunc      func(ctx context.Context, namespace, svcName string) error
+	deleteNetworkPolicyFunc func(ctx context.Context, namespace, netpolName string) error
 }
 
-func (f *fakeDocker) CreateAndStart(ctx context.Context, p ContainerParams) (string, int, error) {
-	if f.createAndStartFunc != nil {
-		return f.createAndStartFunc(ctx, p)
-	}
-	return "ctr-id", 2222, nil
-}
-
-func (f *fakeDocker) Remove(ctx context.Context, containerID string) error {
-	if f.removeFunc != nil {
-		return f.removeFunc(ctx, containerID)
+func (f *fakeK8s) EnsureNetworkPolicy(ctx context.Context, p NetPolParams) error {
+	if f.ensureNetworkPolicyFunc != nil {
+		return f.ensureNetworkPolicyFunc(ctx, p)
 	}
 	return nil
 }
 
-func (f *fakeDocker) CreateNetwork(ctx context.Context, name string) error {
-	if f.createNetworkFunc != nil {
-		return f.createNetworkFunc(ctx, name)
+func (f *fakeK8s) CreatePod(ctx context.Context, p PodParams) error {
+	if f.createPodFunc != nil {
+		return f.createPodFunc(ctx, p)
 	}
 	return nil
 }
 
-func (f *fakeDocker) RemoveNetwork(ctx context.Context, name string) error {
-	if f.removeNetworkFunc != nil {
-		return f.removeNetworkFunc(ctx, name)
+func (f *fakeK8s) CreateService(ctx context.Context, p PodParams) error {
+	if f.createServiceFunc != nil {
+		return f.createServiceFunc(ctx, p)
+	}
+	return nil
+}
+
+func (f *fakeK8s) WaitPodRunning(ctx context.Context, namespace, name string) error {
+	if f.waitPodRunningFunc != nil {
+		return f.waitPodRunningFunc(ctx, namespace, name)
+	}
+	return nil
+}
+
+func (f *fakeK8s) ExecInPod(ctx context.Context, namespace, name string, cmd []string) error {
+	if f.execInPodFunc != nil {
+		return f.execInPodFunc(ctx, namespace, name, cmd)
+	}
+	return nil
+}
+
+func (f *fakeK8s) DeletePod(ctx context.Context, namespace, name string) error {
+	if f.deletePodFunc != nil {
+		return f.deletePodFunc(ctx, namespace, name)
+	}
+	return nil
+}
+
+func (f *fakeK8s) DeleteService(ctx context.Context, namespace, name string) error {
+	if f.deleteServiceFunc != nil {
+		return f.deleteServiceFunc(ctx, namespace, name)
+	}
+	return nil
+}
+
+func (f *fakeK8s) DeleteNetworkPolicy(ctx context.Context, namespace, name string) error {
+	if f.deleteNetworkPolicyFunc != nil {
+		return f.deleteNetworkPolicyFunc(ctx, namespace, name)
 	}
 	return nil
 }
@@ -134,180 +166,294 @@ func (f *fakePB) PatchCommand(id string, fields map[string]any) error {
 	return nil
 }
 
-// --- helpers ---
-
-func newTestContmgr(pb pbDoer, docker dockerDoer) *Contmgr {
-	return &Contmgr{pb: pb, docker: docker, hostIP: "127.0.0.1", waitSSH: func(string, int) error { return nil }}
+func (f *fakePB) ListProvisionedAssetsByAttempt(attemptID string) ([]Asset, error) {
+	var out []Asset
+	for _, a := range f.assets {
+		if a.Attempt == attemptID && (a.State == "provisioned" || a.State == "provisioning") {
+			out = append(out, *a)
+		}
+	}
+	return out, nil
 }
 
-func containerAsset(id, attemptID, name string) Asset {
+// --- helpers ---
+
+func newTestContmgr(pb pbDoer, k8s k8sDoer) *Contmgr {
+	return &Contmgr{pb: pb, k8s: k8s, namespace: "rootenv-users"}
+}
+
+func containerAsset(id, attemptID, name, userID string) Asset {
 	return Asset{
 		ID:            id,
 		Attempt:       attemptID,
 		Name:          name,
 		State:         "pending",
 		Platform:      "container",
+		UserID:        userID,
 		Configuration: []byte(`{"image":"alpine","ssh_user":"lab","cpu":"1","memory":"128MB"}`),
 	}
 }
 
-func containerAssetDecommission(id, attemptID, name, containerID string) Asset {
+func containerAssetDecommission(id, attemptID, name, userID, pod, svc string) Asset {
 	return Asset{
 		ID:            id,
 		Attempt:       attemptID,
 		Name:          name,
 		State:         "provisioned",
 		Platform:      "container",
-		Configuration: []byte(`{"platform":"container","id":"` + containerID + `"}`),
+		UserID:        userID,
+		Configuration: []byte(`{"platform":"container","pod":"` + pod + `","svc":"` + svc + `"}`),
 	}
 }
 
-// --- network name ---
+// --- naming helpers ---
 
-func TestNetworkName(t *testing.T) {
-	if got := networkName("abc123"); got != "lab-abc123" {
-		t.Fatalf("want lab-abc123, got %s", got)
+func TestPodName(t *testing.T) {
+	if got := podName("user1", "attempt1", "server-0"); got != "user1-attempt1-server-0" {
+		t.Fatalf("want user1-attempt1-server-0, got %s", got)
 	}
 }
 
-// --- provision: network created with correct name ---
+func TestSvcName(t *testing.T) {
+	if got := svcName("user1", "attempt1", "server-0"); got != "user1-attempt1-server-0-svc" {
+		t.Fatalf("want user1-attempt1-server-0-svc, got %s", got)
+	}
+}
 
-func TestProvisionCreatesNetwork(t *testing.T) {
+func TestNetpolName(t *testing.T) {
+	if got := netpolName("user1", "attempt1"); got != "user1-attempt1-netpol" {
+		t.Fatalf("want user1-attempt1-netpol, got %s", got)
+	}
+}
+
+// --- provision: network policy created with correct user/attempt ---
+
+func TestProvisionEnsuresNetworkPolicy(t *testing.T) {
 	pb := newFakePB()
-	asset := containerAsset("asset1", "attempt1", "server-0")
+	asset := containerAsset("asset1", "attempt1", "server-0", "user1")
 	pb.addAsset(asset)
 	pb.addKeys("asset1", KeysRecord{ID: "keys1", Secret: "secretsecretsecretsecretsecretsec"})
 
-	var createdNetworks []string
-	docker := &fakeDocker{
-		createNetworkFunc: func(_ context.Context, name string) error {
-			createdNetworks = append(createdNetworks, name)
-			return nil
-		},
-	}
-
-	mgr := newTestContmgr(pb, docker)
-	if err := mgr.ProvisionAsset(context.Background(), asset); err != nil {
-		t.Fatal(err)
-	}
-
-	if len(createdNetworks) != 1 || createdNetworks[0] != "lab-attempt1" {
-		t.Fatalf("expected network lab-attempt1 to be created, got %v", createdNetworks)
-	}
-}
-
-// --- provision: container joined to network with asset name as alias ---
-
-func TestProvisionContainerJoinedToNetwork(t *testing.T) {
-	pb := newFakePB()
-	asset := containerAsset("asset1", "attempt1", "server-0")
-	pb.addAsset(asset)
-	pb.addKeys("asset1", KeysRecord{ID: "keys1", Secret: "secretsecretsecretsecretsecretsec"})
-
-	var gotParams ContainerParams
-	docker := &fakeDocker{
-		createAndStartFunc: func(_ context.Context, p ContainerParams) (string, int, error) {
+	var gotParams NetPolParams
+	k8s := &fakeK8s{
+		ensureNetworkPolicyFunc: func(_ context.Context, p NetPolParams) error {
 			gotParams = p
-			return "ctr-id", 2222, nil
+			return nil
 		},
 	}
 
-	mgr := newTestContmgr(pb, docker)
+	mgr := newTestContmgr(pb, k8s)
 	if err := mgr.ProvisionAsset(context.Background(), asset); err != nil {
 		t.Fatal(err)
 	}
 
-	if gotParams.NetworkName != "lab-attempt1" {
-		t.Errorf("want NetworkName=lab-attempt1, got %q", gotParams.NetworkName)
+	if gotParams.UserID != "user1" {
+		t.Errorf("want UserID=user1, got %q", gotParams.UserID)
 	}
-	if gotParams.ContainerName != "server-0" {
-		t.Errorf("want ContainerName=server-0, got %q", gotParams.ContainerName)
+	if gotParams.AttemptID != "attempt1" {
+		t.Errorf("want AttemptID=attempt1, got %q", gotParams.AttemptID)
+	}
+	if gotParams.Namespace != "rootenv-users" {
+		t.Errorf("want Namespace=rootenv-users, got %q", gotParams.Namespace)
 	}
 }
 
-// --- provision: network create failure aborts provisioning ---
+// --- provision: pod and service created with correct names ---
 
-func TestProvisionNetworkCreateFailureAborts(t *testing.T) {
+func TestProvisionCreatesPodAndService(t *testing.T) {
 	pb := newFakePB()
-	asset := containerAsset("asset1", "attempt1", "server-0")
+	asset := containerAsset("asset1", "attempt1", "server-0", "user1")
 	pb.addAsset(asset)
 	pb.addKeys("asset1", KeysRecord{ID: "keys1", Secret: "secretsecretsecretsecretsecretsec"})
 
-	docker := &fakeDocker{
-		createNetworkFunc: func(_ context.Context, _ string) error {
-			return errors.New("network error")
+	var gotPod, gotSvc PodParams
+	k8s := &fakeK8s{
+		createPodFunc: func(_ context.Context, p PodParams) error {
+			gotPod = p
+			return nil
+		},
+		createServiceFunc: func(_ context.Context, p PodParams) error {
+			gotSvc = p
+			return nil
 		},
 	}
 
-	mgr := newTestContmgr(pb, docker)
-	err := mgr.ProvisionAsset(context.Background(), asset)
-	if err == nil {
-		t.Fatal("expected error when network creation fails")
+	mgr := newTestContmgr(pb, k8s)
+	if err := mgr.ProvisionAsset(context.Background(), asset); err != nil {
+		t.Fatal(err)
+	}
+
+	wantPodName := "user1-attempt1-server-0"
+	if gotPod.UserID != "user1" || gotPod.AttemptID != "attempt1" || gotPod.AssetName != "server-0" {
+		t.Errorf("pod params wrong: %+v", gotPod)
+	}
+	if gotSvc.UserID != "user1" || gotSvc.AttemptID != "attempt1" || gotSvc.AssetName != "server-0" {
+		t.Errorf("svc params wrong: %+v", gotSvc)
+	}
+	_ = wantPodName
+}
+
+// --- provision: network policy creation failure aborts ---
+
+func TestProvisionNetpolFailureAborts(t *testing.T) {
+	pb := newFakePB()
+	asset := containerAsset("asset1", "attempt1", "server-0", "user1")
+	pb.addAsset(asset)
+	pb.addKeys("asset1", KeysRecord{ID: "keys1", Secret: "secretsecretsecretsecretsecretsec"})
+
+	k8s := &fakeK8s{
+		ensureNetworkPolicyFunc: func(_ context.Context, _ NetPolParams) error {
+			return errors.New("netpol error")
+		},
+	}
+
+	mgr := newTestContmgr(pb, k8s)
+	if err := mgr.ProvisionAsset(context.Background(), asset); err == nil {
+		t.Fatal("expected error when network policy creation fails")
 	}
 }
 
-// --- decommission: network removed after container removed ---
+// --- provision: connection stored with service DNS and port 22 ---
 
-func TestDecommissionRemovesNetwork(t *testing.T) {
+func TestProvisionStoresServiceConnection(t *testing.T) {
 	pb := newFakePB()
-	asset := containerAssetDecommission("asset1", "attempt1", "server-0", "ctr-abc")
+	asset := containerAsset("asset1", "attempt1", "server-0", "user1")
+	pb.addAsset(asset)
+	pb.addKeys("asset1", KeysRecord{ID: "keys1", Secret: "secretsecretsecretsecretsecretsec"})
+
+	mgr := newTestContmgr(pb, &fakeK8s{})
+	if err := mgr.ProvisionAsset(context.Background(), asset); err != nil {
+		t.Fatal(err)
+	}
+
+	// find the patch call that sets connection
+	var connPatch map[string]any
+	for _, c := range pb.patchAssetCalls {
+		if c.id == "asset1" {
+			if conn, ok := c.fields["connection"]; ok {
+				connPatch = conn.(map[string]any)
+			}
+		}
+	}
+	if connPatch == nil {
+		t.Fatal("no connection patch found")
+	}
+
+	wantHost := "user1-attempt1-server-0-svc.rootenv-users.svc.cluster.local"
+	if got, _ := connPatch["host"].(string); got != wantHost {
+		t.Errorf("want host=%q, got %q", wantHost, got)
+	}
+	if got, _ := connPatch["port"].(int); got != 22 {
+		t.Errorf("want port=22, got %v", connPatch["port"])
+	}
+}
+
+// --- decommission: pod and service deleted ---
+
+func TestDecommissionDeletesPodAndService(t *testing.T) {
+	pb := newFakePB()
+	asset := containerAssetDecommission("asset1", "attempt1", "server-0", "user1",
+		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
 	pb.addAsset(asset)
 
-	var removedNetworks []string
-	var removedContainers []string
-	docker := &fakeDocker{
-		removeFunc: func(_ context.Context, id string) error {
-			removedContainers = append(removedContainers, id)
+	var deletedPods, deletedSvcs []string
+	k8s := &fakeK8s{
+		deletePodFunc: func(_ context.Context, _, name string) error {
+			deletedPods = append(deletedPods, name)
 			return nil
 		},
-		removeNetworkFunc: func(_ context.Context, name string) error {
-			removedNetworks = append(removedNetworks, name)
+		deleteServiceFunc: func(_ context.Context, _, name string) error {
+			deletedSvcs = append(deletedSvcs, name)
 			return nil
 		},
 	}
 
-	mgr := newTestContmgr(pb, docker)
+	mgr := newTestContmgr(pb, k8s)
 	if err := mgr.DecommissionAsset(context.Background(), asset); err != nil {
 		t.Fatal(err)
 	}
 
-	if len(removedContainers) != 1 || removedContainers[0] != "ctr-abc" {
-		t.Errorf("expected container ctr-abc removed, got %v", removedContainers)
+	if len(deletedPods) != 1 || deletedPods[0] != "user1-attempt1-server-0" {
+		t.Errorf("expected pod user1-attempt1-server-0 deleted, got %v", deletedPods)
 	}
-	if len(removedNetworks) != 1 || removedNetworks[0] != "lab-attempt1" {
-		t.Errorf("expected network lab-attempt1 removed, got %v", removedNetworks)
+	if len(deletedSvcs) != 1 || deletedSvcs[0] != "user1-attempt1-server-0-svc" {
+		t.Errorf("expected svc user1-attempt1-server-0-svc deleted, got %v", deletedSvcs)
 	}
 }
 
-// --- decommission: network removed after container, even if container ID is empty ---
+// --- decommission: netpol deleted when last asset for attempt ---
 
-func TestDecommissionRemovesNetworkEvenWithoutContainer(t *testing.T) {
+func TestDecommissionDeletesNetpolWhenLastAsset(t *testing.T) {
 	pb := newFakePB()
-	// Asset with no container ID (e.g. provision failed partway)
+	asset := containerAssetDecommission("asset1", "attempt1", "server-0", "user1",
+		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
+	pb.addAsset(asset)
+
+	var deletedNetpols []string
+	k8s := &fakeK8s{
+		deleteNetworkPolicyFunc: func(_ context.Context, _, name string) error {
+			deletedNetpols = append(deletedNetpols, name)
+			return nil
+		},
+	}
+
+	mgr := newTestContmgr(pb, k8s)
+	if err := mgr.DecommissionAsset(context.Background(), asset); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(deletedNetpols) != 1 || deletedNetpols[0] != "user1-attempt1-netpol" {
+		t.Errorf("expected netpol user1-attempt1-netpol deleted, got %v", deletedNetpols)
+	}
+}
+
+// --- decommission: netpol kept when other assets for attempt remain ---
+
+func TestDecommissionKeepsNetpolWhenOtherAssetsRemain(t *testing.T) {
+	pb := newFakePB()
+	// asset1 is being decommissioned (will be set to decommissioning)
+	asset1 := containerAssetDecommission("asset1", "attempt1", "server-0", "user1",
+		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
+	// asset2 is still provisioned — same attempt
+	asset2 := Asset{
+		ID: "asset2", Attempt: "attempt1", Name: "server-1",
+		State: "provisioned", UserID: "user1",
+		Configuration: []byte(`{"platform":"container","pod":"user1-attempt1-server-1","svc":"user1-attempt1-server-1-svc"}`),
+	}
+	pb.addAsset(asset1)
+	pb.addAsset(asset2)
+
+	var deletedNetpols []string
+	k8s := &fakeK8s{
+		deleteNetworkPolicyFunc: func(_ context.Context, _, name string) error {
+			deletedNetpols = append(deletedNetpols, name)
+			return nil
+		},
+	}
+
+	mgr := newTestContmgr(pb, k8s)
+	if err := mgr.DecommissionAsset(context.Background(), asset1); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(deletedNetpols) != 0 {
+		t.Errorf("expected netpol to be kept, but it was deleted: %v", deletedNetpols)
+	}
+}
+
+// --- decommission: handles missing pod/svc gracefully (empty names) ---
+
+func TestDecommissionHandlesMissingPodSvc(t *testing.T) {
+	pb := newFakePB()
 	asset := Asset{
-		ID:            "asset1",
-		Attempt:       "attempt1",
-		Name:          "server-0",
-		State:         "provisioned",
-		Platform:      "container",
+		ID: "asset1", Attempt: "attempt1", Name: "server-0",
+		State: "provisioned", UserID: "user1",
 		Configuration: []byte(`{}`),
 	}
 	pb.addAsset(asset)
 
-	var removedNetworks []string
-	docker := &fakeDocker{
-		removeNetworkFunc: func(_ context.Context, name string) error {
-			removedNetworks = append(removedNetworks, name)
-			return nil
-		},
-	}
-
-	mgr := newTestContmgr(pb, docker)
+	mgr := newTestContmgr(pb, &fakeK8s{})
 	if err := mgr.DecommissionAsset(context.Background(), asset); err != nil {
 		t.Fatal(err)
-	}
-
-	if len(removedNetworks) != 1 || removedNetworks[0] != "lab-attempt1" {
-		t.Errorf("expected network lab-attempt1 removed, got %v", removedNetworks)
 	}
 }

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { login, register, logout, getAuthStore, changePassword, deleteAccount as deleteAccountApi } from '@/api/auth'
+import { login, register, logout, getAuthStore, changePassword, deleteAccount as deleteAccountApi, authRefresh } from '@/api/auth'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -70,10 +70,21 @@ export const useUserStore = defineStore('user', () => {
     error.value = null
   }
 
+  let _authReadyResolve
+  const authReady = new Promise(resolve => { _authReadyResolve = resolve })
+
   function init() {
     const authStore = getAuthStore()
-    if (authStore.isValid) user.value = authStore.model
+    if (!authStore.isValid) {
+      _authReadyResolve()
+      return
+    }
+    user.value = authStore.model
+    authRefresh()
+      .then(auth => { user.value = auth.record })
+      .catch(() => { signOut() })
+      .finally(() => { _authReadyResolve() })
   }
 
-  return { user, loading, error, isAuthenticated, signIn, signUp, signOut, updatePassword, deleteAccount, init }
+  return { user, loading, error, isAuthenticated, signIn, signUp, signOut, updatePassword, deleteAccount, init, authReady }
 })

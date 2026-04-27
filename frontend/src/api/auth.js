@@ -15,3 +15,5 @@ export const changePassword = (id, oldPassword, password, passwordConfirm) =>
 
 export const deleteAccount = (id) =>
   pb.collection('users').delete(id)
+
+export const authRefresh = () => pb.collection('users').authRefresh()

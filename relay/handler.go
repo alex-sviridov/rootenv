@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/alexsviridov/linuxlab/relay/pkg/pbclient"
+	gossh "golang.org/x/crypto/ssh"
 	"nhooyr.io/websocket"
 )
 
@@ -171,6 +172,7 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = conn.Close(websocket.StatusInternalError, "internal error")
 		return
 	}
+	log.Debug("key decrypted", "fingerprint", gossh.FingerprintSHA256(signer.PublicKey()), "secret_len", len(secret))
 
 	connectedAt := time.Now()
 	log = log.With("attempt_id", attempt.ID)

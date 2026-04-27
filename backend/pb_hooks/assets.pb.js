@@ -7,9 +7,10 @@ onRecordAfterCreateSuccess((e) => {
     const duration = environment.duration || 60
     if (environment.assets) {
         environment.assets.forEach((assetDef) => {
-            console.log(`[attempt:${attempt.id}] creating asset: ${assetDef.name}`)
+            console.log(`[attempt:${attempt.id}] creating asset: ${assetDef.name} for user ${attempt.get("user")} with duration ${duration} minutes`)
             const asset = new Record(assetCollection)
             asset.set("attempt", attempt.id)
+            asset.set("user", attempt.get("user"))
             asset.set("connection", "")
             asset.set("configuration", JSON.stringify(assetDef))
             asset.set("name", assetDef.name)

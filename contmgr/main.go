@@ -10,7 +10,11 @@ import (
 )
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	level := slog.LevelInfo
+	if os.Getenv("LOG_LEVEL") == "debug" {
+		level = slog.LevelDebug
+	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
 
 	cfg, err := loadConfig()
 	if err != nil {
@@ -21,25 +25,25 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	pb, err := authWithRetry(cfg, 5)
+	pb, err := authWithRetry(ctx, cfg)
 	if err != nil {
-		slog.Error("PocketBase auth failed after retries", "err", err)
+		slog.Error("PocketBase auth failed", "err", err)
 		os.Exit(1)
 	}
 	slog.Info("authenticated with PocketBase", "url", cfg.pbURL)
 
-	docker, err := newDockerClient(cfg.dockerHost)
+	k8s, err := newK8sClient()
 	if err != nil {
-		slog.Error("docker client error", "err", err)
+		slog.Error("k8s client error", "err", err)
 		os.Exit(1)
 	}
 
-	mgr := NewContmgr(pb, docker, cfg.hostIP)
+	mgr := NewContmgr(pb, k8s, cfg.usersNamespace, cfg.imagePullSecret)
 
 	ticker := time.NewTicker(cfg.pollInterval)
 	defer ticker.Stop()
 
-	slog.Info("contmgr started", "poll_interval", cfg.pollInterval)
+	slog.Info("contmgr started", "namespace", cfg.usersNamespace, "poll_interval", cfg.pollInterval)
 
 	for {
 		select {
@@ -50,21 +54,37 @@ func main() {
 			if err := mgr.RunOnce(ctx); err != nil {
 				slog.Error("run cycle error", "err", err)
 			}
+			if mgr.NeedsReconnect() {
+				slog.Warn("PocketBase unavailable, reconnecting")
+				newPB, err := authWithRetry(ctx, cfg)
+				if err != nil {
+					slog.Error("PocketBase reconnect failed", "err", err)
+					continue
+				}
+				mgr.SetPB(newPB)
+				slog.Info("reconnected to PocketBase")
+			}
 		}
 	}
 }
 
-func authWithRetry(cfg config, attempts int) (*pbClient, error) {
+func authWithRetry(ctx context.Context, cfg config) (*pbClient, error) {
 	var err error
-	for i := range attempts {
+	for i := 0; ; i++ {
 		var pb *pbClient
 		pb, err = newPBClient(cfg.pbURL, cfg.pbEmail, cfg.pbPassword)
 		if err == nil {
 			return pb, nil
 		}
 		backoff := time.Duration(1<<i) * time.Second
+		if backoff > 60*time.Second {
+			backoff = 60 * time.Second
+		}
 		slog.Warn("PocketBase auth attempt failed", "attempt", i+1, "backoff", backoff, "err", err)
-		time.Sleep(backoff)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(backoff):
+		}
 	}
-	return nil, err
 }

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
+	"sync/atomic"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -17,27 +19,25 @@ type pbDoer interface {
 	PatchAsset(id string, fields map[string]any) error
 	PatchKeys(id string, fields map[string]any) error
 	ListPendingDecommissionCommands() ([]Command, error)
+	ListDecommissioningAssets() ([]Asset, error)
 	PatchCommand(id string, fields map[string]any) error
-}
-
-// dockerDoer is the Docker operations contmgr needs.
-type dockerDoer interface {
-	CreateAndStart(ctx context.Context, p ContainerParams) (string, int, error)
-	Remove(ctx context.Context, containerID string) error
-	CreateNetwork(ctx context.Context, name string) error
-	RemoveNetwork(ctx context.Context, name string) error
+	ListProvisionedAssetsByAttempt(attemptID string) ([]Asset, error)
 }
 
 type Contmgr struct {
-	pb      pbDoer
-	docker  dockerDoer
-	hostIP  string
-	waitSSH func(host string, port int) error
+	pb           pbDoer
+	k8s          k8sDoer
+	namespace    string
+	pullSecret   string
+	needsReconn  atomic.Bool
 }
 
-func NewContmgr(pb *pbClient, docker *DockerClient, hostIP string) *Contmgr {
-	return &Contmgr{pb: pb, docker: docker, hostIP: hostIP, waitSSH: WaitSSH}
+func NewContmgr(pb *pbClient, k8s *K8sClient, namespace, pullSecret string) *Contmgr {
+	return &Contmgr{pb: pb, k8s: k8s, namespace: namespace, pullSecret: pullSecret}
 }
+
+func (p *Contmgr) NeedsReconnect() bool { return p.needsReconn.Swap(false) }
+func (p *Contmgr) SetPB(pb *pbClient)   { p.pb = pb }
 
 func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 	if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "provisioning"}); err != nil {
@@ -49,9 +49,12 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 		return fmt.Errorf("parse asset def: %w", err)
 	}
 
-	netName := networkName(asset.Attempt)
-	if err := p.docker.CreateNetwork(ctx, netName); err != nil {
-		return fmt.Errorf("create network: %w", err)
+	if err := p.k8s.EnsureNetworkPolicy(ctx, NetPolParams{
+		Namespace: p.namespace,
+		UserID:    asset.UserID,
+		AttemptID: asset.Attempt,
+	}); err != nil {
+		return fmt.Errorf("ensure network policy: %w", err)
 	}
 
 	privKeyPEM, pubKeyLine, err := GenerateKeypair()
@@ -59,27 +62,50 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 		return fmt.Errorf("generate keypair: %w", err)
 	}
 
-	containerID, hostPort, err := p.docker.CreateAndStart(ctx, ContainerParams{
-		Image:         def.Image,
-		SSHUser:       def.SSHUser,
-		PublicKey:     pubKeyLine,
-		CPU:           fmt.Sprintf("%v", def.CPU),
-		Memory:        def.Memory,
-		NetworkName:   netName,
-		ContainerName: asset.Name,
-	})
-	if err != nil {
-		return fmt.Errorf("create container: %w", err)
+	params := PodParams{
+		Namespace:       p.namespace,
+		UserID:          asset.UserID,
+		AttemptID:       asset.Attempt,
+		AssetName:       asset.Name,
+		Image:           def.Image,
+		SSHUser:         def.SSHUser,
+		CPU:             fmt.Sprintf("%v", def.CPU),
+		Memory:          def.Memory,
+		ImagePullSecret: p.pullSecret,
 	}
 
-	if err := p.waitSSH(p.hostIP, hostPort); err != nil {
-		return fmt.Errorf("wait ssh: %w", err)
+	if err := p.k8s.CreatePod(ctx, params); err != nil {
+		return fmt.Errorf("create pod: %w", err)
 	}
+
+	if err := p.k8s.CreateService(ctx, params); err != nil {
+		return fmt.Errorf("create service: %w", err)
+	}
+
+	pName := podName(asset.UserID, asset.Attempt, asset.Name)
+	if err := p.k8s.WaitPodRunning(ctx, p.namespace, pName); err != nil {
+		return fmt.Errorf("wait pod running: %w", err)
+	}
+
+	pubKeyStr := strings.TrimSpace(string(pubKeyLine))
+	script := fmt.Sprintf(
+		"mkdir -p /home/%[1]s/.ssh && chown %[1]s:%[1]s /home/%[1]s/.ssh && chmod 700 /home/%[1]s/.ssh && printf '%%s' %[2]q > /home/%[1]s/.ssh/authorized_keys && chown %[1]s:%[1]s /home/%[1]s/.ssh/authorized_keys && chmod 600 /home/%[1]s/.ssh/authorized_keys",
+		def.SSHUser, pubKeyStr,
+	)
+	if err := p.k8s.ExecInPod(ctx, p.namespace, pName, []string{"sh", "-c", script}); err != nil {
+		return fmt.Errorf("write authorized_keys: %w", err)
+	}
+
+	host := svcDNS(svcName(asset.UserID, asset.Attempt, asset.Name), p.namespace)
 
 	keysRecord, err := p.pb.GetKeysByAsset(asset.ID)
 	if err != nil {
 		return fmt.Errorf("get keys: %w", err)
 	}
+	if keysRecord.Secret == "" {
+		return fmt.Errorf("keys record has empty secret for asset %s", asset.ID)
+	}
+	slog.Debug("encrypting key", "asset", asset.ID, "secret_len", len(keysRecord.Secret))
 
 	ciphertext, err := EncryptPrivateKey(privKeyPEM, keysRecord.Secret)
 	if err != nil {
@@ -94,13 +120,15 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 
 	if err := p.pb.PatchAsset(asset.ID, map[string]any{
 		"connection": map[string]any{
-			"host": p.hostIP,
-			"port": hostPort,
+			"host": host,
+			"port": 22,
 			"user": def.SSHUser,
 		},
 		"configuration": map[string]any{
 			"platform": "container",
-			"id":       containerID,
+			"pod":      pName,
+			"svc":      svcName(asset.UserID, asset.Attempt, asset.Name),
+			"user_id":  asset.UserID,
 		},
 	}); err != nil {
 		return fmt.Errorf("patch asset connection: %w", err)
@@ -112,7 +140,7 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 		return fmt.Errorf("patch asset state: %w", err)
 	}
 
-	slog.Info("provisioned", "asset", asset.ID, "container", containerID, "port", hostPort)
+	slog.Info("provisioned", "asset", asset.ID, "pod", pName, "svc", svcName(asset.UserID, asset.Attempt, asset.Name))
 	return nil
 }
 
@@ -122,27 +150,35 @@ func (p *Contmgr) DecommissionAsset(ctx context.Context, asset Asset) error {
 	}
 
 	var cfg struct {
-		ID string `json:"id"`
+		Pod    string `json:"pod"`
+		Svc    string `json:"svc"`
+		UserID string `json:"user_id"`
 	}
 	if len(asset.Configuration) > 0 {
 		_ = json.Unmarshal(asset.Configuration, &cfg)
 	}
-
-	if cfg.ID != "" {
-		if err := p.docker.Remove(ctx, cfg.ID); err != nil {
-			return fmt.Errorf("remove container: %w", err)
-		}
+	if err := p.k8s.DeletePod(ctx, p.namespace, cfg.Pod); err != nil {
+		return fmt.Errorf("delete pod: %w", err)
 	}
 
-	if err := p.docker.RemoveNetwork(ctx, networkName(asset.Attempt)); err != nil {
-		return fmt.Errorf("remove network: %w", err)
+	if err := p.k8s.DeleteService(ctx, p.namespace, cfg.Svc); err != nil {
+		return fmt.Errorf("delete service: %w", err)
+	}
+
+	remaining, err := p.pb.ListProvisionedAssetsByAttempt(asset.Attempt)
+	if err != nil {
+		slog.Warn("could not check remaining assets for attempt; skipping netpol cleanup", "attempt", asset.Attempt, "err", err)
+	} else if len(remaining) == 0 {
+		if err := p.k8s.DeleteNetworkPolicy(ctx, p.namespace, netpolName(asset.UserID, asset.Attempt)); err != nil {
+			return fmt.Errorf("delete network policy: %w", err)
+		}
 	}
 
 	if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "decommissioned"}); err != nil {
 		return fmt.Errorf("patch asset state: %w", err)
 	}
 
-	slog.Info("decommissioned", "asset", asset.ID, "container", cfg.ID)
+	slog.Info("decommissioned", "asset", asset.ID, "pod", cfg.Pod)
 	return nil
 }
 
@@ -152,6 +188,7 @@ func (p *Contmgr) RunOnce(ctx context.Context) error {
 	assets, err := p.pb.ListPendingAssets()
 	if err != nil {
 		slog.Error("list provisioning assets", "err", err)
+		p.needsReconn.Store(true)
 	}
 	for _, asset := range assets {
 		asset := asset
@@ -166,6 +203,7 @@ func (p *Contmgr) RunOnce(ctx context.Context) error {
 	commands, err := p.pb.ListPendingDecommissionCommands()
 	if err != nil {
 		slog.Error("list decommission commands", "err", err)
+		p.needsReconn.Store(true)
 	}
 	for _, cmd := range commands {
 		cmd := cmd
@@ -179,8 +217,8 @@ func (p *Contmgr) RunOnce(ctx context.Context) error {
 				slog.Error("get asset for decommission", "cmd", cmd.ID, "asset", cmd.Asset, "err", err)
 				return nil
 			}
-			if asset.State == "decommissioning" || asset.State == "decommissioned" {
-				slog.Info("skip decommission: asset already in terminal state", "asset", asset.ID, "state", asset.State)
+			if asset.State == "decommissioned" {
+				slog.Info("skip decommission: asset already decommissioned", "asset", asset.ID)
 				if err := p.pb.PatchCommand(cmd.ID, map[string]any{"status": "done"}); err != nil {
 					slog.Error("patch command done", "cmd", cmd.ID, "err", err)
 				}
@@ -192,6 +230,23 @@ func (p *Contmgr) RunOnce(ctx context.Context) error {
 			}
 			if err := p.pb.PatchCommand(cmd.ID, map[string]any{"status": "done"}); err != nil {
 				slog.Error("patch command done", "cmd", cmd.ID, "err", err)
+			}
+			return nil
+		})
+	}
+
+	// Resume assets stuck in "decommissioning" from a previous crashed cycle.
+	stuck, err := p.pb.ListDecommissioningAssets()
+	if err != nil {
+		slog.Error("list decommissioning assets", "err", err)
+		p.needsReconn.Store(true)
+	}
+	for _, asset := range stuck {
+		asset := asset
+		eg.Go(func() error {
+			slog.Info("resuming stuck decommission", "asset", asset.ID)
+			if err := p.DecommissionAsset(ctx, asset); err != nil {
+				slog.Error("resume decommission asset", "asset", asset.ID, "err", err)
 			}
 			return nil
 		})

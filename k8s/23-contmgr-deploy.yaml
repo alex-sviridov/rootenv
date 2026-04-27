@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: contmgr
+  namespace: rootenv-infra
+  labels:
+    app: contmgr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: contmgr
+  template:
+    metadata:
+      labels:
+        app: contmgr
+    spec:
+      serviceAccountName: contmgr
+      containers:
+        - name: contmgr
+          image: docker.io/library/rootenv-contmgr
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          env:
+            - name: CONTMGR_USERS_NAMESPACE
+              value: rootenv-users
+            - name: CONTMGR_BACKEND_URL
+              value: http://backend-svc:8090
+            - name: CONTMGR_POLL_INTERVAL
+              value: "5s"
+          envFrom:
+            - secretRef:
+                name: contmgr-secrets
