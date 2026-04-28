@@ -136,23 +136,8 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	attempt, err := h.pb.GetAttempt(server.Attempt)
-	if err != nil {
-		if errors.Is(err, pbclient.ErrNotFound) {
-			log.Warn("authz failed: attempt not found", "attempt_id", server.Attempt)
-			if h.metrics != nil {
-				h.metrics.authzFailures.WithLabelValues("server_not_found").Inc()
-			}
-			_ = conn.Close(websocket.StatusPolicyViolation, "attempt not found")
-		} else {
-			log.Error("get attempt error", "err", err)
-			_ = conn.Close(websocket.StatusInternalError, "internal error")
-		}
-		return
-	}
-
-	if attempt.User != userID {
-		log.Warn("authz failed: attempt owned by different user", "attempt_id", attempt.ID)
+	if server.User != userID {
+		log.Warn("authz failed: server owned by different user")
 		if h.metrics != nil {
 			h.metrics.authzFailures.WithLabelValues("forbidden").Inc()
 		}
@@ -175,7 +160,7 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Debug("key decrypted", "fingerprint", gossh.FingerprintSHA256(signer.PublicKey()), "secret_len", len(secret))
 
 	connectedAt := time.Now()
-	log = log.With("attempt_id", attempt.ID)
+	log = log.With("attempt_id", server.Attempt)
 	log.Info("ws connected", "active_total", h.limiter.Total())
 	if h.metrics != nil {
 		h.metrics.activeConnections.Inc()

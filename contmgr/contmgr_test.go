@@ -9,14 +9,14 @@ import (
 // --- fakes ---
 
 type fakeK8s struct {
-	ensureNetworkPolicyFunc  func(ctx context.Context, p NetPolParams) error
-	createPodFunc            func(ctx context.Context, p PodParams) error
-	createServiceFunc        func(ctx context.Context, p PodParams) error
-	waitPodRunningFunc       func(ctx context.Context, namespace, podName string) error
-	execInPodFunc            func(ctx context.Context, namespace, podName string, cmd []string) error
-	deletePodFunc            func(ctx context.Context, namespace, podName string) error
-	deleteServiceFunc        func(ctx context.Context, namespace, svcName string) error
-	deleteNetworkPolicyFunc  func(ctx context.Context, namespace, netpolName string) error
+	ensureNetworkPolicyFunc func(ctx context.Context, p NetPolParams) error
+	createPodFunc           func(ctx context.Context, p PodParams) error
+	createServiceFunc       func(ctx context.Context, p PodParams) error
+	waitPodRunningFunc      func(ctx context.Context, namespace, podName string) error
+	execInPodFunc           func(ctx context.Context, namespace, podName string, cmd []string) error
+	deletePodFunc           func(ctx context.Context, namespace, podName string) error
+	deleteServiceFunc       func(ctx context.Context, namespace, svcName string) error
+	deleteNetworkPolicyFunc func(ctx context.Context, namespace, netpolName string) error
 }
 
 func (f *fakeK8s) EnsureNetworkPolicy(ctx context.Context, p NetPolParams) error {
@@ -74,6 +74,7 @@ func (f *fakeK8s) DeleteNetworkPolicy(ctx context.Context, namespace, name strin
 	}
 	return nil
 }
+
 
 type fakePB struct {
 	assets       map[string]*Asset
@@ -195,6 +196,16 @@ func (f *fakePB) PatchCommand(id string, fields map[string]any) error {
 		}
 	}
 	return nil
+}
+
+func (f *fakePB) ListProvisioningAssets() ([]Asset, error) {
+	var out []Asset
+	for _, a := range f.assets {
+		if a.State == "provisioning" {
+			out = append(out, *a)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakePB) ListDecommissioningAssets() ([]Asset, error) {

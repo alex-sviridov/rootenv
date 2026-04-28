@@ -109,16 +109,16 @@ environment:
   duration: 30
   assets:
     - name: server-0
-      cpu: 1
+      cpu: 200m 
       platform: container
       image: hermsi/alpine-sshd
       ssh_user: lab
-      memory: 512MB
+      memory: 128MB
       disk: 5GB
     - name: server-1
-      cpu: 1
+      cpu: 200m 
       platform: container
       image: hermsi/alpine-sshd
       ssh_user: lab
-      memory: 512MB
+      memory: 128MB
       disk: 5GB

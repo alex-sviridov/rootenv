@@ -19,6 +19,7 @@ type Client struct {
 type Server struct {
 	ID      string `json:"id"`
 	Attempt string `json:"attempt"`
+	User    string `json:"user"`
 	Name    string `json:"name"`
 	State   string `json:"state"`
 	Status  string `json:"status"`

@@ -45,6 +45,7 @@ type AssetDef struct {
 	SSHUser string          `json:"ssh_user"`
 	CPU     json.Number     `json:"cpu"`
 	Memory  string          `json:"memory"`
+	Disk    string          `json:"disk"`
 }
 
 type KeysRecord struct {
@@ -207,6 +208,17 @@ func (c *pbClient) ListPendingDecommissionCommands() ([]Command, error) {
 
 func (c *pbClient) PatchCommand(id string, fields map[string]any) error {
 	return c.patch("/api/collections/commands/records/"+url.PathEscape(id), fields)
+}
+
+func (c *pbClient) ListProvisioningAssets() ([]Asset, error) {
+	var result struct {
+		Items []Asset `json:"items"`
+	}
+	filter := url.QueryEscape("(state='provisioning')")
+	if err := c.get("/api/collections/assets/records?filter="+filter, &result); err != nil {
+		return nil, err
+	}
+	return result.Items, nil
 }
 
 func (c *pbClient) ListDecommissioningAssets() ([]Asset, error) {

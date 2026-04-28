@@ -98,6 +98,6 @@ environment:
       image: hermsi/alpine-sshd
       platform: container
       ssh_user: lab
-      cpu: 1
-      memory: 512MB
+      cpu: 100m
+      memory: 128MB
       disk: 5GB

@@ -46,8 +46,9 @@ type PodParams struct {
 	AssetName       string
 	Image           string
 	SSHUser         string
-	CPU             string // e.g. "1" or "0.5"
+	CPU             string // e.g. "1" or "500m"
 	Memory          string // e.g. "512MB"
+	Disk            string // e.g. "5GB"; empty = no limit
 	ImagePullSecret string // empty = omit
 }
 
@@ -143,6 +144,7 @@ func (k *K8sClient) EnsureNetworkPolicy(ctx context.Context, p NetPolParams) err
 					}},
 				},
 			},
+			// Egress whitelist — everything not listed is denied (internet, rootenv-infra, other attempts).
 			Egress: []networkingv1.NetworkPolicyEgressRule{
 				// pod-to-pod within same attempt, same namespace only
 				{
@@ -160,13 +162,18 @@ func (k *K8sClient) EnsureNetworkPolicy(ctx context.Context, p NetPolParams) err
 						},
 					}},
 				},
-				// DNS: allow egress to kube-dns in kube-system
+				// DNS: port 53 to kube-dns pods only (not entire kube-system namespace)
 				{
 					Ports: dnsPorts(),
 					To: []networkingv1.NetworkPolicyPeer{{
 						NamespaceSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{
 								"kubernetes.io/metadata.name": "kube-system",
+							},
+						},
+						PodSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"k8s-app": "kube-dns",
 							},
 						},
 					}},
@@ -195,6 +202,18 @@ func (k *K8sClient) CreatePod(ctx context.Context, p PodParams) error {
 	}
 	cpuQ := resource.NewMilliQuantity(cpuMilli, resource.DecimalSI)
 
+	limits := corev1.ResourceList{
+		corev1.ResourceCPU:    *cpuQ,
+		corev1.ResourceMemory: *memQ,
+	}
+	if p.Disk != "" {
+		diskBytes, err := parseMemory(p.Disk)
+		if err != nil {
+			return fmt.Errorf("parse disk: %w", err)
+		}
+		limits[corev1.ResourceEphemeralStorage] = *resource.NewQuantity(diskBytes, resource.BinarySI)
+	}
+
 	labels := map[string]string{
 		"user-id":    p.UserID,
 		"attempt-id": p.AttemptID,
@@ -217,10 +236,7 @@ func (k *K8sClient) CreatePod(ctx context.Context, p PodParams) error {
 					Value: p.SSHUser + ":1000:1000",
 				}},
 				Resources: corev1.ResourceRequirements{
-					Limits: corev1.ResourceList{
-						corev1.ResourceCPU:    *cpuQ,
-						corev1.ResourceMemory: *memQ,
-					},
+					Limits: limits,
 				},
 			}},
 		},

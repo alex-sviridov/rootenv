@@ -15,6 +15,7 @@ import (
 // pbDoer is the PocketBase operations contmgr needs.
 type pbDoer interface {
 	ListPendingAssets() ([]Asset, error)
+	ListProvisioningAssets() ([]Asset, error)
 	GetAsset(id string) (*Asset, error)
 	GetAssetConfig(assetID string) (*AssetConfig, error)
 	GetKeysByAsset(assetID string) (*KeysRecord, error)
@@ -48,6 +49,19 @@ func NewContmgr(pb *pbClient, k8s *K8sClient, namespace, infraNamespace, pullSec
 
 func (p *Contmgr) NeedsReconnect() bool { return p.needsReconn.Swap(false) }
 func (p *Contmgr) SetPB(pb *pbClient)   { p.pb = pb }
+
+// cleanupAssetK8s deletes pod and service for an asset by their deterministic names.
+// All deletes are best-effort — not-found is not an error.
+func (p *Contmgr) cleanupAssetK8s(ctx context.Context, userID, attemptID, assetName string) {
+	pod := podName(userID, attemptID, assetName)
+	svc := svcName(userID, attemptID, assetName)
+	if err := p.k8s.DeletePod(ctx, p.namespace, pod); err != nil {
+		slog.Warn("cleanup: delete pod", "pod", pod, "err", err)
+	}
+	if err := p.k8s.DeleteService(ctx, p.namespace, svc); err != nil {
+		slog.Warn("cleanup: delete svc", "svc", svc, "err", err)
+	}
+}
 
 func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 	if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "provisioning"}); err != nil {
@@ -92,9 +106,23 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 		SSHUser:         def.SSHUser,
 		CPU:             def.CPU.String(),
 		Memory:          def.Memory,
+		Disk:            def.Disk,
 		ImagePullSecret: p.pullSecret,
 	}
 
+	provisionErr := p.doProvision(ctx, asset, cfg, def, params, pubKeyLine, privKeyPEM, userID)
+	if provisionErr != nil {
+		// Clean up any partial k8s resources so the next retry starts fresh.
+		p.cleanupAssetK8s(ctx, userID, asset.Attempt, asset.Name)
+		if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "pending"}); err != nil {
+			slog.Warn("reset asset to pending after provision failure", "asset", asset.ID, "err", err)
+		}
+		return provisionErr
+	}
+	return nil
+}
+
+func (p *Contmgr) doProvision(ctx context.Context, asset Asset, cfg *AssetConfig, def *AssetDef, params PodParams, pubKeyLine []byte, privKeyPEM []byte, userID string) error {
 	if err := p.k8s.CreatePod(ctx, params); err != nil {
 		return fmt.Errorf("create pod: %w", err)
 	}
@@ -213,7 +241,7 @@ func (p *Contmgr) DecommissionAsset(ctx context.Context, asset Asset) error {
 func (p *Contmgr) RunOnce(ctx context.Context) error {
 	const maxConcurrent = 10
 	sem := semaphore.NewWeighted(maxConcurrent)
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, egCtx := errgroup.WithContext(ctx)
 
 	assets, err := p.pb.ListPendingAssets()
 	if err != nil {
@@ -222,12 +250,12 @@ func (p *Contmgr) RunOnce(ctx context.Context) error {
 	}
 	for _, asset := range assets {
 		asset := asset
-		if err := sem.Acquire(ctx, 1); err != nil {
+		if err := sem.Acquire(egCtx, 1); err != nil {
 			break
 		}
 		eg.Go(func() error {
 			defer sem.Release(1)
-			if err := p.ProvisionAsset(ctx, asset); err != nil {
+			if err := p.ProvisionAsset(egCtx, asset); err != nil {
 				slog.Error("provision asset", "asset", asset.ID, "err", err)
 			}
 			return nil
@@ -241,7 +269,7 @@ func (p *Contmgr) RunOnce(ctx context.Context) error {
 	}
 	for _, cmd := range commands {
 		cmd := cmd
-		if err := sem.Acquire(ctx, 1); err != nil {
+		if err := sem.Acquire(egCtx, 1); err != nil {
 			break
 		}
 		eg.Go(func() error {
@@ -262,12 +290,45 @@ func (p *Contmgr) RunOnce(ctx context.Context) error {
 				}
 				return nil
 			}
-			if err := p.DecommissionAsset(ctx, *asset); err != nil {
+			if err := p.DecommissionAsset(egCtx, *asset); err != nil {
 				slog.Error("decommission asset", "asset", asset.ID, "err", err)
 				return nil
 			}
 			if err := p.pb.PatchCommand(cmd.ID, map[string]any{"status": "done"}); err != nil {
 				slog.Error("patch command done", "cmd", cmd.ID, "err", err)
+			}
+			return nil
+		})
+	}
+
+	// Reset assets stuck in "provisioning" from a previous crashed cycle back to
+	// "pending" so they are retried. Clean up any partial k8s resources first so
+	// the retry starts from a known-clean state.
+	stuckProvisioning, err := p.pb.ListProvisioningAssets()
+	if err != nil {
+		slog.Error("list provisioning assets", "err", err)
+		p.needsReconn.Store(true)
+	}
+	for _, asset := range stuckProvisioning {
+		asset := asset
+		if err := sem.Acquire(egCtx, 1); err != nil {
+			break
+		}
+		eg.Go(func() error {
+			defer sem.Release(1)
+			slog.Info("resetting stuck provisioning asset", "asset", asset.ID)
+			attempt, err := p.pb.GetAttempt(asset.Attempt)
+			if err != nil {
+				slog.Warn("get attempt for stuck asset", "asset", asset.ID, "err", err)
+				// Still try to clean up with empty userID — pod/svc/pvc names won't match but that's safe.
+			}
+			userID := ""
+			if attempt != nil {
+				userID = attempt.User
+			}
+			p.cleanupAssetK8s(egCtx, userID, asset.Attempt, asset.Name)
+			if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "pending"}); err != nil {
+				slog.Error("reset stuck provisioning asset to pending", "asset", asset.ID, "err", err)
 			}
 			return nil
 		})
@@ -281,13 +342,13 @@ func (p *Contmgr) RunOnce(ctx context.Context) error {
 	}
 	for _, asset := range stuck {
 		asset := asset
-		if err := sem.Acquire(ctx, 1); err != nil {
+		if err := sem.Acquire(egCtx, 1); err != nil {
 			break
 		}
 		eg.Go(func() error {
 			defer sem.Release(1)
 			slog.Info("resuming stuck decommission", "asset", asset.ID)
-			if err := p.DecommissionAsset(ctx, asset); err != nil {
+			if err := p.DecommissionAsset(egCtx, asset); err != nil {
 				slog.Error("resume decommission asset", "asset", asset.ID, "err", err)
 			}
 			return nil

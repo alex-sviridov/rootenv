@@ -1,6 +1,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { pb } from '@/lib/pb'
 
@@ -8,6 +9,7 @@ const POLICY_VIOLATION = 1002
 
 export function useRelayConnection(serverId, secret) {
   const terminal = new Terminal({
+    scrollback: 10000,
     cursorBlink: true,
     cursorStyle: 'block',
     fontFamily: 'monospace',
@@ -21,6 +23,7 @@ export function useRelayConnection(serverId, secret) {
 
   const fitAddon = new FitAddon()
   terminal.loadAddon(fitAddon)
+  terminal.loadAddon(new WebLinksAddon())
 
   let ws = null
   let onDataHandler = null
