@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAttemptsStore } from '@/stores/attempts'
 import { useServersStore } from '@/stores/servers'
@@ -41,6 +41,22 @@ const runningAttempt = computed(() => {
   return a && attemptState.value !== 'decommissioned' ? a : null
 })
 
+const now = ref(Date.now())
+let ticker = null
+onMounted(() => { ticker = setInterval(() => { now.value = Date.now() }, 1000) })
+onUnmounted(() => clearInterval(ticker))
+
+const expiresIn = computed(() => {
+  const exp = runningAttempt.value?.expires_at
+  if (!exp) return null
+  const secs = Math.max(0, Math.floor((new Date(exp).getTime() - now.value) / 1000))
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  const s = secs % 60
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+})
+
 const canDecommission = computed(() =>
   runningAttempt.value &&
   attemptState.value !== 'decommissioning' &&
@@ -72,7 +88,10 @@ function goToLab(attempt) {
   <div class="shrink-0 border-t border-slate-800">
 
     <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
-      <p class="text-xs font-semibold text-slate-500 uppercase tracking-widest shrink-0">Lab Session</p>
+      <div class="shrink-0">
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-widest">Lab Session</p>
+        <p v-if="expiresIn" class="text-[10px] text-slate-600 mt-0.5">expires in {{ expiresIn }}</p>
+      </div>
       <div v-if="runningAttempt" class="flex items-center gap-1.5 min-w-0">
         <span class="relative flex h-2 w-2 shrink-0">
           <span
