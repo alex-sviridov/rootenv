@@ -40,7 +40,7 @@ vi.mock('@xterm/addon-fit', () => {
   return { FitAddon: MockFitAddon }
 })
 
-import { useRelayConnection } from '../useRelayConnection'
+import { useRelayConnection } from '../useSshRelayConnection'
 
 // Minimal WebSocket mock
 class MockWebSocket {

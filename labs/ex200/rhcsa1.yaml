@@ -101,3 +101,5 @@ environment:
       cpu: 100m
       memory: 128MB
       disk: 5GB
+      relay_protocols:
+        - ssh

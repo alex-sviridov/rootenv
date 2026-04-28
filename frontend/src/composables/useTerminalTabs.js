@@ -8,8 +8,8 @@ export function useTerminalTabs() {
   const limitError = ref(null)
   let _seq = 0
 
-  function _relabelServer(serverId, serverName) {
-    const matching = tabs.value.filter(t => t.serverId === serverId)
+  function _relabelGroup(serverId, type, serverName) {
+    const matching = tabs.value.filter(t => t.serverId === serverId && t.type === type)
     if (matching.length === 1) {
       matching[0].label = serverName
     } else {
@@ -17,15 +17,15 @@ export function useTerminalTabs() {
     }
   }
 
-  function openTerminal(server) {
+  function openTab(server, protocol) {
     if (tabs.value.length >= MAX_TABS) {
       limitError.value = `Maximum of ${MAX_TABS} terminal connections reached. Close a tab to open a new one.`
       return
     }
     limitError.value = null
-    const tabId = `${server.id}-${++_seq}`
-    tabs.value.push({ id: tabId, serverId: server.id, label: server.name })
-    _relabelServer(server.id, server.name)
+    const tabId = `${server.id}-${protocol}-${++_seq}`
+    tabs.value.push({ id: tabId, serverId: server.id, type: protocol, label: server.name })
+    _relabelGroup(server.id, protocol, server.name)
     activeTabId.value = tabId
   }
 
@@ -33,7 +33,7 @@ export function useTerminalTabs() {
     const closing = tabs.value.find(t => t.id === tabId)
     tabs.value = tabs.value.filter(t => t.id !== tabId)
     limitError.value = null
-    if (closing) _relabelServer(closing.serverId, closing.label.replace(/ \(\d+\)$/, ''))
+    if (closing) _relabelGroup(closing.serverId, closing.type, closing.label.replace(/ \(\d+\)$/, ''))
     if (activeTabId.value === tabId) {
       activeTabId.value = tabs.value.at(-1)?.id ?? null
     }
@@ -55,5 +55,5 @@ export function useTerminalTabs() {
     limitError.value = null
   }
 
-  return { tabs, activeTabId, limitError, openTerminal, closeTab, moveTab, resetTabs }
+  return { tabs, activeTabId, limitError, openTab, closeTab, moveTab, resetTabs }
 }

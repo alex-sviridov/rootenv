@@ -43,7 +43,7 @@ type AssetDef struct {
 	Name    string          `json:"name"`
 	Image   string          `json:"image"`
 	SSHUser string          `json:"ssh_user"`
-	CPU     json.Number     `json:"cpu"`
+	CPU     string          `json:"cpu"`
 	Memory  string          `json:"memory"`
 	Disk    string          `json:"disk"`
 }

@@ -12,6 +12,7 @@ onRecordAfterCreateSuccess((e) => {
             const asset = new Record(assetCollection)
             asset.set("attempt", attempt.id)
             asset.set("name", assetDef.name)
+            asset.set("protocols", JSON.stringify(assetDef.relay_protocols || ["none"]))
             asset.set("state", "pending")
             asset.set("user", attempt.get("user"))
             asset.set("status", "poweredoff")

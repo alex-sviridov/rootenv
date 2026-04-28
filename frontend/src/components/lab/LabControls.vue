@@ -18,7 +18,7 @@ const props = defineProps({
   labName: { type: String, required: true },
 })
 
-const emit = defineEmits(['open-terminal'])
+const emit = defineEmits(['open-tab'])
 
 const router = useRouter()
 const attempts = useAttemptsStore()
@@ -119,52 +119,63 @@ function goToLab(attempt) {
 
       <!-- Servers list -->
       <div v-if="serversStore.servers.length" class="space-y-1 pb-1">
-        <div
-          v-for="server in serversStore.servers"
-          :key="server.id"
-          class="flex items-center gap-1.5 py-0.5"
-        >
-          <!-- Lifecycle state icon -->
-          <component
-            :is="serverStateConfig[server.state]?.icon ?? ClockIcon"
-            class="w-3.5 h-3.5 shrink-0"
-            :class="[
-              serverStateConfig[server.state]?.iconCls ?? 'text-slate-500',
-              serverStateConfig[server.state]?.spin ? 'animate-spin' : '',
-            ]"
-          />
-          <!-- Name -->
-          <button
-            v-if="server.state === 'provisioned'"
-            class="text-xs font-medium text-slate-200 truncate flex-1 text-left hover:text-indigo-300 transition-colors"
-            @click="emit('open-terminal', server)"
-          >{{ server.name }}</button>
-          <span v-else class="text-xs font-medium text-slate-200 truncate flex-1">{{ server.name }}</span>
-          <!-- Provision state label (pending / provisioning) -->
-          <span
-            v-if="server.state === 'pending' || server.state === 'provisioning'"
-            class="text-xs shrink-0"
-            :class="serverStateConfig[server.state]?.labelCls ?? 'text-slate-500'"
-          >
-            {{ serverStateConfig[server.state]?.label ?? server.state }}
-          </span>
-          <!-- Power status (provisioned or decommissioning) -->
-          <div
-            v-else
-            class="flex items-center gap-1 shrink-0"
-          >
+        <div v-for="server in serversStore.servers" :key="server.id">
+          <!-- Server row -->
+          <div class="flex items-center gap-1.5 py-0.5">
+            <!-- Lifecycle state icon -->
             <component
-              :is="serverStatusConfig[server.status]?.icon ?? BoltSlashIcon"
+              :is="serverStateConfig[server.state]?.icon ?? ClockIcon"
               class="w-3.5 h-3.5 shrink-0"
               :class="[
-                serverStatusConfig[server.status]?.iconCls ?? 'text-slate-500',
-                serverStatusConfig[server.status]?.spin ? 'animate-spin' : '',
+                serverStateConfig[server.state]?.iconCls ?? 'text-slate-500',
+                serverStateConfig[server.state]?.spin ? 'animate-spin' : '',
               ]"
             />
-            <span class="text-xs" :class="serverStatusConfig[server.status]?.labelCls ?? 'text-slate-500'">
-              {{ serverStatusConfig[server.status]?.label ?? server.status }}
+            <!-- Name -->
+            <span class="text-xs font-medium text-slate-200 truncate flex-1">{{ server.name }}</span>
+            <!-- Provision state label (pending / provisioning) -->
+            <span
+              v-if="server.state === 'pending' || server.state === 'provisioning'"
+              class="text-xs shrink-0"
+              :class="serverStateConfig[server.state]?.labelCls ?? 'text-slate-500'"
+            >
+              {{ serverStateConfig[server.state]?.label ?? server.state }}
             </span>
+            <!-- Power status (provisioned or decommissioning) -->
+            <div
+              v-else
+              class="flex items-center gap-1 shrink-0"
+            >
+              <component
+                :is="serverStatusConfig[server.status]?.icon ?? BoltSlashIcon"
+                class="w-3.5 h-3.5 shrink-0"
+                :class="[
+                  serverStatusConfig[server.status]?.iconCls ?? 'text-slate-500',
+                  serverStatusConfig[server.status]?.spin ? 'animate-spin' : '',
+                ]"
+              />
+              <span class="text-xs" :class="serverStatusConfig[server.status]?.labelCls ?? 'text-slate-500'">
+                {{ serverStatusConfig[server.status]?.label ?? server.status }}
+              </span>
+            </div>
           </div>
+          <!-- Protocol children (tree) -->
+          <template v-if="server.state === 'provisioned'">
+            <template v-for="(protocol, i) in (server.protocols ?? []).filter(p => p !== 'none')" :key="protocol">
+              <div class="flex items-center gap-1.5 py-0.5 pl-1">
+                <span class="text-slate-600 shrink-0 font-mono text-[11px] leading-none select-none">
+                  {{ i === (server.protocols ?? []).filter(p => p !== 'none').length - 1 ? '└' : '├' }}
+                </span>
+                <button
+                  class="text-xs font-medium px-1.5 py-0.5 rounded transition-colors"
+                  :class="protocol === 'ssh'
+                    ? 'bg-yellow-500/15 text-yellow-400 hover:bg-yellow-500/25'
+                    : 'bg-slate-700 text-slate-300 hover:bg-slate-600'"
+                  @click="emit('open-tab', { server, protocol })"
+                >{{ protocol }}</button>
+              </div>
+            </template>
+          </template>
         </div>
       </div>
 

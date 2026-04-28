@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { useRelayConnection } from '@/composables/useRelayConnection'
+import { useSshRelayConnection } from '@/composables/useSshRelayConnection'
 
 const props = defineProps({
   serverId: { type: String, required: true },
@@ -8,7 +8,7 @@ const props = defineProps({
 })
 
 const termEl = ref(null)
-const { terminal, fitAddon } = useRelayConnection(props.serverId, props.secret)
+const { terminal, fitAddon } = useSshRelayConnection(props.serverId, props.secret)
 const showAltWHint = ref(false)
 let resizeObserver = null
 let terminalFocused = false

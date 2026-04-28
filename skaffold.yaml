@@ -16,10 +16,10 @@ build:
           after:
             - container:
                 command: ["sh", "-c", "kill -HUP 1"]
-    - image: docker.io/library/rootenv-relay
+    - image: docker.io/library/rootenv-relay-ssh
       context: relay
       docker:
-        dockerfile: Dockerfile
+        dockerfile: ./ssh/Dockerfile
       sync:
         manual:
           - src: '.'

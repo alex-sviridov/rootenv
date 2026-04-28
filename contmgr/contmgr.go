@@ -104,7 +104,7 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 		AssetName:       asset.Name,
 		Image:           def.Image,
 		SSHUser:         def.SSHUser,
-		CPU:             def.CPU.String(),
+		CPU:             def.CPU,
 		Memory:          def.Memory,
 		Disk:            def.Disk,
 		ImagePullSecret: p.pullSecret,

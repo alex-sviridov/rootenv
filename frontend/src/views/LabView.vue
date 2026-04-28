@@ -25,7 +25,7 @@ const selectedTask = ref(0)
 const error = ref(null)
 const secrets = ref({})
 
-const { tabs, activeTabId, limitError, openTerminal, closeTab, moveTab, resetTabs } = useTerminalTabs()
+const { tabs, activeTabId, limitError, openTab, closeTab, moveTab, resetTabs } = useTerminalTabs()
 
 const currentTask = computed(() => lab.value?.content?.[selectedTask.value] ?? null)
 
@@ -102,7 +102,7 @@ onUnmounted(async () => {
   <div v-else class="flex h-full overflow-hidden">
     <aside class="w-64 shrink-0 border-r border-slate-800 flex flex-col overflow-hidden">
       <LabNavigation :lab="lab" :selected-task="selectedTask" @select-task="selectedTask = $event" />
-      <LabControls :lab-id="lab.id" :lab-name="lab.title" @open-terminal="openTerminal" />
+      <LabControls :lab-id="lab.id" :lab-name="lab.title" @open-tab="({ server, protocol }) => openTab(server, protocol)" />
     </aside>
     <LabContent :task="currentTask" />
     <LabConsole

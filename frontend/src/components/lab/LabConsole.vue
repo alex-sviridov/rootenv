@@ -2,6 +2,8 @@
 import { ref } from 'vue'
 import TerminalPanel from '@/components/lab/TerminalPanel.vue'
 
+const tabComponents = { ssh: TerminalPanel }
+
 defineProps({
   tabs: { type: Array, required: true },
   activeTabId: { type: String, default: null },
@@ -73,10 +75,10 @@ function onDragEnd() {
     <div class="flex-1 overflow-hidden relative">
       <template v-if="tabs.length">
         <template v-for="tab in tabs" :key="tab.id">
-          <TerminalPanel
-            v-if="secrets[tab.serverId]"
+          <component
+            :is="tabComponents[tab.type]"
+            v-if="tabComponents[tab.type] && secrets[tab.serverId]"
             v-show="tab.id === activeTabId"
-            :key="tab.id"
             :server-id="tab.serverId"
             :secret="secrets[tab.serverId]"
           />
@@ -84,7 +86,7 @@ function onDragEnd() {
       </template>
       <div v-else class="flex items-center justify-center h-full px-6 text-center">
         <span v-if="limitError" class="text-xs text-amber-400">{{ limitError }}</span>
-        <span v-else class="text-xl text-slate-600">No active terminal connection — click a provisioned server to connect.</span>
+        <span v-else class="text-xl text-slate-600">No active terminal connection — click a protocol badge on a provisioned server to connect.</span>
       </div>
     </div>
 

@@ -1,6 +1,6 @@
 # Relay
 
-**Stack:** Go — single long-running process. Docker containrized.
+**Stack:** Go — multiple binaries (one per relay type), each in its own container. Shared infrastructure in `pkg/relaybase/`.
 
 ## Responsibilities
 - Accepts WebSocket connections from frontend (xterm.js)
@@ -21,14 +21,33 @@
 - Hide server connection details from the frontend, only exposing a generic WebSocket interface for terminal input/output, while all connection logic and credentials management is handled securely on the backend relay service.
 
 
-## Connection URL
-`/relay/<serverid>/` — server id, primary key in table servers
+## Repository Structure
+
+```
+relay/
+  pkg/
+    pbclient/     # PocketBase REST client
+    relaybase/    # Shared: auth middleware, limiter, healthz, BackoffReconnector
+  ssh/            # package ssh — SSH relay handler, proxy, key decrypt, metrics
+  cmd/
+    relay-ssh/    # Binary entry point for the SSH relay
+```
+
+## Connection URL (relay-ssh)
+- External (via Traefik): `/relay/ssh/<serverid>/`
+- Internal (what relay-ssh sees after Traefik strips `/relay/ssh`): `/<serverid>/`
+- Healthz: `/relay/ssh/healthz` → `{"status":"ok","backend":"connected","active_connections":N}`
+
+## Auth message format (relay-ssh)
+First WebSocket message: `<pb_token>\n<secret>`
+- `pb_token`: user's PocketBase session token (validated by relaybase)
+- `secret`: AES key for decrypting the SSH private key (SSH-specific, never seen by relaybase)
 
 ## Constraints
-- SSH connections only (no exec or other transports)
-- Only component with direct SSH access to lab VMs
-- Token validated once at connection time
-- Stateless: no in-memory session or server state; all active attempt/server data lives in PocketBase, so multiple relay instances can run in parallel behind a load balancer
+- relay-ssh: SSH connections only; only component with direct SSH access to lab VMs
+- Token validated once at connection time; revalidated every 30 min (default)
+- Stateless: no in-memory session or server state; multiple relay instances can run in parallel
+- PocketBase admin token kept alive by `BackoffReconnector` — relay does NOT crash if backend is temporarily unavailable; active sessions are unaffected, new connections wait until backend recovers
 
 ## WebSocket Protocol
 
