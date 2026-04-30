@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,12 +41,31 @@ func (c *AssetConfig) Def() (*AssetDef, error) {
 }
 
 type AssetDef struct {
-	Name    string          `json:"name"`
-	Image   string          `json:"image"`
-	SSHUser string          `json:"ssh_user"`
-	CPU     string          `json:"cpu"`
-	Memory  string          `json:"memory"`
-	Disk    string          `json:"disk"`
+	Name    string `json:"name"`
+	Image   string `json:"image"`
+	SSHUser string `json:"ssh_user"`
+	CPU     string `json:"cpu"`
+	Memory  string `json:"memory"`
+	Disk    string `json:"disk"`
+}
+
+func (d *AssetDef) validate() error {
+	switch {
+	case d.Image == "":
+		return errors.New("asset def: image required")
+	case d.SSHUser == "":
+		return errors.New("asset def: ssh_user required")
+	case d.CPU == "":
+		return errors.New("asset def: cpu required")
+	case d.Memory == "":
+		return errors.New("asset def: memory required")
+	}
+	return nil
+}
+
+type AttemptRecord struct {
+	ID   string `json:"id"`
+	User string `json:"user"`
 }
 
 type KeysRecord struct {
@@ -75,7 +95,7 @@ func newPBClient(baseURL, email, password string) (*pbClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("auth failed: status %d", resp.StatusCode)
 	}
@@ -102,7 +122,7 @@ func (c *pbClient) get(path string, out any) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNotFound {
 		return fmt.Errorf("not found: %s", path)
 	}
@@ -128,7 +148,7 @@ func (c *pbClient) patch(path string, fields map[string]any) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("PATCH %s: status %d: %s", path, resp.StatusCode, body)
@@ -199,7 +219,7 @@ func (c *pbClient) ListPendingDecommissionCommands() ([]Command, error) {
 	var result struct {
 		Items []Command `json:"items"`
 	}
-	filter := url.QueryEscape("(command='decommission'&&status='pending')")
+	filter := url.QueryEscape("(command='decommission'&&(status='pending'||status='running'))")
 	if err := c.get("/api/collections/commands/records?filter="+filter, &result); err != nil {
 		return nil, err
 	}

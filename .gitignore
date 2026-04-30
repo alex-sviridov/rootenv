@@ -61,3 +61,6 @@ typings/
 *.pem
 *.key
 *.crt
+contmgr/k8s.go
+
+contmgr/contmgr

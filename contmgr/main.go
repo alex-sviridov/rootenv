@@ -40,6 +40,8 @@ func main() {
 
 	mgr := NewContmgr(pb, k8s, cfg.usersNamespace, cfg.infraNamespace, cfg.imagePullSecret)
 
+	go startHealthServer(ctx, cfg.healthAddr, mgr, 5*cfg.pollInterval)
+
 	ticker := time.NewTicker(cfg.pollInterval)
 	defer ticker.Stop()
 
@@ -54,7 +56,9 @@ func main() {
 			if err := mgr.RunOnce(ctx); err != nil {
 				slog.Error("run cycle error", "err", err)
 			}
-			if mgr.NeedsReconnect() {
+			needsReconn := mgr.NeedsReconnect()
+			mgr.RecordPoll(!needsReconn)
+			if needsReconn {
 				slog.Warn("PocketBase unavailable, reconnecting")
 				newPB, err := authWithRetry(ctx, cfg)
 				if err != nil {
@@ -68,6 +72,8 @@ func main() {
 	}
 }
 
+const authBackoffCap = 60 * time.Second
+
 func authWithRetry(ctx context.Context, cfg config) (*pbClient, error) {
 	var err error
 	for i := 0; ; i++ {
@@ -77,8 +83,8 @@ func authWithRetry(ctx context.Context, cfg config) (*pbClient, error) {
 			return pb, nil
 		}
 		backoff := time.Duration(1<<i) * time.Second
-		if backoff > 60*time.Second {
-			backoff = 60 * time.Second
+		if backoff > authBackoffCap {
+			backoff = authBackoffCap
 		}
 		slog.Warn("PocketBase auth attempt failed", "attempt", i+1, "backoff", backoff, "err", err)
 		select {
