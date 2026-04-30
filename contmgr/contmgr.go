@@ -7,11 +7,15 @@ import (
 	"log/slog"
 	"strings"
 	"sync/atomic"
-
 	"time"
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
+)
+
+const (
+	maxConcurrentOps = 10
+	k8sOpTimeout     = 30 * time.Second
 )
 
 // pbDoer is the PocketBase operations contmgr needs.
@@ -29,11 +33,6 @@ type pbDoer interface {
 	PatchCommand(id string, fields map[string]any) error
 	ListProvisionedAssetsByAttempt(attemptID string) ([]Asset, error)
 	GetAttempt(attemptID string) (*AttemptRecord, error)
-}
-
-type AttemptRecord struct {
-	ID   string `json:"id"`
-	User string `json:"user"`
 }
 
 type Contmgr struct {
@@ -61,15 +60,26 @@ func (p *Contmgr) RecordPoll(pbOK bool) {
 	p.pbHealthy.Store(pbOK)
 }
 
+// withK8s returns a child context with k8sOpTimeout applied.
+func withK8s(parent context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(parent, k8sOpTimeout)
+}
+
 // cleanupAssetK8s deletes pod and service for an asset by their deterministic names.
 // All deletes are best-effort — not-found is not an error.
 func (p *Contmgr) cleanupAssetK8s(ctx context.Context, userID, attemptID, assetName string) {
 	pod := podName(userID, attemptID, assetName)
 	svc := svcName(userID, attemptID, assetName)
-	if err := p.k8s.DeletePod(ctx, p.namespace, pod); err != nil {
+
+	podCtx, podCancel := withK8s(ctx)
+	defer podCancel()
+	if err := p.k8s.DeletePod(podCtx, p.namespace, pod); err != nil {
 		slog.Warn("cleanup: delete pod", "pod", pod, "err", err)
 	}
-	if err := p.k8s.DeleteService(ctx, p.namespace, svc); err != nil {
+
+	svcCtx, svcCancel := withK8s(ctx)
+	defer svcCancel()
+	if err := p.k8s.DeleteService(svcCtx, p.namespace, svc); err != nil {
 		slog.Warn("cleanup: delete svc", "svc", svc, "err", err)
 	}
 }
@@ -87,6 +97,9 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 	if err != nil {
 		return fmt.Errorf("parse asset def: %w", err)
 	}
+	if err := def.validate(); err != nil {
+		return fmt.Errorf("invalid asset def: %w", err)
+	}
 
 	attempt, err := p.pb.GetAttempt(asset.Attempt)
 	if err != nil {
@@ -94,7 +107,9 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 	}
 	userID := attempt.User
 
-	if err := p.k8s.EnsureNetworkPolicy(ctx, NetPolParams{
+	netpolCtx, netpolCancel := withK8s(ctx)
+	defer netpolCancel()
+	if err := p.k8s.EnsureNetworkPolicy(netpolCtx, NetPolParams{
 		Namespace:      p.namespace,
 		UserID:         userID,
 		AttemptID:      asset.Attempt,
@@ -123,8 +138,12 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 
 	provisionErr := p.doProvision(ctx, asset, cfg, def, params, pubKeyLine, privKeyPEM, userID)
 	if provisionErr != nil {
-		// Clean up any partial k8s resources so the next retry starts fresh.
-		p.cleanupAssetK8s(ctx, userID, asset.Attempt, asset.Name)
+		// Use a fresh context for cleanup so a shutdown signal doesn't prevent
+		// removing partial k8s resources. PatchAsset uses the HTTP client's own
+		// timeout and is unaffected by context cancellation.
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), k8sOpTimeout)
+		defer cleanupCancel()
+		p.cleanupAssetK8s(cleanupCtx, userID, asset.Attempt, asset.Name)
 		if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "pending"}); err != nil {
 			slog.Warn("reset asset to pending after provision failure", "asset", asset.ID, "err", err)
 		}
@@ -134,11 +153,15 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 }
 
 func (p *Contmgr) doProvision(ctx context.Context, asset Asset, cfg *AssetConfig, def *AssetDef, params PodParams, pubKeyLine []byte, privKeyPEM []byte, userID string) error {
-	if err := p.k8s.CreatePod(ctx, params); err != nil {
+	podCtx, podCancel := withK8s(ctx)
+	defer podCancel()
+	if err := p.k8s.CreatePod(podCtx, params); err != nil {
 		return fmt.Errorf("create pod: %w", err)
 	}
 
-	if err := p.k8s.CreateService(ctx, params); err != nil {
+	svcCtx, svcCancel := withK8s(ctx)
+	defer svcCancel()
+	if err := p.k8s.CreateService(svcCtx, params); err != nil {
 		return fmt.Errorf("create service: %w", err)
 	}
 
@@ -155,7 +178,9 @@ func (p *Contmgr) doProvision(ctx context.Context, asset Asset, cfg *AssetConfig
 		"mkdir -p /home/%[1]s/.ssh && chown 1000:1000 /home/%[1]s/.ssh && chmod 700 /home/%[1]s/.ssh && printf '%%s' %[2]q > /home/%[1]s/.ssh/authorized_keys && chown 1000:1000 /home/%[1]s/.ssh/authorized_keys && chmod 600 /home/%[1]s/.ssh/authorized_keys",
 		def.SSHUser, pubKeyStr,
 	)
-	if err := p.k8s.ExecInPod(ctx, p.namespace, pName, []string{"sh", "-c", script}); err != nil {
+	execCtx, execCancel := withK8s(ctx)
+	defer execCancel()
+	if err := p.k8s.ExecInPod(execCtx, p.namespace, pName, []string{"sh", "-c", script}); err != nil {
 		return fmt.Errorf("write authorized_keys: %w", err)
 	}
 
@@ -217,18 +242,25 @@ func (p *Contmgr) DecommissionAsset(ctx context.Context, asset Asset) error {
 		UserID string `json:"user_id"`
 	}
 	if len(cfg.Configuration) > 0 {
-		_ = json.Unmarshal(cfg.Configuration, &cfgData)
+		if err := json.Unmarshal(cfg.Configuration, &cfgData); err != nil {
+			slog.Warn("decommission: failed to parse asset configuration; pod/svc names may be missing",
+				"asset", asset.ID, "err", err)
+		}
 	}
 
 	if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "decommissioning"}); err != nil {
 		return fmt.Errorf("mark decommissioning: %w", err)
 	}
 
-	if err := p.k8s.DeletePod(ctx, p.namespace, cfgData.Pod); err != nil {
+	podCtx, podCancel := withK8s(ctx)
+	defer podCancel()
+	if err := p.k8s.DeletePod(podCtx, p.namespace, cfgData.Pod); err != nil {
 		return fmt.Errorf("delete pod: %w", err)
 	}
 
-	if err := p.k8s.DeleteService(ctx, p.namespace, cfgData.Svc); err != nil {
+	svcCtx, svcCancel := withK8s(ctx)
+	defer svcCancel()
+	if err := p.k8s.DeleteService(svcCtx, p.namespace, cfgData.Svc); err != nil {
 		return fmt.Errorf("delete service: %w", err)
 	}
 
@@ -236,7 +268,9 @@ func (p *Contmgr) DecommissionAsset(ctx context.Context, asset Asset) error {
 	if err != nil {
 		slog.Warn("could not check remaining assets for attempt; skipping netpol cleanup", "attempt", asset.Attempt, "err", err)
 	} else if len(remaining) == 0 {
-		if err := p.k8s.DeleteNetworkPolicy(ctx, p.namespace, netpolName(cfgData.UserID, asset.Attempt)); err != nil {
+		netpolCtx, netpolCancel := withK8s(ctx)
+		defer netpolCancel()
+		if err := p.k8s.DeleteNetworkPolicy(netpolCtx, p.namespace, netpolName(cfgData.UserID, asset.Attempt)); err != nil {
 			return fmt.Errorf("delete network policy: %w", err)
 		}
 	}
@@ -250,8 +284,7 @@ func (p *Contmgr) DecommissionAsset(ctx context.Context, asset Asset) error {
 }
 
 func (p *Contmgr) RunOnce(ctx context.Context) error {
-	const maxConcurrent = 10
-	sem := semaphore.NewWeighted(maxConcurrent)
+	sem := semaphore.NewWeighted(maxConcurrentOps)
 	eg, egCtx := errgroup.WithContext(ctx)
 
 	assets, err := p.pb.ListPendingAssets()
@@ -331,7 +364,7 @@ func (p *Contmgr) RunOnce(ctx context.Context) error {
 			attempt, err := p.pb.GetAttempt(asset.Attempt)
 			if err != nil {
 				slog.Warn("get attempt for stuck asset", "asset", asset.ID, "err", err)
-				// Still try to clean up with empty userID — pod/svc/pvc names won't match but that's safe.
+				// Still try to clean up with empty userID — pod/svc names won't match but that's safe.
 			}
 			userID := ""
 			if attempt != nil {

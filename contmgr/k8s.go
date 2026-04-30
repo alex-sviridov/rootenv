@@ -20,6 +20,10 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 )
 
+// podWatchTimeoutSec is the server-side timeout passed to the pod Watch call.
+// Declared as a var so its address can be taken for the k8s ListOptions field.
+var podWatchTimeoutSec = int64(120)
+
 // k8sDoer is the Kubernetes operations contmgr needs.
 type k8sDoer interface {
 	EnsureNetworkPolicy(ctx context.Context, p NetPolParams) error
@@ -72,26 +76,6 @@ func newK8sClient() (*K8sClient, error) {
 	}
 	return &K8sClient{clientset: cs, restConfig: cfg}, nil
 }
-
-// --- resource naming ---
-
-func netpolName(userID, attemptID string) string {
-	return userID + "-" + attemptID + "-netpol"
-}
-
-func podName(userID, attemptID, assetName string) string {
-	return userID + "-" + attemptID + "-" + assetName
-}
-
-func svcName(userID, attemptID, assetName string) string {
-	return userID + "-" + attemptID + "-" + assetName + "-svc"
-}
-
-func svcDNS(svc, namespace string) string {
-	return svc + "." + namespace + ".svc.cluster.local"
-}
-
-// --- EnsureNetworkPolicy ---
 
 func (k *K8sClient) EnsureNetworkPolicy(ctx context.Context, p NetPolParams) error {
 	tcp := corev1.ProtocolTCP
@@ -188,8 +172,6 @@ func (k *K8sClient) EnsureNetworkPolicy(ctx context.Context, p NetPolParams) err
 	return err
 }
 
-// --- CreatePod ---
-
 func (k *K8sClient) CreatePod(ctx context.Context, p PodParams) error {
 	memBytes, err := parseMemory(p.Memory)
 	if err != nil {
@@ -251,8 +233,6 @@ func (k *K8sClient) CreatePod(ctx context.Context, p PodParams) error {
 	return err
 }
 
-// --- CreateService ---
-
 func (k *K8sClient) CreateService(ctx context.Context, p PodParams) error {
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -281,13 +261,10 @@ func (k *K8sClient) CreateService(ctx context.Context, p PodParams) error {
 	return err
 }
 
-// --- WaitPodRunning ---
-
 func (k *K8sClient) WaitPodRunning(ctx context.Context, namespace, name string) error {
-	timeout := int64(120)
 	watcher, err := k.clientset.CoreV1().Pods(namespace).Watch(ctx, metav1.ListOptions{
 		FieldSelector:  "metadata.name=" + name,
-		TimeoutSeconds: &timeout,
+		TimeoutSeconds: &podWatchTimeoutSec,
 	})
 	if err != nil {
 		return fmt.Errorf("watch pod %s: %w", name, err)
@@ -318,8 +295,6 @@ func (k *K8sClient) WaitPodRunning(ctx context.Context, namespace, name string) 
 		}
 	}
 }
-
-// --- ExecInPod ---
 
 func (k *K8sClient) ExecInPod(ctx context.Context, namespace, name string, cmd []string) error {
 	req := k.clientset.CoreV1().RESTClient().Post().
@@ -354,8 +329,6 @@ func (k *K8sClient) ExecInPod(ctx context.Context, namespace, name string, cmd [
 	return nil
 }
 
-// --- Delete methods ---
-
 func (k *K8sClient) DeletePod(ctx context.Context, namespace, name string) error {
 	if name == "" {
 		return nil
@@ -387,66 +360,4 @@ func (k *K8sClient) DeleteNetworkPolicy(ctx context.Context, namespace, name str
 		return nil
 	}
 	return err
-}
-
-// --- CPU / memory helpers ---
-
-func dnsPorts() []networkingv1.NetworkPolicyPort {
-	udp := corev1.ProtocolUDP
-	tcp := corev1.ProtocolTCP
-	port53 := intstr.FromInt32(53)
-	return []networkingv1.NetworkPolicyPort{
-		{Protocol: &udp, Port: &port53},
-		{Protocol: &tcp, Port: &port53},
-	}
-}
-
-// parseCPUMilli converts a CPU string like "1", "0.5", or "500m" to millicores.
-func parseCPUMilli(cpu string) (int64, error) {
-	if cpu == "" {
-		return 0, nil
-	}
-	if strings.HasSuffix(cpu, "m") {
-		var v int64
-		if _, err := fmt.Sscanf(cpu[:len(cpu)-1], "%d", &v); err != nil {
-			return 0, fmt.Errorf("unrecognized cpu millicore format: %q", cpu)
-		}
-		return v, nil
-	}
-	var v float64
-	if _, err := fmt.Sscanf(cpu, "%f", &v); err != nil {
-		return 0, fmt.Errorf("unrecognized cpu format: %q", cpu)
-	}
-	return int64(v * 1000), nil
-}
-
-// parseMemory converts strings like "512MB", "1GB", "256m" to bytes.
-func parseMemory(mem string) (int64, error) {
-	if mem == "" {
-		return 0, nil
-	}
-	mem = strings.TrimSpace(mem)
-	upper := strings.ToUpper(mem)
-	units := map[string]int64{
-		"GB": 1 << 30,
-		"MB": 1 << 20,
-		"KB": 1 << 10,
-		"G":  1 << 30,
-		"M":  1 << 20,
-		"K":  1 << 10,
-	}
-	for suffix, mult := range units {
-		if strings.HasSuffix(upper, suffix) {
-			var v int64
-			if _, err := fmt.Sscanf(mem[:len(mem)-len(suffix)], "%d", &v); err != nil {
-				return 0, fmt.Errorf("unrecognized memory format: %q", mem)
-			}
-			return v * mult, nil
-		}
-	}
-	var v int64
-	if _, err := fmt.Sscanf(mem, "%d", &v); err != nil {
-		return 0, fmt.Errorf("unrecognized memory format: %q", mem)
-	}
-	return v, nil
 }

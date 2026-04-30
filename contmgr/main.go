@@ -72,6 +72,8 @@ func main() {
 	}
 }
 
+const authBackoffCap = 60 * time.Second
+
 func authWithRetry(ctx context.Context, cfg config) (*pbClient, error) {
 	var err error
 	for i := 0; ; i++ {
@@ -81,8 +83,8 @@ func authWithRetry(ctx context.Context, cfg config) (*pbClient, error) {
 			return pb, nil
 		}
 		backoff := time.Duration(1<<i) * time.Second
-		if backoff > 60*time.Second {
-			backoff = 60 * time.Second
+		if backoff > authBackoffCap {
+			backoff = authBackoffCap
 		}
 		slog.Warn("PocketBase auth attempt failed", "attempt", i+1, "backoff", backoff, "err", err)
 		select {
