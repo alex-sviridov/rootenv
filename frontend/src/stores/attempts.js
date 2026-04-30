@@ -10,27 +10,15 @@ export const useAttemptsStore = defineStore('attempts', () => {
   const historyLoading = ref(false)
   const error = ref(null)
 
-  async function withLoading(fn) {
-    loading.value = true
+  async function withLoading(fn, loadingRef = loading) {
+    loadingRef.value = true
     error.value = null
     try {
       await fn()
     } catch (e) {
       if (!e?.isAbort) error.value = e.message
     } finally {
-      loading.value = false
-    }
-  }
-
-  async function withHistoryLoading(fn) {
-    historyLoading.value = true
-    error.value = null
-    try {
-      await fn()
-    } catch (e) {
-      if (!e?.isAbort) error.value = e.message
-    } finally {
-      historyLoading.value = false
+      loadingRef.value = false
     }
   }
 
@@ -45,10 +33,10 @@ export const useAttemptsStore = defineStore('attempts', () => {
     })
 
   const loadHistory = (labId, page = 1, perPage = 10) =>
-    withHistoryLoading(async () => {
+    withLoading(async () => {
       const result = await fetchAttempts(labId, page, perPage)
       history.value = { items: result.items, page: result.page, totalPages: result.totalPages }
-    })
+    }, historyLoading)
 
   const loadActiveAttempt = async () => {
     try {

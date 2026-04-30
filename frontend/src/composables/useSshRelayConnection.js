@@ -6,10 +6,12 @@ import '@xterm/xterm/css/xterm.css'
 import { pb } from '@/lib/pb'
 
 const POLICY_VIOLATION = 1002
+const SCROLLBACK_LINES = 10000
+const TOKEN_REFRESH_DELAY_MS = 500
 
 export function useSshRelayConnection(serverId, secret) {
   const terminal = new Terminal({
-    scrollback: 10000,
+    scrollback: SCROLLBACK_LINES,
     cursorBlink: true,
     cursorStyle: 'block',
     fontFamily: 'monospace',
@@ -76,7 +78,7 @@ export function useSshRelayConnection(serverId, secret) {
           await pb.collection('users').authRefresh()
           terminal.writeln('Token refreshed.')
           // Reconnect after a short delay to allow server state to catch up
-          await new Promise(r => setTimeout(r, 500))
+          await new Promise(r => setTimeout(r, TOKEN_REFRESH_DELAY_MS))
           connect()
         } catch (err) {
           terminal.writeln(`\r\nFailed to refresh session: ${err.message}`)

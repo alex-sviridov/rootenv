@@ -2,13 +2,14 @@
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import FormField from '@/components/ui/FormField.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 
 const router = useRouter()
 const route = useRoute()
 const user = useUserStore()
 
 const mode = ref('login')
-
 const email = ref('')
 const password = ref('')
 const passwordConfirm = ref('')
@@ -35,7 +36,6 @@ function switchMode(m) {
     <div class="w-full max-w-sm">
       <h1 class="text-2xl font-bold text-white mb-8 text-center">LinuxLab</h1>
 
-      <!-- Tabs -->
       <div class="flex rounded-lg bg-slate-800 p-1 mb-6">
         <button
           class="flex-1 text-sm font-medium py-1.5 rounded-md transition-colors"
@@ -50,48 +50,37 @@ function switchMode(m) {
       </div>
 
       <form class="flex flex-col gap-4" @submit.prevent="submit">
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-medium text-slate-400 uppercase tracking-wide">Email</label>
-          <input
-            v-model="email"
-            type="email"
-            autocomplete="email"
-            class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
-            placeholder="you@example.com"
-          />
-        </div>
-
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-medium text-slate-400 uppercase tracking-wide">Password</label>
-          <input
-            v-model="password"
-            type="password"
-            autocomplete="current-password"
-            class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
-            placeholder="••••••••"
-          />
-        </div>
-
-        <div v-if="mode === 'register'" class="flex flex-col gap-1.5">
-          <label class="text-xs font-medium text-slate-400 uppercase tracking-wide">Confirm password</label>
-          <input
-            v-model="passwordConfirm"
-            type="password"
-            autocomplete="new-password"
-            class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
-            placeholder="••••••••"
-          />
-        </div>
+        <FormField
+          v-model="email"
+          label="Email"
+          type="email"
+          autocomplete="email"
+          placeholder="you@example.com"
+          focus-border="focus:border-indigo-500"
+        />
+        <FormField
+          v-model="password"
+          label="Password"
+          type="password"
+          autocomplete="current-password"
+          placeholder="••••••••"
+          focus-border="focus:border-indigo-500"
+        />
+        <FormField
+          v-if="mode === 'register'"
+          v-model="passwordConfirm"
+          label="Confirm password"
+          type="password"
+          autocomplete="new-password"
+          placeholder="••••••••"
+          focus-border="focus:border-indigo-500"
+        />
 
         <p v-if="user.error" class="text-sm text-red-400">{{ user.error }}</p>
 
-        <button
-          type="submit"
-          :disabled="user.loading"
-          class="mt-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold py-2.5 rounded-lg transition-colors"
-        >
+        <AppButton type="submit" variant="primary" :loading="user.loading" class="mt-1 w-full py-2.5">
           {{ user.loading ? '…' : mode === 'login' ? 'Sign in' : 'Create account' }}
-        </button>
+        </AppButton>
       </form>
     </div>
   </div>
