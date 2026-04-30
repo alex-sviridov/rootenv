@@ -28,8 +28,6 @@ spec:
               cpu: "200m"
               memory: "128Mi"
           env:
-            - name: CONTMGR_USERS_NAMESPACE
-              value: rootenv-users
             - name: CONTMGR_BACKEND_URL
               value: http://backend-svc:8090
             - name: CONTMGR_POLL_INTERVAL

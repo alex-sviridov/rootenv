@@ -38,14 +38,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	mgr := NewContmgr(pb, k8s, cfg.usersNamespace, cfg.infraNamespace, cfg.imagePullSecret)
+	mgr := NewContmgr(pb, k8s, cfg.infraNamespace, cfg.imagePullSecret)
 
 	go startHealthServer(ctx, cfg.healthAddr, mgr, 5*cfg.pollInterval)
 
 	ticker := time.NewTicker(cfg.pollInterval)
 	defer ticker.Stop()
 
-	slog.Info("contmgr started", "namespace", cfg.usersNamespace, "poll_interval", cfg.pollInterval)
+	slog.Info("contmgr started", "infra_namespace", cfg.infraNamespace, "poll_interval", cfg.pollInterval)
 
 	for {
 		select {

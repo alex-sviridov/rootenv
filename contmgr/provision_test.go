@@ -6,6 +6,54 @@ import (
 	"testing"
 )
 
+func TestProvisionEnsuresNamespace(t *testing.T) {
+	pb := newFakePB()
+	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
+
+	var gotParams NamespaceParams
+	k8s := &fakeK8s{
+		ensureNamespaceFunc: func(_ context.Context, p NamespaceParams) error {
+			gotParams = p
+			return nil
+		},
+	}
+
+	mgr := newTestContmgr(pb, k8s)
+	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
+		t.Fatal(err)
+	}
+	if gotParams.Name != "rootenv-lab-attempt1" {
+		t.Errorf("want Name=rootenv-lab-attempt1, got %q", gotParams.Name)
+	}
+	if gotParams.AttemptID != "attempt1" {
+		t.Errorf("want AttemptID=attempt1, got %q", gotParams.AttemptID)
+	}
+	if gotParams.UserID != "user1" {
+		t.Errorf("want UserID=user1, got %q", gotParams.UserID)
+	}
+}
+
+func TestProvisionEnsuresRoleBinding(t *testing.T) {
+	pb := newFakePB()
+	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
+
+	var gotNS string
+	k8s := &fakeK8s{
+		ensureRoleBindingFunc: func(_ context.Context, ns string) error {
+			gotNS = ns
+			return nil
+		},
+	}
+
+	mgr := newTestContmgr(pb, k8s)
+	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
+		t.Fatal(err)
+	}
+	if gotNS != "rootenv-lab-attempt1" {
+		t.Errorf("want EnsureRoleBinding called with rootenv-lab-attempt1, got %q", gotNS)
+	}
+}
+
 func TestProvisionEnsuresNetworkPolicy(t *testing.T) {
 	pb := newFakePB()
 	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
@@ -22,14 +70,11 @@ func TestProvisionEnsuresNetworkPolicy(t *testing.T) {
 	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
 		t.Fatal(err)
 	}
-	if gotParams.UserID != "user1" {
-		t.Errorf("want UserID=user1, got %q", gotParams.UserID)
+	if gotParams.Namespace != "rootenv-lab-attempt1" {
+		t.Errorf("want Namespace=rootenv-lab-attempt1, got %q", gotParams.Namespace)
 	}
-	if gotParams.AttemptID != "attempt1" {
-		t.Errorf("want AttemptID=attempt1, got %q", gotParams.AttemptID)
-	}
-	if gotParams.Namespace != "rootenv-users" {
-		t.Errorf("want Namespace=rootenv-users, got %q", gotParams.Namespace)
+	if gotParams.InfraNamespace != "rootenv-infra" {
+		t.Errorf("want InfraNamespace=rootenv-infra, got %q", gotParams.InfraNamespace)
 	}
 }
 
@@ -53,10 +98,10 @@ func TestProvisionCreatesPodAndService(t *testing.T) {
 	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
 		t.Fatal(err)
 	}
-	if gotPod.UserID != "user1" || gotPod.AttemptID != "attempt1" || gotPod.AssetName != "server-0" {
+	if gotPod.AssetName != "server-0" || gotPod.Namespace != "rootenv-lab-attempt1" {
 		t.Errorf("pod params wrong: %+v", gotPod)
 	}
-	if gotSvc.UserID != "user1" || gotSvc.AttemptID != "attempt1" || gotSvc.AssetName != "server-0" {
+	if gotSvc.AssetName != "server-0" || gotSvc.Namespace != "rootenv-lab-attempt1" {
 		t.Errorf("svc params wrong: %+v", gotSvc)
 	}
 }
@@ -74,6 +119,22 @@ func TestProvisionNetpolFailureAborts(t *testing.T) {
 	mgr := newTestContmgr(pb, k8s)
 	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err == nil {
 		t.Fatal("expected error when network policy creation fails")
+	}
+}
+
+func TestProvisionNamespaceFailureAborts(t *testing.T) {
+	pb := newFakePB()
+	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
+
+	k8s := &fakeK8s{
+		ensureNamespaceFunc: func(_ context.Context, _ NamespaceParams) error {
+			return errors.New("namespace error")
+		},
+	}
+
+	mgr := newTestContmgr(pb, k8s)
+	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err == nil {
+		t.Fatal("expected error when namespace creation fails")
 	}
 }
 
@@ -95,7 +156,7 @@ func TestProvisionStoresServiceConnection(t *testing.T) {
 	if connPatch == nil {
 		t.Fatal("no connection patch found in assets_configs")
 	}
-	wantHost := "user1-attempt1-server-0-svc.rootenv-users.svc.cluster.local"
+	wantHost := "server-0-svc.rootenv-lab-attempt1.svc.cluster.local"
 	if got, _ := connPatch["host"].(string); got != wantHost {
 		t.Errorf("want host=%q, got %q", wantHost, got)
 	}
@@ -302,9 +363,9 @@ func TestProvisionPodPhaseTransitions(t *testing.T) {
 		name string
 		err  string
 	}{
-		{"Failed", "pod user1-attempt1-server-0 ended unexpectedly: phase=Failed"},
-		{"Succeeded", "pod user1-attempt1-server-0 ended unexpectedly: phase=Succeeded"},
-		{"WatchClosed", "pod user1-attempt1-server-0 watch channel closed before Running"},
+		{"Failed", "pod server-0 ended unexpectedly: phase=Failed"},
+		{"Succeeded", "pod server-0 ended unexpectedly: phase=Succeeded"},
+		{"WatchClosed", "pod server-0 watch channel closed before Running"},
 	}
 	for _, tc := range phases {
 		t.Run(tc.name, func(t *testing.T) {

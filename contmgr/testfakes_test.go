@@ -8,8 +8,12 @@ import (
 // --- fakeK8s ---
 
 type fakeK8s struct {
-	ensureNetworkPolicyFunc func(ctx context.Context, p NetPolParams) error
-	createPodFunc           func(ctx context.Context, p PodParams) error
+	ensureNamespaceFunc      func(ctx context.Context, p NamespaceParams) error
+	ensureRoleBindingFunc    func(ctx context.Context, namespace string) error
+	deleteNamespaceFunc      func(ctx context.Context, namespace string) error
+	ensureNetworkPolicyFunc  func(ctx context.Context, p NetPolParams) error
+	ensureHeadlessServiceFunc func(ctx context.Context, namespace, assetName string) error
+	createPodFunc            func(ctx context.Context, p PodParams) error
 	createServiceFunc       func(ctx context.Context, p PodParams) error
 	waitPodRunningFunc      func(ctx context.Context, namespace, podName string) error
 	execInPodFunc           func(ctx context.Context, namespace, podName string, cmd []string) error
@@ -18,6 +22,30 @@ type fakeK8s struct {
 	deleteNetworkPolicyFunc func(ctx context.Context, namespace, netpolName string) error
 }
 
+func (f *fakeK8s) EnsureNamespace(ctx context.Context, p NamespaceParams) error {
+	if f.ensureNamespaceFunc != nil {
+		return f.ensureNamespaceFunc(ctx, p)
+	}
+	return nil
+}
+func (f *fakeK8s) EnsureRoleBinding(ctx context.Context, namespace string) error {
+	if f.ensureRoleBindingFunc != nil {
+		return f.ensureRoleBindingFunc(ctx, namespace)
+	}
+	return nil
+}
+func (f *fakeK8s) DeleteNamespace(ctx context.Context, namespace string) error {
+	if f.deleteNamespaceFunc != nil {
+		return f.deleteNamespaceFunc(ctx, namespace)
+	}
+	return nil
+}
+func (f *fakeK8s) EnsureHeadlessService(ctx context.Context, namespace, assetName string) error {
+	if f.ensureHeadlessServiceFunc != nil {
+		return f.ensureHeadlessServiceFunc(ctx, namespace, assetName)
+	}
+	return nil
+}
 func (f *fakeK8s) EnsureNetworkPolicy(ctx context.Context, p NetPolParams) error {
 	if f.ensureNetworkPolicyFunc != nil {
 		return f.ensureNetworkPolicyFunc(ctx, p)
@@ -248,7 +276,7 @@ func (f *fakePB) ListProvisionedAssetsByAttempt(attemptID string) ([]Asset, erro
 // --- test helpers ---
 
 func newTestContmgr(pb pbDoer, k8s k8sDoer) *Contmgr {
-	return &Contmgr{pb: pb, k8s: k8s, namespace: "rootenv-users", infraNamespace: "rootenv-infra"}
+	return &Contmgr{pb: pb, k8s: k8s, infraNamespace: "rootenv-infra"}
 }
 
 func addProvisionFixtures(pb *fakePB, assetID, attemptID, name, userID string) {
@@ -263,13 +291,14 @@ func addProvisionFixtures(pb *fakePB, assetID, attemptID, name, userID string) {
 	pb.addKeys(assetID, KeysRecord{ID: "keys-" + assetID, Secret: "secretsecretsecretsecretsecretsec"})
 }
 
-func addDecommissionFixtures(pb *fakePB, assetID, attemptID, name, userID, pod, svc string) {
+func addDecommissionFixtures(pb *fakePB, assetID, attemptID, name, userID string) {
 	pb.addAsset(Asset{ID: assetID, Attempt: attemptID, Name: name, State: "provisioned"})
 	pb.addAttempt(AttemptRecord{ID: attemptID, User: userID})
+	ns := namespaceName(attemptID)
 	pb.addAssetConfig(assetID, AssetConfig{
 		ID:            assetID + "-cfg",
 		Asset:         assetID,
 		Platform:      "container",
-		Configuration: []byte(`{"platform":"container","pod":"` + pod + `","svc":"` + svc + `","user_id":"` + userID + `"}`),
+		Configuration: []byte(`{"platform":"container","namespace":"` + ns + `","pod":"` + podName(name) + `","svc":"` + svcName(name) + `"}`),
 	})
 }

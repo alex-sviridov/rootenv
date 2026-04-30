@@ -68,6 +68,13 @@ type AttemptRecord struct {
 	User         string `json:"user"`
 	DesiredState string `json:"desired_state"`
 	CurrentState string `json:"current_state"`
+	Lab          string `json:"lab"`
+	ExpiresAt    string `json:"expires_at"`
+	Expand       struct {
+		User *struct {
+			Email string `json:"email"`
+		} `json:"user,omitempty"`
+	} `json:"expand,omitempty"`
 }
 
 type KeysRecord struct {
@@ -268,7 +275,7 @@ func (c *pbClient) ListProvisionedAssetsByAttempt(attemptID string) ([]Asset, er
 
 func (c *pbClient) GetAttempt(attemptID string) (*AttemptRecord, error) {
 	var a AttemptRecord
-	if err := c.get("/api/collections/attempts/records/"+url.PathEscape(attemptID), &a); err != nil {
+	if err := c.get("/api/collections/attempts/records/"+url.PathEscape(attemptID)+"?expand=user", &a); err != nil {
 		return nil, err
 	}
 	return &a, nil

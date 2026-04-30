@@ -1,16 +1,10 @@
 package main
 
-func netpolName(userID, attemptID string) string {
-	return userID + "-" + attemptID + "-netpol"
-}
+func namespaceName(attemptID string) string { return "rootenv-lab-" + attemptID }
 
-func podName(userID, attemptID, assetName string) string {
-	return userID + "-" + attemptID + "-" + assetName
-}
+func podName(assetName string) string { return assetName }
 
-func svcName(userID, attemptID, assetName string) string {
-	return userID + "-" + attemptID + "-" + assetName + "-svc"
-}
+func svcName(assetName string) string { return assetName + "-svc" }
 
 func svcDNS(svc, namespace string) string {
 	return svc + "." + namespace + ".svc.cluster.local"

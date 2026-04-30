@@ -15,43 +15,55 @@ Contmgr authenticates as a regular user (`/api/collections/users/auth-with-passw
 Service account: `svc_contmgr@contmgr.local`, `svc_role="contmgr"`.
 Access rules on `assets`, `keys`, `attempts`, `commands` are gated on `svc_role = "contmgr"`.
 
-## UserID Population
-`ListPendingAssets` uses `?expand=attempt` to populate `Asset.UserID` from the attempt relation.
-`GetAsset` does NOT expand — so assets fetched during decommission have `UserID=""`.
-**Fix:** `user_id` is stored in `assets.configuration` JSON at provision time and read back during decommission as a fallback.
+## Per-Attempt Namespaces
+Each attempt gets its own namespace `rootenv-lab-{attemptID}`.
+- Namespace created at provision time with labels/annotations (user-id, lab-id, expires-at, user-email via ?expand=user)
+- Pod name = `{assetName}` (no user/attempt prefix — namespace provides isolation)
+- Service name = `{assetName}-svc`
+- NetworkPolicy named `allow-relay` with `podSelector: {}` (applies to all pods in namespace)
+- Decommission = delete individual pod+svc, then delete entire namespace when last asset is gone
 
 ## Data Flow per Asset (Kubernetes)
 1. Asset enters `state=pending` (set by hook on attempt creation)
-2. Contmgr reads `asset.Configuration` to get image, ssh_user, CPU, memory
-3. Creates NetworkPolicy `{userID}-{attemptID}-netpol` (idempotent — skips if already exists)
-4. Generates Ed25519 keypair
-5. Creates Pod `{userID}-{attemptID}-{assetName}` and Service `{userID}-{attemptID}-{assetName}-svc` in `rootenv-users`
-6. Waits for pod phase `Running` (polls every 1s, up to 60s)
-7. Injects public key via pod exec: `sh -c "mkdir -p /conf.d/authorized_keys && printf '%s' <key> > /conf.d/authorized_keys/<user>"`
-8. Fetches `keys` record → encrypts private key → patches `keys.key_encrypted`
-9. Patches `assets.connection` (host = service DNS, port = 22) + `assets.configuration` (pod, svc, user_id) → patches `assets.state=provisioned`
+2. Contmgr reads `assets_configs.configuration` to get image, ssh_user, CPU, memory
+3. Creates namespace `rootenv-lab-{attemptID}` with labels+annotations (idempotent)
+4. Creates Role + RoleBinding `contmgr` in the new namespace (idempotent)
+5. Creates NetworkPolicy `allow-relay` (idempotent)
+6. Generates Ed25519 keypair
+7. Creates Pod `{assetName}` and Service `{assetName}-svc` in `rootenv-lab-{attemptID}`
+8. Waits for pod phase `Running`
+9. Injects public key via pod exec: writes to `/home/{ssh_user}/.ssh/authorized_keys`
+10. Fetches `keys` record → encrypts private key → patches `keys.key_encrypted`
+11. Patches `assets_configs.connection` (host = service DNS, port = 22) + `.configuration` (namespace, pod, svc) → patches `assets.state=provisioned`
 
-## Per-Attempt NetworkPolicy
-Each attempt gets a NetworkPolicy in `rootenv-users` named `{userID}-{attemptID}-netpol`.
-- **podSelector**: `user-id: {userID}`, `attempt-id: {attemptID}`
-- **Ingress**: from pods with same labels in same namespace; port 22/TCP from `rootenv-infra` namespace
-- **Egress**: to pods with same labels in same namespace; port 53 UDP+TCP to `kube-system` (DNS)
-- Both pod-to-pod peers use `NamespaceSelector` + `PodSelector` together — `PodSelector` alone would match pods in ALL namespaces
-- Created idempotently (AlreadyExists ignored); deleted only when last provisioned/provisioning asset for the attempt is gone
+## NetworkPolicy (simplified)
+Named `allow-relay` in each attempt namespace:
+- **podSelector**: `{}` (all pods in the namespace)
+- **Ingress**: from same namespace (namespaceSelector only); port 22/TCP from `rootenv-infra`
+- **Egress**: to same namespace; port 53 UDP+TCP to `kube-system/kube-dns`
 
 ## Decommission Flow
-`commands` record with `command=decommission`, `status=pending` → contmgr sets `status=running` → deletes pod → deletes service → checks remaining provisioned assets for the attempt → deletes NetworkPolicy if none remain → sets `status=done` and `assets.state=decommissioned`.
+1. Mark asset `decommissioning`
+2. Delete pod and service by derived names (`podName(asset.Name)`, `svcName(asset.Name)`)
+3. Check `ListProvisionedAssetsByAttempt` — if none remain, delete entire namespace
+4. Mark asset `decommissioned`
 
 ## `assets.configuration` JSON Schema
 ```json
-{"platform": "container", "pod": "<podName>", "svc": "<svcName>", "user_id": "<userID>"}
+{"platform": "container", "namespace": "rootenv-lab-<attemptID>", "pod": "<assetName>", "svc": "<assetName>-svc"}
 ```
 
 ## Connection Info Stored in PocketBase
 ```json
-{"host": "<svc>.rootenv-users.svc.cluster.local", "port": 22, "user": "<ssh_user>"}
+{"host": "<svc>.<namespace>.svc.cluster.local", "port": 22, "user": "<ssh_user>"}
 ```
 The relay dials this host:port directly — no port forwarding or host IP needed.
+
+## RBAC Model
+- ServiceAccount `contmgr` in `rootenv-infra`
+- ClusterRole `contmgr-cluster` with namespace + pod/svc/netpol + role/rolebinding permissions
+- ClusterRoleBinding `contmgr-cluster` binding the SA
+- At namespace creation, contmgr also creates a Role + RoleBinding within each new namespace (for scoped access)
 
 ## ContMgr Never Dials SSH
 ContMgr communicates with pods exclusively through the Kubernetes API (pod phase polling + exec).

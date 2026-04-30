@@ -8,8 +8,7 @@ import (
 
 func TestDecommissionDeletesPodAndService(t *testing.T) {
 	pb := newFakePB()
-	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
-		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
+	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
 
 	var deletedPods, deletedSvcs []string
 	k8s := &fakeK8s{
@@ -27,23 +26,22 @@ func TestDecommissionDeletesPodAndService(t *testing.T) {
 	if err := mgr.DecommissionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
 		t.Fatal(err)
 	}
-	if len(deletedPods) != 1 || deletedPods[0] != "user1-attempt1-server-0" {
-		t.Errorf("expected pod user1-attempt1-server-0 deleted, got %v", deletedPods)
+	if len(deletedPods) != 1 || deletedPods[0] != "server-0" {
+		t.Errorf("expected pod server-0 deleted, got %v", deletedPods)
 	}
-	if len(deletedSvcs) != 1 || deletedSvcs[0] != "user1-attempt1-server-0-svc" {
-		t.Errorf("expected svc user1-attempt1-server-0-svc deleted, got %v", deletedSvcs)
+	if len(deletedSvcs) != 1 || deletedSvcs[0] != "server-0-svc" {
+		t.Errorf("expected svc server-0-svc deleted, got %v", deletedSvcs)
 	}
 }
 
-func TestDecommissionDeletesNetpolWhenLastAsset(t *testing.T) {
+func TestDecommissionDeletesNamespaceWhenLastAsset(t *testing.T) {
 	pb := newFakePB()
-	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
-		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
+	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
 
-	var deletedNetpols []string
+	var deletedNamespaces []string
 	k8s := &fakeK8s{
-		deleteNetworkPolicyFunc: func(_ context.Context, _, name string) error {
-			deletedNetpols = append(deletedNetpols, name)
+		deleteNamespaceFunc: func(_ context.Context, ns string) error {
+			deletedNamespaces = append(deletedNamespaces, ns)
 			return nil
 		},
 	}
@@ -52,25 +50,20 @@ func TestDecommissionDeletesNetpolWhenLastAsset(t *testing.T) {
 	if err := mgr.DecommissionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
 		t.Fatal(err)
 	}
-	if len(deletedNetpols) != 1 || deletedNetpols[0] != "user1-attempt1-netpol" {
-		t.Errorf("expected netpol user1-attempt1-netpol deleted, got %v", deletedNetpols)
+	if len(deletedNamespaces) != 1 || deletedNamespaces[0] != "rootenv-lab-attempt1" {
+		t.Errorf("expected namespace rootenv-lab-attempt1 deleted, got %v", deletedNamespaces)
 	}
 }
 
-func TestDecommissionKeepsNetpolWhenOtherAssetsRemain(t *testing.T) {
+func TestDecommissionKeepsNamespaceWhenOtherAssetsRemain(t *testing.T) {
 	pb := newFakePB()
-	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
-		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
+	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
 	pb.addAsset(Asset{ID: "asset2", Attempt: "attempt1", Name: "server-1", State: "provisioned"})
-	pb.addAssetConfig("asset2", AssetConfig{
-		ID: "asset2-cfg", Asset: "asset2",
-		Configuration: []byte(`{"platform":"container","pod":"user1-attempt1-server-1","svc":"user1-attempt1-server-1-svc","user_id":"user1"}`),
-	})
 
-	var deletedNetpols []string
+	var deletedNamespaces []string
 	k8s := &fakeK8s{
-		deleteNetworkPolicyFunc: func(_ context.Context, _, name string) error {
-			deletedNetpols = append(deletedNetpols, name)
+		deleteNamespaceFunc: func(_ context.Context, ns string) error {
+			deletedNamespaces = append(deletedNamespaces, ns)
 			return nil
 		},
 	}
@@ -79,27 +72,14 @@ func TestDecommissionKeepsNetpolWhenOtherAssetsRemain(t *testing.T) {
 	if err := mgr.DecommissionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
 		t.Fatal(err)
 	}
-	if len(deletedNetpols) != 0 {
-		t.Errorf("expected netpol to be kept, but it was deleted: %v", deletedNetpols)
-	}
-}
-
-func TestDecommissionHandlesMissingPodSvc(t *testing.T) {
-	pb := newFakePB()
-	pb.addAsset(Asset{ID: "asset1", Attempt: "attempt1", Name: "server-0", State: "provisioned"})
-	pb.addAttempt(AttemptRecord{ID: "attempt1", User: "user1"})
-	pb.addAssetConfig("asset1", AssetConfig{ID: "asset1-cfg", Asset: "asset1", Configuration: []byte(`{}`)})
-
-	mgr := newTestContmgr(pb, &fakeK8s{})
-	if err := mgr.DecommissionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
-		t.Fatal(err)
+	if len(deletedNamespaces) != 0 {
+		t.Errorf("expected namespace to be kept, but it was deleted: %v", deletedNamespaces)
 	}
 }
 
 func TestDecommissionStateTransitions(t *testing.T) {
 	pb := newFakePB()
-	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
-		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
+	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
 
 	mgr := newTestContmgr(pb, &fakeK8s{})
 	if err := mgr.DecommissionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
@@ -117,39 +97,10 @@ func TestDecommissionStateTransitions(t *testing.T) {
 	}
 }
 
-// GetAssetConfig failing at the top of DecommissionAsset must leave the asset
-// state untouched — no k8s deletes, no state transition.
-func TestDecommissionGetAssetConfigFails(t *testing.T) {
-	pb := newFakePB()
-	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
-		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
-	pb.getAssetConfigErr = errors.New("pb unavailable")
-
-	var k8sCalled bool
-	k8s := &fakeK8s{
-		deletePodFunc: func(_ context.Context, _, _ string) error {
-			k8sCalled = true
-			return nil
-		},
-	}
-
-	mgr := newTestContmgr(pb, k8s)
-	if err := mgr.DecommissionAsset(context.Background(), *pb.assets["asset1"]); err == nil {
-		t.Fatal("expected error when GetAssetConfig fails")
-	}
-	if k8sCalled {
-		t.Error("k8s must not be touched when GetAssetConfig fails")
-	}
-	if pb.assets["asset1"].State != "provisioned" {
-		t.Errorf("want state=provisioned (unchanged), got %q", pb.assets["asset1"].State)
-	}
-}
-
 // Failing to mark the asset "decommissioning" must abort before any k8s delete.
 func TestDecommissionMarkDecommissioningFails(t *testing.T) {
 	pb := newFakePB()
-	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
-		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
+	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
 	pb.patchAssetErrOn = map[string]error{"decommissioning": errors.New("pb write failed")}
 
 	var k8sCalled bool
@@ -173,8 +124,7 @@ func TestDecommissionMarkDecommissioningFails(t *testing.T) {
 // "decommissioning" so the stuck-decommission recovery can retry on next cycle.
 func TestDecommissionDeletePodFails(t *testing.T) {
 	pb := newFakePB()
-	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
-		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
+	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
 
 	k8s := &fakeK8s{
 		deletePodFunc: func(_ context.Context, _, _ string) error {
@@ -193,8 +143,7 @@ func TestDecommissionDeletePodFails(t *testing.T) {
 
 func TestDecommissionDeleteServiceFails(t *testing.T) {
 	pb := newFakePB()
-	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
-		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
+	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
 
 	k8s := &fakeK8s{
 		deleteServiceFunc: func(_ context.Context, _, _ string) error {
@@ -211,22 +160,21 @@ func TestDecommissionDeleteServiceFails(t *testing.T) {
 	}
 }
 
-// Failing to delete the NetworkPolicy when this is the last asset must surface
-// as an error. On retry, DeleteNetworkPolicy returns NotFound → nil (idempotent).
-func TestDecommissionDeleteNetpolFails(t *testing.T) {
+// Failing to delete the namespace when this is the last asset must surface
+// as an error. On retry, DeleteNamespace returns NotFound → nil (idempotent).
+func TestDecommissionDeleteNamespaceFails(t *testing.T) {
 	pb := newFakePB()
-	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
-		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
+	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
 
 	k8s := &fakeK8s{
-		deleteNetworkPolicyFunc: func(_ context.Context, _, _ string) error {
+		deleteNamespaceFunc: func(_ context.Context, _ string) error {
 			return errors.New("k8s api error")
 		},
 	}
 
 	mgr := newTestContmgr(pb, k8s)
 	if err := mgr.DecommissionAsset(context.Background(), *pb.assets["asset1"]); err == nil {
-		t.Fatal("expected error when DeleteNetworkPolicy fails")
+		t.Fatal("expected error when DeleteNamespace fails")
 	}
 	if pb.assets["asset1"].State != "decommissioning" {
 		t.Errorf("want state=decommissioning (for retry), got %q", pb.assets["asset1"].State)
@@ -238,8 +186,7 @@ func TestDecommissionDeleteNetpolFails(t *testing.T) {
 // k8s deletes are idempotent (NotFound → nil in the real client).
 func TestDecommissionFinalPatchFails(t *testing.T) {
 	pb := newFakePB()
-	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
-		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
+	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
 	pb.patchAssetErrOn = map[string]error{"decommissioned": errors.New("pb write failed")}
 
 	mgr := newTestContmgr(pb, &fakeK8s{})
@@ -260,54 +207,17 @@ func TestDecommissionFinalPatchFails(t *testing.T) {
 	}
 }
 
-// Malformed JSON in assets_configs.configuration must not abort the decommission.
-// Contmgr logs a warning, skips pod/svc delete (empty names → no-op in k8s.go),
-// and still marks the asset decommissioned. Covers assets that crashed before
-// configuration was written.
-func TestDecommissionCorruptConfigurationJSON(t *testing.T) {
-	pb := newFakePB()
-	pb.addAsset(Asset{ID: "asset1", Attempt: "attempt1", Name: "server-0", State: "provisioned"})
-	pb.addAssetConfig("asset1", AssetConfig{
-		ID:            "asset1-cfg",
-		Asset:         "asset1",
-		Configuration: []byte(`{not valid json`),
-	})
-
-	var podDeleteWithName bool
-	k8s := &fakeK8s{
-		deletePodFunc: func(_ context.Context, _, name string) error {
-			if name != "" {
-				podDeleteWithName = true
-			}
-			return nil
-		},
-	}
-
-	mgr := newTestContmgr(pb, k8s)
-	if err := mgr.DecommissionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
-		t.Fatalf("decommission should succeed despite corrupt config: %v", err)
-	}
-	if pb.assets["asset1"].State != "decommissioned" {
-		t.Errorf("want state=decommissioned, got %q", pb.assets["asset1"].State)
-	}
-	if podDeleteWithName {
-		t.Error("DeletePod must not be called with a non-empty name when config is corrupt")
-	}
-}
-
-// A sibling asset in "provisioning" state counts as active — the NetworkPolicy
+// A sibling asset in "provisioning" state counts as active — the namespace
 // must not be deleted until all assets for the attempt are gone.
-// (ListProvisionedAssetsByAttempt filters state='provisioned'||state='provisioning')
-func TestDecommissionNetpolKeptForProvisioningAsset(t *testing.T) {
+func TestDecommissionNamespaceKeptForProvisioningAsset(t *testing.T) {
 	pb := newFakePB()
-	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
-		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
+	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
 	pb.addAsset(Asset{ID: "asset2", Attempt: "attempt1", Name: "server-1", State: "provisioning"})
 
-	var deletedNetpols []string
+	var deletedNamespaces []string
 	k8s := &fakeK8s{
-		deleteNetworkPolicyFunc: func(_ context.Context, _, name string) error {
-			deletedNetpols = append(deletedNetpols, name)
+		deleteNamespaceFunc: func(_ context.Context, ns string) error {
+			deletedNamespaces = append(deletedNamespaces, ns)
 			return nil
 		},
 	}
@@ -316,7 +226,7 @@ func TestDecommissionNetpolKeptForProvisioningAsset(t *testing.T) {
 	if err := mgr.DecommissionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
 		t.Fatal(err)
 	}
-	if len(deletedNetpols) != 0 {
-		t.Errorf("netpol must not be deleted while a sibling is still provisioning: %v", deletedNetpols)
+	if len(deletedNamespaces) != 0 {
+		t.Errorf("namespace must not be deleted while a sibling is still provisioning: %v", deletedNamespaces)
 	}
 }

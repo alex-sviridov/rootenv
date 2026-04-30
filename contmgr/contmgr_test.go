@@ -21,8 +21,7 @@ func TestRunOnceProvisionsPendingAssets(t *testing.T) {
 
 func TestRunOnceDecommissionsAttemptAssets(t *testing.T) {
 	pb := newFakePB()
-	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
-		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
+	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
 	pb.attempts["attempt1"].DesiredState = "decommissioned"
 	pb.attempts["attempt1"].CurrentState = "provisioned"
 
@@ -86,10 +85,6 @@ func TestRunOnceResumesStuckDecommissioningAssets(t *testing.T) {
 	pb := newFakePB()
 	pb.addAsset(Asset{ID: "asset1", Attempt: "attempt1", Name: "server-0", State: "decommissioning"})
 	pb.addAttempt(AttemptRecord{ID: "attempt1", User: "user1"})
-	pb.addAssetConfig("asset1", AssetConfig{
-		ID: "asset1-cfg", Asset: "asset1",
-		Configuration: []byte(`{"platform":"container","pod":"user1-attempt1-server-0","svc":"user1-attempt1-server-0-svc","user_id":"user1"}`),
-	})
 
 	mgr := newTestContmgr(pb, &fakeK8s{})
 	if err := mgr.RunOnce(context.Background()); err != nil {
@@ -104,8 +99,7 @@ func TestRunOnceResumesStuckDecommissioningAssets(t *testing.T) {
 // cycle's stuck-decommission recovery can retry.
 func TestRunOnceDecommissionFails(t *testing.T) {
 	pb := newFakePB()
-	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
-		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
+	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
 	pb.attempts["attempt1"].DesiredState = "decommissioned"
 	pb.attempts["attempt1"].CurrentState = "provisioned"
 

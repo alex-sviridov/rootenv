@@ -4,13 +4,14 @@
 
 ## Responsibilities
 - Polls PocketBase every `CONTMGR_POLL_INTERVAL` (default 5s) for assets in `pending` state
-- Creates a Kubernetes Pod + ClusterIP Service per asset in `rootenv-users` namespace
-- Creates a per-attempt NetworkPolicy (idempotent) isolating pods by `user-id` + `attempt-id` labels
-- Injects SSH public key via pod exec (`/conf.d/authorized_keys/<ssh_user>`)
+- Creates a per-attempt Kubernetes namespace `rootenv-lab-{attemptID}` with labels/annotations
+- Creates Role + RoleBinding in each new namespace, then NetworkPolicy `allow-relay`
+- Creates a Pod + ClusterIP Service per asset in the attempt namespace
+- Injects SSH public key via pod exec (`/home/{ssh_user}/.ssh/authorized_keys`)
 - Generates Ed25519 SSH keypairs; encrypts private key with AES-256-GCM using `keys.secret` as key material
 - Writes encrypted private key to `keys.key_encrypted` in PocketBase
-- Stores service DNS name (`<svc>.rootenv-users.svc.cluster.local`) as `connection.host`, port 22
-- Polls for pending `decommission` commands; deletes pod + service; deletes NetworkPolicy when last asset for the attempt is gone
+- Stores service DNS name (`<svc>.<namespace>.svc.cluster.local`) as `connection.host`, port 22
+- Decommissions: deletes pod + service, then deletes the entire namespace when last asset for the attempt is gone
 - Authenticates with PocketBase as `svc_contmgr@contmgr.local` (svc_role="contmgr")
 - Stateless: all state lives in PocketBase; multiple instances safe to run in parallel
 
@@ -20,7 +21,7 @@
 | `CONTMGR_BACKEND_URL` | — | PocketBase base URL |
 | `CONTMGR_BACKEND_USERNAME` | — | svc_contmgr email |
 | `CONTMGR_BACKEND_PASSWORD` | — | password |
-| `CONTMGR_USERS_NAMESPACE` | — | Namespace where user pods are created (e.g. `rootenv-users`) |
+| `CONTMGR_INFRA_NAMESPACE` | `rootenv-infra` | Namespace hosting infra (used for NetworkPolicy relay rule) |
 | `CONTMGR_IMAGE_PULL_SECRET` | `""` | Optional imagePullSecrets name for user pods |
 | `CONTMGR_POLL_INTERVAL` | `5s` | Poll cadence |
 
@@ -30,26 +31,39 @@
 - Relay uses the same scheme to decrypt at connection time — the two must stay in sync
 
 ## SSH Key Injection
-Pod exec after pod reaches `Running` phase: writes authorized_keys file inside pod at `/conf.d/authorized_keys/<ssh_user>`.
+Pod exec after pod reaches `Running` phase: writes authorized_keys to `/home/{ssh_user}/.ssh/authorized_keys`.
 ContMgr never dials SSH directly — only the relay does.
 
 ## Kubernetes Resource Naming
-- Pod: `{userID}-{attemptID}-{assetName}`
-- Service: `{userID}-{attemptID}-{assetName}-svc`
-- NetworkPolicy: `{userID}-{attemptID}-netpol`
-- Connection host stored in PocketBase: `{svc}.rootenv-users.svc.cluster.local`
+- Namespace: `rootenv-lab-{attemptID}`
+- Pod: `{assetName}` (namespace provides isolation)
+- Service: `{assetName}-svc`
+- NetworkPolicy: `allow-relay` (one per namespace)
+- Connection host stored in PocketBase: `{assetName}-svc.rootenv-lab-{attemptID}.svc.cluster.local`
+
+## Namespace Labels & Annotations
+```yaml
+labels:
+  app.kubernetes.io/managed-by: rootenv-contmgr
+  rootenv.io/session-id: {attemptID}
+  rootenv.io/user-id: {userID}
+  rootenv.io/lab-id: {labID}
+annotations:
+  rootenv.io/user-email: {userEmail}   # from ?expand=user on GetAttempt
+  rootenv.io/created-at: {RFC3339}
+  rootenv.io/expires-at: {RFC3339}
+```
 
 ## NetworkPolicy Rules
-Applied per attempt (idempotent):
-- **Ingress**: pod-to-pod within same `user-id`+`attempt-id` in same namespace; port 22/TCP from `rootenv-infra` (relay)
-- **Egress**: pod-to-pod within same attempt in same namespace; port 53 UDP/TCP to `kube-system` (DNS)
-- Both ingress and egress peers use `NamespaceSelector` + `PodSelector` together to avoid cross-namespace label collision
+Applied per namespace (idempotent), named `allow-relay`:
+- **podSelector**: `{}` (all pods in namespace)
+- **Ingress**: from same namespace (namespaceSelector); port 22/TCP from `rootenv-infra`
+- **Egress**: to same namespace; port 53 UDP/TCP to `kube-system/kube-dns`
 
 ## `assets.configuration` JSON Schema
 ```json
-{"platform": "container", "pod": "<podName>", "svc": "<svcName>", "user_id": "<userID>"}
+{"platform": "container", "namespace": "rootenv-lab-<attemptID>", "pod": "<assetName>", "svc": "<assetName>-svc"}
 ```
-`user_id` is stored here because `GetAsset` does not expand the attempt relation — decommission reads it back from configuration.
 
 ## Concurrency
 `errgroup` for concurrent provision/decommission; errors per-asset are logged but do not abort the poll cycle.
@@ -58,15 +72,15 @@ Applied per attempt (idempotent):
 - ContMgr never dials SSH or pod IPs directly — all communication is through the k8s API
 - No TLS or SSH host key pinning (relay's responsibility)
 - Only provisions and decommissions — start/stop/restart commands are not its responsibility
-- Does NOT expose any ports or HTTP endpoints
 - `imagePullPolicy: IfNotPresent` for user pods
 - `restartPolicy: Never` for user pods — dead pod requires a new provision cycle
 
 ## RBAC
 - ServiceAccount `contmgr` in `rootenv-infra`
-- Role scoped to `rootenv-users` only: pods, pods/exec, services, networkpolicies
-- RoleBinding cross-namespace (SA in infra, Role in users)
-- Manifests: `k8s/23-contmgr-rbac.yaml`, `k8s/23-contmgr-deploy.yaml`
+- ClusterRole `contmgr-cluster`: namespaces, pods, pods/exec, services, networkpolicies, roles, rolebindings
+- ClusterRoleBinding `contmgr-cluster` binding the SA
+- At namespace creation, contmgr creates Role + RoleBinding `contmgr` within each new `rootenv-lab-*` namespace
+- Manifests: `k8s/23-contmgra-rbac-sa.yaml`, `k8s/24-contmgr-rbac.yaml`, `k8s/23-contmgr-deploy.yaml`
 - Credentials via `contmgr-secrets` Secret (CONTMGR_BACKEND_USERNAME, CONTMGR_BACKEND_PASSWORD, optionally CONTMGR_IMAGE_PULL_SECRET)
 
 ## Memory Maintenance

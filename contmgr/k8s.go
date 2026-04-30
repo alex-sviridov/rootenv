@@ -8,6 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,7 +27,11 @@ var podWatchTimeoutSec = int64(120)
 
 // k8sDoer is the Kubernetes operations contmgr needs.
 type k8sDoer interface {
+	EnsureNamespace(ctx context.Context, p NamespaceParams) error
+	EnsureRoleBinding(ctx context.Context, namespace string) error
+	DeleteNamespace(ctx context.Context, namespace string) error
 	EnsureNetworkPolicy(ctx context.Context, p NetPolParams) error
+	EnsureHeadlessService(ctx context.Context, namespace, assetName string) error
 	CreatePod(ctx context.Context, p PodParams) error
 	CreateService(ctx context.Context, p PodParams) error
 	WaitPodRunning(ctx context.Context, namespace, podName string) error
@@ -36,10 +41,18 @@ type k8sDoer interface {
 	DeleteNetworkPolicy(ctx context.Context, namespace, netpolName string) error
 }
 
+type NamespaceParams struct {
+	Name      string
+	AttemptID string
+	UserID    string
+	LabID     string
+	UserEmail string
+	CreatedAt string
+	ExpiresAt string
+}
+
 type NetPolParams struct {
 	Namespace      string
-	UserID         string
-	AttemptID      string
 	InfraNamespace string
 }
 
@@ -77,38 +90,111 @@ func newK8sClient() (*K8sClient, error) {
 	return &K8sClient{clientset: cs, restConfig: cfg}, nil
 }
 
+func (k *K8sClient) EnsureNamespace(ctx context.Context, p NamespaceParams) error {
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: p.Name,
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "rootenv-contmgr",
+				"rootenv.io/session-id":        p.AttemptID,
+				"rootenv.io/user-id":           p.UserID,
+				"rootenv.io/lab-id":            p.LabID,
+			},
+			Annotations: map[string]string{
+				"rootenv.io/user-email": p.UserEmail,
+				"rootenv.io/created-at": p.CreatedAt,
+				"rootenv.io/expires-at": p.ExpiresAt,
+			},
+		},
+	}
+	_, err := k.clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+	if k8serrors.IsAlreadyExists(err) {
+		return nil
+	}
+	return err
+}
+
+func (k *K8sClient) EnsureRoleBinding(ctx context.Context, namespace string) error {
+	role := &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{Name: "contmgr", Namespace: namespace},
+		Rules: []rbacv1.PolicyRule{
+			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch", "create", "delete"}},
+			{APIGroups: []string{""}, Resources: []string{"pods/exec"}, Verbs: []string{"create"}},
+			{APIGroups: []string{""}, Resources: []string{"services"}, Verbs: []string{"get", "list", "create", "delete"}},
+			{APIGroups: []string{"networking.k8s.io"}, Resources: []string{"networkpolicies"}, Verbs: []string{"get", "list", "create", "delete"}},
+		},
+	}
+	_, err := k.clientset.RbacV1().Roles(namespace).Create(ctx, role, metav1.CreateOptions{})
+	if err != nil && !k8serrors.IsAlreadyExists(err) {
+		return fmt.Errorf("create role: %w", err)
+	}
+	rb := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "contmgr", Namespace: namespace},
+		Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: "contmgr", Namespace: "rootenv-infra"}},
+		RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "Role", Name: "contmgr"},
+	}
+	_, err = k.clientset.RbacV1().RoleBindings(namespace).Create(ctx, rb, metav1.CreateOptions{})
+	if k8serrors.IsAlreadyExists(err) {
+		return nil
+	}
+	return err
+}
+
+func (k *K8sClient) DeleteNamespace(ctx context.Context, namespace string) error {
+	if namespace == "" {
+		return nil
+	}
+	err := k.clientset.CoreV1().Namespaces().Delete(ctx, namespace, metav1.DeleteOptions{})
+	if k8serrors.IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
+// EnsureHeadlessService creates a clusterIP=None service named after the asset
+// in the given namespace. This gives the pod a stable short DNS name:
+// kube-dns search path resolves "{assetName}" to
+// "{assetName}.{namespace}.svc.cluster.local" automatically.
+// The relay uses the separate ClusterIP service ({assetName}-svc) for SSH.
+func (k *K8sClient) EnsureHeadlessService(ctx context.Context, namespace, assetName string) error {
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      assetName,
+			Namespace: namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: "None",
+			Selector:  map[string]string{"rootenv.io/asset-name": assetName},
+		},
+	}
+	_, err := k.clientset.CoreV1().Services(namespace).Create(ctx, svc, metav1.CreateOptions{})
+	if k8serrors.IsAlreadyExists(err) {
+		return nil
+	}
+	return err
+}
+
 func (k *K8sClient) EnsureNetworkPolicy(ctx context.Context, p NetPolParams) error {
 	tcp := corev1.ProtocolTCP
 	port22 := intstr.FromInt32(22)
 	netpol := &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      netpolName(p.UserID, p.AttemptID),
+			Name:      "allow-relay",
 			Namespace: p.Namespace,
 		},
 		Spec: networkingv1.NetworkPolicySpec{
-			PodSelector: metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"user-id":    p.UserID,
-					"attempt-id": p.AttemptID,
-				},
-			},
+			PodSelector: metav1.LabelSelector{},
 			PolicyTypes: []networkingv1.PolicyType{
 				networkingv1.PolicyTypeIngress,
 				networkingv1.PolicyTypeEgress,
 			},
 			Ingress: []networkingv1.NetworkPolicyIngressRule{
-				// pod-to-pod within same attempt, same namespace only
+				// pod-to-pod within the same namespace
 				{
 					From: []networkingv1.NetworkPolicyPeer{{
 						NamespaceSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{
 								"kubernetes.io/metadata.name": p.Namespace,
-							},
-						},
-						PodSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{
-								"user-id":    p.UserID,
-								"attempt-id": p.AttemptID,
 							},
 						},
 					}},
@@ -128,9 +214,8 @@ func (k *K8sClient) EnsureNetworkPolicy(ctx context.Context, p NetPolParams) err
 					}},
 				},
 			},
-			// Egress whitelist — everything not listed is denied (internet, rootenv-infra, other attempts).
 			Egress: []networkingv1.NetworkPolicyEgressRule{
-				// pod-to-pod within same attempt, same namespace only
+				// pod-to-pod within the same namespace
 				{
 					To: []networkingv1.NetworkPolicyPeer{{
 						NamespaceSelector: &metav1.LabelSelector{
@@ -138,15 +223,9 @@ func (k *K8sClient) EnsureNetworkPolicy(ctx context.Context, p NetPolParams) err
 								"kubernetes.io/metadata.name": p.Namespace,
 							},
 						},
-						PodSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{
-								"user-id":    p.UserID,
-								"attempt-id": p.AttemptID,
-							},
-						},
 					}},
 				},
-				// DNS: port 53 to kube-dns pods only (not entire kube-system namespace)
+				// DNS: port 53 to kube-dns pods only
 				{
 					Ports: dnsPorts(),
 					To: []networkingv1.NetworkPolicyPeer{{
@@ -197,13 +276,14 @@ func (k *K8sClient) CreatePod(ctx context.Context, p PodParams) error {
 	}
 
 	labels := map[string]string{
-		"user-id":    p.UserID,
-		"attempt-id": p.AttemptID,
-		"asset-name": p.AssetName,
+		"app.kubernetes.io/managed-by": "rootenv-contmgr",
+		"rootenv.io/asset-name":        p.AssetName,
+		"rootenv.io/user-id":           p.UserID,
+		"rootenv.io/attempt-id":        p.AttemptID,
 	}
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      podName(p.UserID, p.AttemptID, p.AssetName),
+			Name:      podName(p.AssetName),
 			Namespace: p.Namespace,
 			Labels:    labels,
 		},
@@ -236,15 +316,13 @@ func (k *K8sClient) CreatePod(ctx context.Context, p PodParams) error {
 func (k *K8sClient) CreateService(ctx context.Context, p PodParams) error {
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      svcName(p.UserID, p.AttemptID, p.AssetName),
+			Name:      svcName(p.AssetName),
 			Namespace: p.Namespace,
 		},
 		Spec: corev1.ServiceSpec{
 			Type: corev1.ServiceTypeClusterIP,
 			Selector: map[string]string{
-				"user-id":    p.UserID,
-				"attempt-id": p.AttemptID,
-				"asset-name": p.AssetName,
+				"rootenv.io/asset-name": p.AssetName,
 			},
 			Ports: []corev1.ServicePort{{
 				Name:       "ssh",
