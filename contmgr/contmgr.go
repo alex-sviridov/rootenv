@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"time"
+
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
@@ -41,6 +43,8 @@ type Contmgr struct {
 	infraNamespace string
 	pullSecret     string
 	needsReconn    atomic.Bool
+	lastPollAt     atomic.Int64 // unix nanos; 0 = not yet polled
+	pbHealthy      atomic.Bool  // true after a cycle where PB was reachable
 }
 
 func NewContmgr(pb *pbClient, k8s *K8sClient, namespace, infraNamespace, pullSecret string) *Contmgr {
@@ -49,6 +53,13 @@ func NewContmgr(pb *pbClient, k8s *K8sClient, namespace, infraNamespace, pullSec
 
 func (p *Contmgr) NeedsReconnect() bool { return p.needsReconn.Swap(false) }
 func (p *Contmgr) SetPB(pb *pbClient)   { p.pb = pb }
+
+// RecordPoll marks the completion of a poll cycle. pbOK must be false when
+// the cycle triggered a PocketBase reconnect.
+func (p *Contmgr) RecordPoll(pbOK bool) {
+	p.lastPollAt.Store(time.Now().UnixNano())
+	p.pbHealthy.Store(pbOK)
+}
 
 // cleanupAssetK8s deletes pod and service for an asset by their deterministic names.
 // All deletes are best-effort — not-found is not an error.

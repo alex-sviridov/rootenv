@@ -2,8 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 )
 
 // --- fakes ---
@@ -113,7 +118,6 @@ func (f *fakePB) addKeys(assetID string, k KeysRecord) {
 	k2 := k
 	f.keys[assetID] = &k2
 }
-func (f *fakePB) addCommand(c Command) { f.commands[c.ID] = &c }
 func (f *fakePB) addAttempt(a AttemptRecord) { f.attempts[a.ID] = &a }
 
 func (f *fakePB) ListPendingAssets() ([]Asset, error) {
@@ -486,5 +490,505 @@ func TestDecommissionHandlesMissingPodSvc(t *testing.T) {
 	mgr := newTestContmgr(pb, &fakeK8s{})
 	if err := mgr.DecommissionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// --- svcDNS helper ---
+
+func TestSvcDNS(t *testing.T) {
+	got := svcDNS("user1-attempt1-server-0-svc", "rootenv-users")
+	want := "user1-attempt1-server-0-svc.rootenv-users.svc.cluster.local"
+	if got != want {
+		t.Fatalf("want %q, got %q", want, got)
+	}
+}
+
+// --- parseMemory ---
+
+func TestParseMemory(t *testing.T) {
+	cases := []struct {
+		input string
+		want  int64
+		err   bool
+	}{
+		{"", 0, false},
+		{"512MB", 512 << 20, false},
+		{"1GB", 1 << 30, false},
+		{"256KB", 256 << 10, false},
+		{"1G", 1 << 30, false},
+		{"128M", 128 << 20, false},
+		{"1K", 1 << 10, false},
+		{"1024", 1024, false},
+		{"bad", 0, true},
+	}
+	for _, tc := range cases {
+		got, err := parseMemory(tc.input)
+		if tc.err {
+			if err == nil {
+				t.Errorf("parseMemory(%q): expected error", tc.input)
+			}
+		} else {
+			if err != nil {
+				t.Errorf("parseMemory(%q): unexpected error: %v", tc.input, err)
+			} else if got != tc.want {
+				t.Errorf("parseMemory(%q): want %d, got %d", tc.input, tc.want, got)
+			}
+		}
+	}
+}
+
+// --- parseCPUMilli ---
+
+func TestParseCPUMilli(t *testing.T) {
+	cases := []struct {
+		input string
+		want  int64
+		err   bool
+	}{
+		{"", 0, false},
+		{"1", 1000, false},
+		{"0.5", 500, false},
+		{"500m", 500, false},
+		{"1000m", 1000, false},
+		{"bad", 0, true},
+		{"badm", 0, true},
+	}
+	for _, tc := range cases {
+		got, err := parseCPUMilli(tc.input)
+		if tc.err {
+			if err == nil {
+				t.Errorf("parseCPUMilli(%q): expected error", tc.input)
+			}
+		} else {
+			if err != nil {
+				t.Errorf("parseCPUMilli(%q): unexpected error: %v", tc.input, err)
+			} else if got != tc.want {
+				t.Errorf("parseCPUMilli(%q): want %d, got %d", tc.input, tc.want, got)
+			}
+		}
+	}
+}
+
+// --- keygen ---
+
+func TestGenerateKeypair(t *testing.T) {
+	priv, pub, err := GenerateKeypair()
+	if err != nil {
+		t.Fatalf("GenerateKeypair: %v", err)
+	}
+	if len(priv) == 0 {
+		t.Error("empty private key PEM")
+	}
+	if !strings.HasPrefix(string(pub), "ssh-ed25519 ") {
+		t.Errorf("pub key should start with ssh-ed25519, got: %s", pub)
+	}
+}
+
+func TestEncryptPrivateKeyRoundtrip(t *testing.T) {
+	priv, _, err := GenerateKeypair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const secret = "secretsecretsecretsecretsecretsec"
+	ct1, err := EncryptPrivateKey(priv, secret)
+	if err != nil {
+		t.Fatalf("EncryptPrivateKey: %v", err)
+	}
+	if ct1 == "" {
+		t.Error("empty ciphertext")
+	}
+	// Each call uses a fresh random nonce so ciphertexts must differ.
+	ct2, err := EncryptPrivateKey(priv, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ct1 == ct2 {
+		t.Error("expected different ciphertext each call (random nonce)")
+	}
+}
+
+// --- AssetConfig.Def() ---
+
+func TestAssetConfigDef(t *testing.T) {
+	cfg := &AssetConfig{
+		Configuration: []byte(`{"image":"alpine","ssh_user":"lab","cpu":"1","memory":"128MB"}`),
+	}
+	def, err := cfg.Def()
+	if err != nil {
+		t.Fatalf("Def: %v", err)
+	}
+	if def.Image != "alpine" || def.SSHUser != "lab" || def.CPU != "1" || def.Memory != "128MB" {
+		t.Errorf("Def fields wrong: %+v", def)
+	}
+}
+
+func TestAssetConfigDefInvalidJSON(t *testing.T) {
+	cfg := &AssetConfig{Configuration: []byte(`not json`)}
+	if _, err := cfg.Def(); err == nil {
+		t.Error("expected error for invalid JSON")
+	}
+}
+
+// --- provision: state transitions ---
+
+func TestProvisionStateTransitions(t *testing.T) {
+	pb := newFakePB()
+	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
+
+	mgr := newTestContmgr(pb, &fakeK8s{})
+	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
+		t.Fatal(err)
+	}
+
+	var states []string
+	for _, c := range pb.patchAssetCalls {
+		if s, ok := c.fields["state"].(string); ok {
+			states = append(states, s)
+		}
+	}
+	if len(states) < 2 || states[0] != "provisioning" || states[len(states)-1] != "provisioned" {
+		t.Errorf("unexpected state transitions: %v", states)
+	}
+}
+
+// --- provision: failure resets state to pending ---
+
+func TestProvisionCreatePodFailureResetsStateToPending(t *testing.T) {
+	pb := newFakePB()
+	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
+
+	k8s := &fakeK8s{
+		createPodFunc: func(_ context.Context, _ PodParams) error {
+			return errors.New("pod creation failed")
+		},
+	}
+
+	mgr := newTestContmgr(pb, k8s)
+	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err == nil {
+		t.Fatal("expected error")
+	}
+	if pb.assets["asset1"].State != "pending" {
+		t.Errorf("expected state=pending after failure, got %q", pb.assets["asset1"].State)
+	}
+}
+
+func TestProvisionWaitPodFailureResetsStateToPending(t *testing.T) {
+	pb := newFakePB()
+	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
+
+	k8s := &fakeK8s{
+		waitPodRunningFunc: func(_ context.Context, _, _ string) error {
+			return errors.New("pod never became ready")
+		},
+	}
+
+	mgr := newTestContmgr(pb, k8s)
+	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err == nil {
+		t.Fatal("expected error")
+	}
+	if pb.assets["asset1"].State != "pending" {
+		t.Errorf("expected state=pending after failure, got %q", pb.assets["asset1"].State)
+	}
+}
+
+func TestProvisionExecFailureResetsStateToPending(t *testing.T) {
+	pb := newFakePB()
+	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
+
+	k8s := &fakeK8s{
+		execInPodFunc: func(_ context.Context, _, _ string, _ []string) error {
+			return errors.New("exec failed")
+		},
+	}
+
+	mgr := newTestContmgr(pb, k8s)
+	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err == nil {
+		t.Fatal("expected error")
+	}
+	if pb.assets["asset1"].State != "pending" {
+		t.Errorf("expected state=pending after failure, got %q", pb.assets["asset1"].State)
+	}
+}
+
+func TestProvisionEmptySecretReturnsError(t *testing.T) {
+	pb := newFakePB()
+	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
+	pb.keys["asset1"] = &KeysRecord{ID: "keys-asset1", Secret: ""}
+
+	mgr := newTestContmgr(pb, &fakeK8s{})
+	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err == nil {
+		t.Fatal("expected error for empty secret")
+	}
+}
+
+// --- provision: k8s cleanup triggered on failure ---
+
+func TestProvisionFailureTriggersK8sCleanup(t *testing.T) {
+	pb := newFakePB()
+	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
+
+	var deletedPods, deletedSvcs []string
+	k8s := &fakeK8s{
+		createServiceFunc: func(_ context.Context, _ PodParams) error {
+			return errors.New("svc creation failed")
+		},
+		deletePodFunc: func(_ context.Context, _, name string) error {
+			deletedPods = append(deletedPods, name)
+			return nil
+		},
+		deleteServiceFunc: func(_ context.Context, _, name string) error {
+			deletedSvcs = append(deletedSvcs, name)
+			return nil
+		},
+	}
+
+	mgr := newTestContmgr(pb, k8s)
+	_ = mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"])
+
+	if len(deletedPods) == 0 {
+		t.Error("expected pod cleanup after provision failure")
+	}
+	if len(deletedSvcs) == 0 {
+		t.Error("expected svc cleanup after provision failure")
+	}
+}
+
+// --- decommission: state transitions ---
+
+func TestDecommissionStateTransitions(t *testing.T) {
+	pb := newFakePB()
+	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
+		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
+
+	mgr := newTestContmgr(pb, &fakeK8s{})
+	if err := mgr.DecommissionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
+		t.Fatal(err)
+	}
+
+	var states []string
+	for _, c := range pb.patchAssetCalls {
+		if s, ok := c.fields["state"].(string); ok {
+			states = append(states, s)
+		}
+	}
+	if len(states) < 2 || states[0] != "decommissioning" || states[len(states)-1] != "decommissioned" {
+		t.Errorf("unexpected state transitions: %v", states)
+	}
+}
+
+// --- RunOnce: provisions pending assets ---
+
+func TestRunOnceProvisionsPendingAssets(t *testing.T) {
+	pb := newFakePB()
+	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
+
+	mgr := newTestContmgr(pb, &fakeK8s{})
+	if err := mgr.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if pb.assets["asset1"].State != "provisioned" {
+		t.Errorf("expected state=provisioned, got %q", pb.assets["asset1"].State)
+	}
+}
+
+// --- RunOnce: processes decommission commands ---
+
+func TestRunOnceProcessesDecommissionCommand(t *testing.T) {
+	pb := newFakePB()
+	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
+		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
+	pb.commands["cmd1"] = &Command{ID: "cmd1", Asset: "asset1", Status: "pending"}
+
+	mgr := newTestContmgr(pb, &fakeK8s{})
+	if err := mgr.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if pb.assets["asset1"].State != "decommissioned" {
+		t.Errorf("expected state=decommissioned, got %q", pb.assets["asset1"].State)
+	}
+	if pb.commands["cmd1"].Status != "done" {
+		t.Errorf("expected command status=done, got %q", pb.commands["cmd1"].Status)
+	}
+}
+
+// --- RunOnce: skips already-decommissioned assets in commands ---
+
+func TestRunOnceSkipsAlreadyDecommissionedAsset(t *testing.T) {
+	pb := newFakePB()
+	pb.addAsset(Asset{ID: "asset1", Attempt: "attempt1", Name: "server-0", State: "decommissioned"})
+	pb.commands["cmd1"] = &Command{ID: "cmd1", Asset: "asset1", Status: "pending"}
+
+	mgr := newTestContmgr(pb, &fakeK8s{})
+	if err := mgr.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if pb.commands["cmd1"].Status != "done" {
+		t.Errorf("expected command status=done for already-decommissioned asset, got %q", pb.commands["cmd1"].Status)
+	}
+}
+
+// --- RunOnce: resets stuck provisioning assets to pending ---
+
+func TestRunOnceResetsStuckProvisioningAssets(t *testing.T) {
+	pb := newFakePB()
+	pb.addAsset(Asset{ID: "asset1", Attempt: "attempt1", Name: "server-0", State: "provisioning"})
+	pb.addAttempt(AttemptRecord{ID: "attempt1", User: "user1"})
+
+	var deletedPods []string
+	k8s := &fakeK8s{
+		deletePodFunc: func(_ context.Context, _, name string) error {
+			deletedPods = append(deletedPods, name)
+			return nil
+		},
+	}
+
+	mgr := newTestContmgr(pb, k8s)
+	if err := mgr.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if pb.assets["asset1"].State != "pending" {
+		t.Errorf("expected state=pending after stuck reset, got %q", pb.assets["asset1"].State)
+	}
+	if len(deletedPods) == 0 {
+		t.Error("expected pod cleanup for stuck provisioning asset")
+	}
+}
+
+// --- RunOnce: resumes stuck decommissioning assets ---
+
+func TestRunOnceResumesStuckDecommissioningAssets(t *testing.T) {
+	pb := newFakePB()
+	pb.addAsset(Asset{ID: "asset1", Attempt: "attempt1", Name: "server-0", State: "decommissioning"})
+	pb.addAttempt(AttemptRecord{ID: "attempt1", User: "user1"})
+	pb.addAssetConfig("asset1", AssetConfig{
+		ID: "asset1-cfg", Asset: "asset1",
+		Configuration: []byte(`{"platform":"container","pod":"user1-attempt1-server-0","svc":"user1-attempt1-server-0-svc","user_id":"user1"}`),
+	})
+
+	mgr := newTestContmgr(pb, &fakeK8s{})
+	if err := mgr.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if pb.assets["asset1"].State != "decommissioned" {
+		t.Errorf("expected state=decommissioned, got %q", pb.assets["asset1"].State)
+	}
+}
+
+// --- healthz handler ---
+
+func doHealthz(mgr *Contmgr, staleAfter time.Duration) *httptest.ResponseRecorder {
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	newHealthMux(mgr, staleAfter).ServeHTTP(rr, req)
+	return rr
+}
+
+func decodeHealthBody(t *testing.T, rr *httptest.ResponseRecorder) healthResponse {
+	t.Helper()
+	var resp healthResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode health response: %v", err)
+	}
+	return resp
+}
+
+// 503 + "starting" before any poll has been recorded.
+func TestHealthzStarting(t *testing.T) {
+	mgr := &Contmgr{}
+	rr := doHealthz(mgr, 30*time.Second)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("want 503, got %d", rr.Code)
+	}
+	resp := decodeHealthBody(t, rr)
+	if resp.Status != "starting" {
+		t.Errorf("want status=starting, got %q", resp.Status)
+	}
+	if resp.LastPollAgo != "" {
+		t.Errorf("want empty last_poll_ago before first poll, got %q", resp.LastPollAgo)
+	}
+}
+
+// 200 + "ok" after a recent poll with PB reachable.
+func TestHealthzOK(t *testing.T) {
+	mgr := &Contmgr{}
+	mgr.RecordPoll(true)
+
+	rr := doHealthz(mgr, 30*time.Second)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("want 200, got %d", rr.Code)
+	}
+	resp := decodeHealthBody(t, rr)
+	if resp.Status != "ok" {
+		t.Errorf("want status=ok, got %q", resp.Status)
+	}
+	if !resp.PBConnected {
+		t.Error("want pb_connected=true")
+	}
+	if resp.LastPollAgo == "" {
+		t.Error("want non-empty last_poll_ago")
+	}
+}
+
+// 200 + pb_connected=false when PB was unreachable but poll loop is current.
+func TestHealthzOKWithPBDown(t *testing.T) {
+	mgr := &Contmgr{}
+	mgr.RecordPoll(false)
+
+	rr := doHealthz(mgr, 30*time.Second)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("want 200 (loop running), got %d", rr.Code)
+	}
+	resp := decodeHealthBody(t, rr)
+	if resp.Status != "ok" {
+		t.Errorf("want status=ok, got %q", resp.Status)
+	}
+	if resp.PBConnected {
+		t.Error("want pb_connected=false")
+	}
+}
+
+// 503 + "unhealthy" when the last poll is older than staleAfter.
+func TestHealthzStale(t *testing.T) {
+	mgr := &Contmgr{}
+	// Backdate the last poll beyond the threshold.
+	mgr.lastPollAt.Store(time.Now().Add(-10 * time.Second).UnixNano())
+	mgr.pbHealthy.Store(true)
+
+	rr := doHealthz(mgr, 5*time.Second)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("want 503, got %d", rr.Code)
+	}
+	resp := decodeHealthBody(t, rr)
+	if resp.Status != "unhealthy" {
+		t.Errorf("want status=unhealthy, got %q", resp.Status)
+	}
+	if resp.LastPollAgo == "" {
+		t.Error("want non-empty last_poll_ago for stale case")
+	}
+}
+
+// Content-Type must be application/json on all responses.
+func TestHealthzContentType(t *testing.T) {
+	mgr := &Contmgr{}
+	rr := doHealthz(mgr, 30*time.Second)
+
+	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("want Content-Type=application/json, got %q", ct)
+	}
+}
+
+// Non-GET methods must be rejected (Go 1.22 method-based routing).
+func TestHealthzMethodNotAllowed(t *testing.T) {
+	mgr := &Contmgr{}
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/healthz", nil)
+	newHealthMux(mgr, 30*time.Second).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("want 405 for POST /healthz, got %d", rr.Code)
 	}
 }

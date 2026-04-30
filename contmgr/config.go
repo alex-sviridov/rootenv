@@ -14,12 +14,17 @@ type config struct {
 	infraNamespace  string
 	imagePullSecret string
 	pollInterval    time.Duration
+	healthAddr      string
 }
 
 func loadConfig() (config, error) {
 	infraNS := os.Getenv("CONTMGR_INFRA_NAMESPACE")
 	if infraNS == "" {
 		infraNS = "rootenv-infra"
+	}
+	healthAddr := os.Getenv("CONTMGR_HEALTH_ADDR")
+	if healthAddr == "" {
+		healthAddr = ":8080"
 	}
 	cfg := config{
 		pbURL:           os.Getenv("CONTMGR_BACKEND_URL"),
@@ -29,6 +34,7 @@ func loadConfig() (config, error) {
 		infraNamespace:  infraNS,
 		imagePullSecret: os.Getenv("CONTMGR_IMAGE_PULL_SECRET"),
 		pollInterval:    5 * time.Second,
+		healthAddr:      healthAddr,
 	}
 	if cfg.pbURL == "" {
 		return config{}, fmt.Errorf("CONTMGR_BACKEND_URL is required")

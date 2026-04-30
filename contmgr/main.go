@@ -40,6 +40,8 @@ func main() {
 
 	mgr := NewContmgr(pb, k8s, cfg.usersNamespace, cfg.infraNamespace, cfg.imagePullSecret)
 
+	go startHealthServer(ctx, cfg.healthAddr, mgr, 5*cfg.pollInterval)
+
 	ticker := time.NewTicker(cfg.pollInterval)
 	defer ticker.Stop()
 
@@ -54,7 +56,9 @@ func main() {
 			if err := mgr.RunOnce(ctx); err != nil {
 				slog.Error("run cycle error", "err", err)
 			}
-			if mgr.NeedsReconnect() {
+			needsReconn := mgr.NeedsReconnect()
+			mgr.RecordPoll(!needsReconn)
+			if needsReconn {
 				slog.Warn("PocketBase unavailable, reconnecting")
 				newPB, err := authWithRetry(ctx, cfg)
 				if err != nil {

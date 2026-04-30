@@ -438,7 +438,9 @@ func parseMemory(mem string) (int64, error) {
 	for suffix, mult := range units {
 		if strings.HasSuffix(upper, suffix) {
 			var v int64
-			fmt.Sscanf(mem[:len(mem)-len(suffix)], "%d", &v)
+			if _, err := fmt.Sscanf(mem[:len(mem)-len(suffix)], "%d", &v); err != nil {
+				return 0, fmt.Errorf("unrecognized memory format: %q", mem)
+			}
 			return v * mult, nil
 		}
 	}
