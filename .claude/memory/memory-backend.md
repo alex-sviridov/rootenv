@@ -34,28 +34,32 @@ Synced from `labs/` YAML on every backend startup. Do not edit via UI.
 Selects `id, title, description, content, parent, type` from `labs` — omits `environment`.
 
 ## attempts (base)
-One record per lab run per user. Denormalized at provision time.
+One record per lab run per user. Users can read directly (no view needed).
 
 | Field | Type | Notes |
 |-------|------|-------|
 | user | relation → users | |
 | lab | relation → labs | |
 | lab_name | text | copied from labs.title at provision |
-| environment | json | copied from labs.environment at provision |
-| finished | date | set when all assets decommissioned |
+| current_state | select | `new` → `provisioning` → `provisioned` → `decommissioning` → `decommissioned`; set by hooks based on assets |
+| desired_state | select | `provisioned` \| `decommissioned`; set by user (or cron for expiry); contmgr reconciles toward this |
 
-Rules: `listRule/viewRule` = relay only. `createRule` = `@request.auth.id = user.id`.
+Rules:
+- `createRule`: `@request.auth.id = user.id`
+- `listRule/viewRule`: `@request.auth.id = user.id || svc_role = relay || svc_role = contmgr`
+- `updateRule`: `@request.auth.id = user.id && @request.data.current_state:isset = false`
+  - Users can only patch `desired_state`. Hooks (admin context) update `current_state`.
 
-## attempts_userview (view)
-Selects `id, created, updated, finished, user, lab_name, lab, state`.
-`state` is computed from linked assets:
-- `new` — no assets yet
-- `provisioning` — any asset pending/provisioning
-- `provisioned` — all assets provisioned
-- `decommissioning` — any asset decommissioning
-- `decommissioned` — all assets decommissioned OR `finished` is set
+## attempt_configs (base)
+Service-only sensitive config for each attempt. Cascade-deleted when attempt is deleted.
 
-`listRule/viewRule`: `@request.auth.id = user`
+| Field | Type | Notes |
+|-------|------|-------|
+| attempt | relation → attempts (cascade delete) | |
+| environment | json | copied from labs.environment at provision — read by hooks to fan out assets |
+| finished | date | set when current_state becomes `decommissioned` (audit timestamp) |
+
+All rules: `svc_role = relay || svc_role = contmgr`
 
 ## assets (base)
 One record per server in the lab's `environment` YAML. User-facing fields only.
@@ -66,7 +70,7 @@ One record per server in the lab's `environment` YAML. User-facing fields only.
 | name | text | from YAML environment |
 | state | select | `pending` → `provisioning` → `provisioned` → `decommissioning` → `decommissioned` |
 | status | select | `poweredon` \| `rebooting` \| `poweredoff` |
-| expires_at | date | set at provision time; cron creates decommission command when expired |
+| expires_at | date | set at provision time; cron sets attempt.desired_state=decommissioned when expired |
 
 Rules:
 - `listRule`: `@request.auth.id = attempt.user.id` — owner can list AND subscribe
@@ -87,12 +91,12 @@ Service-only sensitive config for each asset. Cascade-deleted when asset is dele
 All rules: `svc_role = relay || svc_role = contmgr`
 
 ## commands (base)
-Queue for server lifecycle ops. Watched by hooks and contmgr.
+Queue for server lifecycle ops (start/stop/restart). No longer used for decommission — that is driven by attempt.desired_state.
 
 | Field | Type | Notes |
 |-------|------|-------|
 | asset | relation → assets | |
-| command | select | `start` \| `stop` \| `restart` \| `decommission` |
+| command | select | `start` \| `stop` \| `restart` \| `decommission` (decommission is a no-op stub) |
 | status | select | `pending` → `running` → `done` \| `error` |
 
 `createRule`: `@request.auth.id = asset.attempt.user.id && status = 'pending'`
@@ -111,11 +115,15 @@ Rules: `svc_role = relay || svc_role = contmgr`
 ## keys_userview (view)
 Joins keys → assets → attempts to expose `secret` to the asset's owner.
 Fields: `id, asset, attempt, user, secret`
+WHERE: `attempts.current_state != 'decommissioned'` (revokes key access once attempt is done)
 
 `listRule/viewRule`: `@request.auth.id = user.id`
 
 ## Hooks
 State transitions automated in `pb_hooks/`:
-- `assets.pb.js` — creates assets + assets_configs + keys records on attempt create; checks attempt finished on asset decommission; cron decommissions expired assets
-- `attempts.pb.js` — validates active attempt constraint; populates lab_name + environment from labs on create
-- `commands.pb.js` — sets asset state to `decommissioning` when decommission command created
+- `attempts.pb.js` — before-create: validates active attempt constraint (via `attempts.current_state`), sets initial states, creates `attempt_configs` record; after-create: reads environment from `attempt_configs`, fans out assets
+- `assets.pb.js` — after-update: recomputes `attempt.current_state` from all asset states; cron sets `attempt.desired_state=decommissioned` for attempts with expired assets
+- `commands.pb.js` — stub; decommission no longer flows through commands
+
+## Contmgr Reconciler
+Contmgr polls `attempts WHERE desired_state='decommissioned' AND current_state!='decommissioned'` and decommissions their active assets directly (no commands queue). `current_state` is always set by hooks, never by contmgr.

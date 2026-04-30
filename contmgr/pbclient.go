@@ -64,20 +64,16 @@ func (d *AssetDef) validate() error {
 }
 
 type AttemptRecord struct {
-	ID   string `json:"id"`
-	User string `json:"user"`
+	ID           string `json:"id"`
+	User         string `json:"user"`
+	DesiredState string `json:"desired_state"`
+	CurrentState string `json:"current_state"`
 }
 
 type KeysRecord struct {
 	ID           string `json:"id"`
 	Secret       string `json:"secret"`
 	KeyEncrypted string `json:"key_encrypted"`
-}
-
-type Command struct {
-	ID     string `json:"id"`
-	Asset  string `json:"asset"`
-	Status string `json:"status"`
 }
 
 func newPBClient(baseURL, email, password string) (*pbClient, error) {
@@ -215,19 +211,26 @@ func (c *pbClient) PatchKeys(id string, fields map[string]any) error {
 	return c.patch("/api/collections/keys/records/"+url.PathEscape(id), fields)
 }
 
-func (c *pbClient) ListPendingDecommissionCommands() ([]Command, error) {
+func (c *pbClient) ListAttemptsToDecommission() ([]AttemptRecord, error) {
 	var result struct {
-		Items []Command `json:"items"`
+		Items []AttemptRecord `json:"items"`
 	}
-	filter := url.QueryEscape("(command='decommission'&&(status='pending'||status='running'))")
-	if err := c.get("/api/collections/commands/records?filter="+filter, &result); err != nil {
+	filter := url.QueryEscape("(desired_state='decommissioned'&&current_state!='decommissioned')")
+	if err := c.get("/api/collections/attempts/records?filter="+filter, &result); err != nil {
 		return nil, err
 	}
 	return result.Items, nil
 }
 
-func (c *pbClient) PatchCommand(id string, fields map[string]any) error {
-	return c.patch("/api/collections/commands/records/"+url.PathEscape(id), fields)
+func (c *pbClient) ListActiveAssetsByAttempt(attemptID string) ([]Asset, error) {
+	var result struct {
+		Items []Asset `json:"items"`
+	}
+	filter := url.QueryEscape("(attempt='" + attemptID + "'&&state!='decommissioned')")
+	if err := c.get("/api/collections/assets/records?filter="+filter, &result); err != nil {
+		return nil, err
+	}
+	return result.Items, nil
 }
 
 func (c *pbClient) ListProvisioningAssets() ([]Asset, error) {

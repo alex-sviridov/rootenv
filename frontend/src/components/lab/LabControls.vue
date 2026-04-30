@@ -19,7 +19,7 @@ const router = useRouter()
 const attempts = useAttemptsStore()
 const serversStore = useServersStore()
 
-const attemptState = computed(() => attempts.lastAttempt?.state ?? null)
+const attemptState = computed(() => attempts.lastAttempt?.current_state ?? null)
 
 const runningAttempt = computed(() => {
   const a = attempts.lastAttempt
@@ -112,7 +112,7 @@ async function refresh() {
         v-if="canDecommission"
         class="w-full py-2 px-3 rounded-lg text-xs font-semibold text-slate-400 hover:text-red-300 hover:bg-red-500/10 border border-slate-700 hover:border-red-500/30 transition-colors disabled:opacity-50"
         :disabled="attempts.loading"
-        @click="attempts.removeAttempt(serversStore.servers.map(s => s.id))"
+        @click="attempts.removeAttempt()"
       >
         <span v-if="attempts.loading" class="flex items-center justify-center gap-1.5">
           <ArrowPathIcon class="w-3.5 h-3.5 animate-spin" />

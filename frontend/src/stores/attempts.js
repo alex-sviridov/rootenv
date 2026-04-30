@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { fetchLastAttempt, fetchAttempts, createAttempt, fetchActiveAttempt, decommissionAttempt } from '@/api/attempts'
+import { fetchLastAttempt, fetchAttempts, createAttempt, fetchActiveAttempt, decommissionAttempt, subscribeToAttempt } from '@/api/attempts'
 
 export const useAttemptsStore = defineStore('attempts', () => {
   const lastAttempt = ref(null)
@@ -9,6 +9,8 @@ export const useAttemptsStore = defineStore('attempts', () => {
   const loading = ref(false)
   const historyLoading = ref(false)
   const error = ref(null)
+
+  let _unsubscribe = null
 
   async function withLoading(fn, loadingRef = loading) {
     loadingRef.value = true
@@ -20,6 +22,20 @@ export const useAttemptsStore = defineStore('attempts', () => {
     } finally {
       loadingRef.value = false
     }
+  }
+
+  function _handleAttemptEvent(event) {
+    if (lastAttempt.value?.id === event.record.id) lastAttempt.value = event.record
+    if (activeAttempt.value?.id === event.record.id) activeAttempt.value = event.record
+  }
+
+  async function startWatching(attemptId) {
+    if (_unsubscribe) await stopWatching()
+    _unsubscribe = await subscribeToAttempt(attemptId, _handleAttemptEvent)
+  }
+
+  async function stopWatching() {
+    if (_unsubscribe) { await _unsubscribe(); _unsubscribe = null }
   }
 
   const loadLastAttempt = (labId) =>
@@ -52,15 +68,18 @@ export const useAttemptsStore = defineStore('attempts', () => {
       lastAttempt.value = attempt
     })
 
-  const removeAttempt = (serverIds) => {
+  const removeAttempt = () => {
     if (!lastAttempt.value) return
     return withLoading(async () => {
-      await decommissionAttempt(serverIds)
+      await decommissionAttempt(lastAttempt.value.id)
+      if (lastAttempt.value) lastAttempt.value = { ...lastAttempt.value, current_state: 'decommissioning' }
+      if (activeAttempt.value?.id === lastAttempt.value?.id) activeAttempt.value = { ...activeAttempt.value, current_state: 'decommissioning' }
     })
   }
 
   return {
     lastAttempt, activeAttempt, history, loading, historyLoading, error,
     loadLastAttempt, loadActiveAttempt, loadHistory, addAttempt, removeAttempt,
+    startWatching, stopWatching,
   }
 })

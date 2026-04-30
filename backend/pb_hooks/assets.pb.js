@@ -1,74 +1,47 @@
 
 // ─── After attempt create, start provisioning assets for the session
-onRecordAfterCreateSuccess((e) => {
-    const attempt = e.record
-    const assetCollection = $app.findCollectionByNameOrId("assets")
-    const assetConfigCollection = $app.findCollectionByNameOrId("assets_configs")
-    const environment = JSON.parse(attempt.get("environment"))
-    const duration = environment.duration || 60
-    if (environment.assets) {
-        environment.assets.forEach((assetDef) => {
-            console.log(`[attempt:${attempt.id}] creating asset: ${assetDef.name} for user ${attempt.get("user")} with duration ${duration} minutes`)
-            const asset = new Record(assetCollection)
-            asset.set("attempt", attempt.id)
-            asset.set("name", assetDef.name)
-            asset.set("protocols", JSON.stringify(assetDef.relay_protocols || ["none"]))
-            asset.set("state", "pending")
-            asset.set("user", attempt.get("user"))
-            asset.set("status", "poweredoff")
-            asset.set("expires_at", new Date(Date.now() + duration * 60 * 1000).toISOString())
-            $app.save(asset)
+// (logic moved to attempts.pb.js after-create hook)
 
-            const cfg = new Record(assetConfigCollection)
-            cfg.set("asset", asset.id)
-            cfg.set("platform", assetDef.platform)
-            cfg.set("configuration", JSON.stringify(assetDef))
-            $app.save(cfg)
+// ─── After asset update: recompute attempt current_state from all assets ───────
+onRecordAfterUpdateSuccess((e) => {
+    const attemptId = e.record.getString("attempt")
+    if (!attemptId) { e.next(); return }
 
-            const keysCollection = $app.findCollectionByNameOrId("keys")
-            const key = new Record(keysCollection)
-            key.set("asset", asset.id)
-            $app.save(key)
-        })
+    const allAssets = $app.findRecordsByFilter("assets", "attempt = {:id}", "", 0, 0, { id: attemptId })
+    let state = "new"
+    if (allAssets.length > 0) {
+        const states = allAssets.map(a => a.getString("state"))
+        if (states.every(s => s === "decommissioned"))                          state = "decommissioned"
+        else if (states.some(s => s === "decommissioning"))                     state = "decommissioning"
+        else if (states.every(s => s === "provisioned"))                        state = "provisioned"
+        else if (states.some(s => s === "provisioning" || s === "pending"))     state = "provisioning"
     }
 
-    e.next()
-}, "attempts")
+    try {
+        const attempt = $app.findRecordById("attempts", attemptId)
+        attempt.set("current_state", state)
+        $app.save(attempt)
+        console.log(`[attempt:${attemptId}] current_state → ${state}`)
+    } catch (err) {
+        console.log(`[attempt:${attemptId}] error updating current_state: ${err}`)
+    }
 
-
-// after asset is updated, check if attempt is finished
-onRecordAfterUpdateSuccess((e) => {
-    const asset = e.record
-
-    if (asset.getString("state") === "decommissioned") {
-        const attemptId = asset.getString("attempt")
-        if (attemptId) {
-            const attempt = $app.findRecordById("attempts", attemptId)
-            let hasRemaining = false
-            try {
-                $app.findFirstRecordByFilter(
-                    "assets",
-                    "attempt = {:id} && state != 'decommissioned'",
-                    { id: attemptId }
-                )
-                hasRemaining = true
-            } catch (_) {}
-            if (!hasRemaining) {
-                try {
-                    attempt.set("finished", new Date().toISOString())
-                    $app.save(attempt)
-                    console.log(`[attempt:${attemptId}] finished attempt`)
-                } catch (err) {
-                    console.log(`[attempt:${attemptId}] error finishing attempt: ${err}`)
-                }
+    if (state === "decommissioned") {
+        try {
+            const cfgs = $app.findRecordsByFilter("attempt_configs", "attempt = {:id}", "", 1, 0, { id: attemptId })
+            if (cfgs.length > 0) {
+                cfgs[0].set("finished", new Date().toISOString())
+                $app.save(cfgs[0])
             }
+        } catch (err) {
+            console.log(`[attempt:${attemptId}] error setting attempt_configs.finished: ${err}`)
         }
     }
 
     e.next()
 }, "assets")
 
-// ─── Cron: create decommission commands for expired assets ───────────────────
+// ─── Cron: set desired_state=decommissioned on attempts with expired assets ────
 cronAdd("decommission-expired-assets", "* * * * *", () => {
     const expiredAssets = $app.findRecordsByFilter(
         "assets",
@@ -76,17 +49,17 @@ cronAdd("decommission-expired-assets", "* * * * *", () => {
         "", 0, 0,
     )
 
-    const commandsCollection = $app.findCollectionByNameOrId("commands")
-    for (const asset of expiredAssets) {
+    const attemptIds = new Set(expiredAssets.map(a => a.getString("attempt")))
+    for (const id of attemptIds) {
         try {
-            const cmd = new Record(commandsCollection)
-            cmd.set("asset", asset.id)
-            cmd.set("command", "decommission")
-            cmd.set("status", "pending")
-            $app.save(cmd)
-            console.log(`[cron] asset ${asset.id} expired → decommission command created`)
+            const attempt = $app.findRecordById("attempts", id)
+            if (attempt.getString("desired_state") !== "decommissioned") {
+                attempt.set("desired_state", "decommissioned")
+                $app.save(attempt)
+                console.log(`[cron] attempt ${id} → desired_state decommissioned (asset expired)`)
+            }
         } catch (err) {
-            console.log(`[cron] error creating decommission command for asset ${asset.id}: ${err}`)
+            console.log(`[cron] error setting desired_state for attempt ${id}: ${err}`)
         }
     }
 })

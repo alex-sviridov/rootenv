@@ -7,6 +7,7 @@ vi.mock('@/api/attempts', () => ({
   createAttempt: vi.fn(),
   fetchActiveAttempt: vi.fn(),
   decommissionAttempt: vi.fn(),
+  subscribeToAttempt: vi.fn(),
 }))
 
 import {

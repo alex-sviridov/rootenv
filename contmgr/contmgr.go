@@ -28,9 +28,9 @@ type pbDoer interface {
 	PatchAsset(id string, fields map[string]any) error
 	PatchAssetConfig(id string, fields map[string]any) error
 	PatchKeys(id string, fields map[string]any) error
-	ListPendingDecommissionCommands() ([]Command, error)
+	ListAttemptsToDecommission() ([]AttemptRecord, error)
+	ListActiveAssetsByAttempt(attemptID string) ([]Asset, error)
 	ListDecommissioningAssets() ([]Asset, error)
-	PatchCommand(id string, fields map[string]any) error
 	ListProvisionedAssetsByAttempt(attemptID string) ([]Asset, error)
 	GetAttempt(attemptID string) (*AttemptRecord, error)
 }
@@ -306,43 +306,35 @@ func (p *Contmgr) RunOnce(ctx context.Context) error {
 		})
 	}
 
-	commands, err := p.pb.ListPendingDecommissionCommands()
+	// Reconcile: decommission all active assets for attempts where desired_state=decommissioned.
+	attemptsToDecommission, err := p.pb.ListAttemptsToDecommission()
 	if err != nil {
-		slog.Error("list decommission commands", "err", err)
+		slog.Error("list attempts to decommission", "err", err)
 		p.needsReconn.Store(true)
 	}
-	for _, cmd := range commands {
-		cmd := cmd
-		if err := sem.Acquire(egCtx, 1); err != nil {
-			break
+	for _, attempt := range attemptsToDecommission {
+		attempt := attempt
+		activeAssets, err := p.pb.ListActiveAssetsByAttempt(attempt.ID)
+		if err != nil {
+			slog.Error("list active assets for attempt", "attempt", attempt.ID, "err", err)
+			continue
 		}
-		eg.Go(func() error {
-			defer sem.Release(1)
-			if err := p.pb.PatchCommand(cmd.ID, map[string]any{"status": "running"}); err != nil {
-				slog.Error("patch command running", "cmd", cmd.ID, "err", err)
-				return nil
+		for _, asset := range activeAssets {
+			asset := asset
+			if err := sem.Acquire(egCtx, 1); err != nil {
+				break
 			}
-			asset, err := p.pb.GetAsset(cmd.Asset)
-			if err != nil {
-				slog.Error("get asset for decommission", "cmd", cmd.ID, "asset", cmd.Asset, "err", err)
-				return nil
-			}
-			if asset.State == "decommissioned" {
-				slog.Info("skip decommission: asset already decommissioned", "asset", asset.ID)
-				if err := p.pb.PatchCommand(cmd.ID, map[string]any{"status": "done"}); err != nil {
-					slog.Error("patch command done", "cmd", cmd.ID, "err", err)
+			eg.Go(func() error {
+				defer sem.Release(1)
+				if asset.State == "decommissioned" || asset.State == "decommissioning" {
+					return nil
+				}
+				if err := p.DecommissionAsset(egCtx, asset); err != nil {
+					slog.Error("decommission asset", "asset", asset.ID, "attempt", attempt.ID, "err", err)
 				}
 				return nil
-			}
-			if err := p.DecommissionAsset(egCtx, *asset); err != nil {
-				slog.Error("decommission asset", "asset", asset.ID, "err", err)
-				return nil
-			}
-			if err := p.pb.PatchCommand(cmd.ID, map[string]any{"status": "done"}); err != nil {
-				slog.Error("patch command done", "cmd", cmd.ID, "err", err)
-			}
-			return nil
-		})
+			})
+		}
 	}
 
 	// Reset assets stuck in "provisioning" from a previous crashed cycle back to

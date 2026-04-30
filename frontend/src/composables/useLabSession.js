@@ -26,20 +26,19 @@ export function useLabSession() {
   const currentTask = computed(() => lab.value?.content?.[selectedTask.value] ?? null)
 
   watch(() => attemptsStore.lastAttempt?.id, async (id) => {
+    await attemptsStore.stopWatching()
     await serversStore.stopWatching()
     secrets.value = {}
     resetTabs()
-    if (id) {
-      await serversStore.startWatching(attemptsStore.lastAttempt.id)
-      await serversStore.loadServers(attemptsStore.lastAttempt.id)
+    const attempt = attemptsStore.lastAttempt
+    if (id && attempt?.current_state !== 'decommissioned') {
+      await attemptsStore.startWatching(id)
+      await serversStore.startWatching(id)
+      await serversStore.loadServers(id)
     }
   })
 
   watch(() => serversStore.servers, (servers) => {
-    if (lab.value) {
-      attemptsStore.loadLastAttempt(lab.value.id)
-      attemptsStore.loadActiveAttempt()
-    }
     for (const server of servers) {
       if (server.state === 'provisioned' && !secrets.value[server.id]) {
         fetchAssetSecret(server.id)
@@ -66,16 +65,12 @@ export function useLabSession() {
         { label: lab.value.title },
       ].filter(Boolean))
 
+      await attemptsStore.stopWatching()
       await serversStore.stopWatching()
       await Promise.all([
         attemptsStore.loadLastAttempt(lab.value.id),
         attemptsStore.loadActiveAttempt(),
       ])
-      const attempt = attemptsStore.lastAttempt
-      if (attempt && attempt.state !== 'decommissioned') {
-        await serversStore.startWatching(attempt.id)
-        await serversStore.loadServers(attempt.id)
-      }
     } catch {
       error.value = 'Lab not found.'
     }
@@ -87,6 +82,7 @@ export function useLabSession() {
 
   onUnmounted(async () => {
     await serversStore.stopWatching()
+    await attemptsStore.stopWatching()
   })
 
   return {

@@ -19,11 +19,12 @@ func TestRunOnceProvisionsPendingAssets(t *testing.T) {
 	}
 }
 
-func TestRunOnceProcessesDecommissionCommand(t *testing.T) {
+func TestRunOnceDecommissionsAttemptAssets(t *testing.T) {
 	pb := newFakePB()
 	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
 		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
-	pb.commands["cmd1"] = &Command{ID: "cmd1", Asset: "asset1", Status: "pending"}
+	pb.attempts["attempt1"].DesiredState = "decommissioned"
+	pb.attempts["attempt1"].CurrentState = "provisioned"
 
 	mgr := newTestContmgr(pb, &fakeK8s{})
 	if err := mgr.RunOnce(context.Background()); err != nil {
@@ -32,22 +33,27 @@ func TestRunOnceProcessesDecommissionCommand(t *testing.T) {
 	if pb.assets["asset1"].State != "decommissioned" {
 		t.Errorf("expected state=decommissioned, got %q", pb.assets["asset1"].State)
 	}
-	if pb.commands["cmd1"].Status != "done" {
-		t.Errorf("expected command status=done, got %q", pb.commands["cmd1"].Status)
-	}
 }
 
-func TestRunOnceSkipsAlreadyDecommissionedAsset(t *testing.T) {
+func TestRunOnceSkipsAlreadyDecommissionedAttempt(t *testing.T) {
 	pb := newFakePB()
 	pb.addAsset(Asset{ID: "asset1", Attempt: "attempt1", Name: "server-0", State: "decommissioned"})
-	pb.commands["cmd1"] = &Command{ID: "cmd1", Asset: "asset1", Status: "pending"}
+	pb.addAttempt(AttemptRecord{ID: "attempt1", User: "user1", DesiredState: "decommissioned", CurrentState: "decommissioned"})
 
-	mgr := newTestContmgr(pb, &fakeK8s{})
+	var k8sCalled bool
+	k8s := &fakeK8s{
+		deletePodFunc: func(_ context.Context, _, _ string) error {
+			k8sCalled = true
+			return nil
+		},
+	}
+
+	mgr := newTestContmgr(pb, k8s)
 	if err := mgr.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if pb.commands["cmd1"].Status != "done" {
-		t.Errorf("expected command status=done for already-decommissioned asset, got %q", pb.commands["cmd1"].Status)
+	if k8sCalled {
+		t.Error("k8s must not be called for an attempt already in decommissioned state")
 	}
 }
 
@@ -94,49 +100,14 @@ func TestRunOnceResumesStuckDecommissioningAssets(t *testing.T) {
 	}
 }
 
-// If the process crashed after marking a command "running" but before marking it
-// "done", the command must be retried and completed on the next RunOnce cycle.
-func TestRunOncePicksUpRunningCommand(t *testing.T) {
+// If DecommissionAsset fails the asset stays in "decommissioning" so the next
+// cycle's stuck-decommission recovery can retry.
+func TestRunOnceDecommissionFails(t *testing.T) {
 	pb := newFakePB()
 	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
 		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
-	pb.commands["cmd1"] = &Command{ID: "cmd1", Asset: "asset1", Status: "running"}
-	pb.assets["asset1"].State = "decommissioning"
-
-	mgr := newTestContmgr(pb, &fakeK8s{})
-	if err := mgr.RunOnce(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if pb.assets["asset1"].State != "decommissioned" {
-		t.Errorf("expected state=decommissioned, got %q", pb.assets["asset1"].State)
-	}
-	if pb.commands["cmd1"].Status != "done" {
-		t.Errorf("expected command status=done, got %q", pb.commands["cmd1"].Status)
-	}
-}
-
-// If GetAsset fails while processing a decommission command the command stays
-// in "running" so the next cycle can retry.
-func TestRunOnceCommandGetAssetFails(t *testing.T) {
-	pb := newFakePB()
-	pb.commands["cmd1"] = &Command{ID: "cmd1", Asset: "asset1", Status: "pending"}
-
-	mgr := newTestContmgr(pb, &fakeK8s{})
-	if err := mgr.RunOnce(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if pb.commands["cmd1"].Status != "running" {
-		t.Errorf("want command status=running after GetAsset failure, got %q", pb.commands["cmd1"].Status)
-	}
-}
-
-// If DecommissionAsset fails the command must stay in "running" (not "done")
-// so the next cycle retries the full decommission.
-func TestRunOnceCommandDecommissionFails(t *testing.T) {
-	pb := newFakePB()
-	addDecommissionFixtures(pb, "asset1", "attempt1", "server-0", "user1",
-		"user1-attempt1-server-0", "user1-attempt1-server-0-svc")
-	pb.commands["cmd1"] = &Command{ID: "cmd1", Asset: "asset1", Status: "pending"}
+	pb.attempts["attempt1"].DesiredState = "decommissioned"
+	pb.attempts["attempt1"].CurrentState = "provisioned"
 
 	k8s := &fakeK8s{
 		deletePodFunc: func(_ context.Context, _, _ string) error {
@@ -148,7 +119,8 @@ func TestRunOnceCommandDecommissionFails(t *testing.T) {
 	if err := mgr.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if pb.commands["cmd1"].Status != "running" {
-		t.Errorf("want command status=running after failed decommission, got %q", pb.commands["cmd1"].Status)
+	// Asset should be stuck in decommissioning for retry on next cycle.
+	if pb.assets["asset1"].State != "decommissioning" {
+		t.Errorf("want state=decommissioning after failed decommission, got %q", pb.assets["asset1"].State)
 	}
 }

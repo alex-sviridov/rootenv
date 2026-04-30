@@ -4,17 +4,20 @@ const {
   mockGetFirstListItem,
   mockGetList,
   mockCreate,
+  mockUpdate,
   mockCollection,
 } = vi.hoisted(() => {
   const mockGetFirstListItem = vi.fn()
   const mockGetList = vi.fn()
   const mockCreate = vi.fn()
+  const mockUpdate = vi.fn()
   const mockCollection = vi.fn(() => ({
     getFirstListItem: mockGetFirstListItem,
     getList: mockGetList,
     create: mockCreate,
+    update: mockUpdate,
   }))
-  return { mockGetFirstListItem, mockGetList, mockCreate, mockCollection }
+  return { mockGetFirstListItem, mockGetList, mockCreate, mockUpdate, mockCollection }
 })
 
 vi.mock('@/lib/pb', () => ({ pb: { collection: mockCollection, authStore: { record: { id: 'user-1' }, token: 'tok' } } }))
@@ -31,14 +34,14 @@ import {
 beforeEach(() => vi.clearAllMocks())
 
 describe('fetchLastAttempt', () => {
-  it('queries attempts_userview with correct lab filter', async () => {
-    const attempt = { id: 'a1', status: 'running', lab: 'lab-1' }
+  it('queries attempts collection with correct lab filter', async () => {
+    const attempt = { id: 'a1', current_state: 'provisioned', lab: 'lab-1' }
     mockGetFirstListItem.mockResolvedValue(attempt)
 
     const result = await fetchLastAttempt('lab-1')
 
-    expect(mockCollection).toHaveBeenCalledWith('attempts_userview')
-    expect(mockGetFirstListItem).toHaveBeenCalledWith('lab = "lab-1"', { sort: '-updated' })
+    expect(mockCollection).toHaveBeenCalledWith('attempts')
+    expect(mockGetFirstListItem).toHaveBeenCalledWith('lab = "lab-1"', { sort: '-updated', requestKey: 'last-attempt-lab-1' })
     expect(result).toEqual(attempt)
   })
 
@@ -49,16 +52,17 @@ describe('fetchLastAttempt', () => {
 })
 
 describe('fetchAttempts', () => {
-  it('queries attempts_userview with page, perPage, filter and sort', async () => {
+  it('queries attempts collection with page, perPage, filter and sort', async () => {
     const page = { items: [], page: 2, totalPages: 3 }
     mockGetList.mockResolvedValue(page)
 
     const result = await fetchAttempts('lab-1', 2, 5)
 
-    expect(mockCollection).toHaveBeenCalledWith('attempts_userview')
+    expect(mockCollection).toHaveBeenCalledWith('attempts')
     expect(mockGetList).toHaveBeenCalledWith(2, 5, {
       filter: 'lab = "lab-1"',
       sort: '-updated',
+      requestKey: 'attempts-list-lab-1-2',
     })
     expect(result).toEqual(page)
   })
@@ -71,7 +75,7 @@ describe('fetchAttempts', () => {
 
 describe('createAttempt', () => {
   it('creates a record in attempts collection with lab id, lab_name, and user', async () => {
-    const created = { id: 'a1', lab: 'lab-1', lab_name: 'My Lab', status: 'provisioning' }
+    const created = { id: 'a1', lab: 'lab-1', lab_name: 'My Lab', current_state: 'new' }
     mockCreate.mockResolvedValue(created)
 
     const result = await createAttempt('lab-1', 'My Lab')
@@ -87,22 +91,19 @@ describe('createAttempt', () => {
   })
 })
 
-
 describe('decommissionAttempt', () => {
-  it('creates a decommission command for each server id', async () => {
-    mockCreate.mockResolvedValue({})
+  it('patches the attempt with desired_state=decommissioned', async () => {
+    mockUpdate.mockResolvedValue({})
 
-    await decommissionAttempt(['s1', 's2'])
+    await decommissionAttempt('attempt-1')
 
-    expect(mockCollection).toHaveBeenCalledWith('commands')
-    expect(mockCreate).toHaveBeenCalledTimes(2)
-    expect(mockCreate).toHaveBeenCalledWith({ asset: 's1', command: 'decommission', status: 'pending' }, { requestKey: 's1' })
-    expect(mockCreate).toHaveBeenCalledWith({ asset: 's2', command: 'decommission', status: 'pending' }, { requestKey: 's2' })
+    expect(mockCollection).toHaveBeenCalledWith('attempts')
+    expect(mockUpdate).toHaveBeenCalledWith('attempt-1', { desired_state: 'decommissioned' })
   })
 
   it('propagates errors', async () => {
-    mockCreate.mockRejectedValue(new Error('forbidden'))
-    await expect(decommissionAttempt(['s1'])).rejects.toThrow('forbidden')
+    mockUpdate.mockRejectedValue(new Error('forbidden'))
+    await expect(decommissionAttempt('attempt-1')).rejects.toThrow('forbidden')
   })
 })
 
@@ -113,7 +114,7 @@ describe('fetchAssetSecret', () => {
     const result = await fetchAssetSecret('srv1')
 
     expect(mockCollection).toHaveBeenCalledWith('keys_userview')
-    expect(mockGetFirstListItem).toHaveBeenCalledWith('asset = "srv1"')
+    expect(mockGetFirstListItem).toHaveBeenCalledWith('asset = "srv1"', { requestKey: 'asset-secret-srv1' })
     expect(result).toBe('s3cr3t')
   })
 
@@ -124,14 +125,14 @@ describe('fetchAssetSecret', () => {
 })
 
 describe('fetchActiveAttempt', () => {
-  it('queries attempts_userview for any non-decommissioned attempt', async () => {
-    const attempt = { id: 'a1', state: 'provisioned', lab: 'lab-1', lab_name: 'My Lab' }
+  it('queries attempts collection for any non-decommissioned attempt', async () => {
+    const attempt = { id: 'a1', current_state: 'provisioned', lab: 'lab-1', lab_name: 'My Lab' }
     mockGetFirstListItem.mockResolvedValue(attempt)
 
     const result = await fetchActiveAttempt()
 
-    expect(mockCollection).toHaveBeenCalledWith('attempts_userview')
-    expect(mockGetFirstListItem).toHaveBeenCalledWith('state != "decommissioned"')
+    expect(mockCollection).toHaveBeenCalledWith('attempts')
+    expect(mockGetFirstListItem).toHaveBeenCalledWith('current_state != "decommissioned"', { requestKey: 'active-attempt' })
     expect(result).toEqual(attempt)
   })
 

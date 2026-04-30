@@ -73,13 +73,11 @@ type fakePB struct {
 	assets       map[string]*Asset
 	assetConfigs map[string]*AssetConfig // keyed by assetID
 	keys         map[string]*KeysRecord  // keyed by assetID
-	commands     map[string]*Command
 	attempts     map[string]*AttemptRecord
 
 	patchAssetCalls       []patchCall
 	patchAssetConfigCalls []patchCall
 	patchKeysCalls        []patchCall
-	patchCommandCalls     []patchCall
 
 	// optional error injection — nil means no error
 	getAssetConfigErr   error
@@ -101,7 +99,6 @@ func newFakePB() *fakePB {
 		assets:       make(map[string]*Asset),
 		assetConfigs: make(map[string]*AssetConfig),
 		keys:         make(map[string]*KeysRecord),
-		commands:     make(map[string]*Command),
 		attempts:     make(map[string]*AttemptRecord),
 	}
 }
@@ -198,24 +195,24 @@ func (f *fakePB) PatchKeys(id string, fields map[string]any) error {
 	return nil
 }
 
-func (f *fakePB) ListPendingDecommissionCommands() ([]Command, error) {
-	var out []Command
-	for _, c := range f.commands {
-		if c.Status == "pending" || c.Status == "running" {
-			out = append(out, *c)
+func (f *fakePB) ListAttemptsToDecommission() ([]AttemptRecord, error) {
+	var out []AttemptRecord
+	for _, a := range f.attempts {
+		if a.DesiredState == "decommissioned" && a.CurrentState != "decommissioned" {
+			out = append(out, *a)
 		}
 	}
 	return out, nil
 }
 
-func (f *fakePB) PatchCommand(id string, fields map[string]any) error {
-	f.patchCommandCalls = append(f.patchCommandCalls, patchCall{id, fields})
-	if c, ok := f.commands[id]; ok {
-		if s, ok := fields["status"].(string); ok {
-			c.Status = s
+func (f *fakePB) ListActiveAssetsByAttempt(attemptID string) ([]Asset, error) {
+	var out []Asset
+	for _, a := range f.assets {
+		if a.Attempt == attemptID && a.State != "decommissioned" {
+			out = append(out, *a)
 		}
 	}
-	return nil
+	return out, nil
 }
 
 func (f *fakePB) ListProvisioningAssets() ([]Asset, error) {

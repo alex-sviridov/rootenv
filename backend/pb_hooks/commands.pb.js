@@ -1,24 +1,12 @@
 
-// Watches the commands queue and executes server lifecycle operations.
+// Commands hook — decommission is now handled by contmgr reconciler (via attempt.desired_state).
+// start/stop/restart commands remain here for future use.
+
 onRecordAfterCreateSuccess((e) => {
     const command = e.record
-    // decommission (sets server state → "decommissioning" and marks command done).
     if (command.getString("command") === "decommission") {
-        const assetId = command.getString("asset")
-        try {
-            const asset = $app.findRecordById("assets", assetId)
-            const state = asset.getString("state")
-            if (state !== "decommissioning" && state !== "decommissioned") {
-                asset.set("state", "decommissioning")
-                $app.save(asset)
-                console.log(`[asset:${assetId}] state → decommissioning`)
-            }
-            // leave command status=pending so contmgr picks it up, removes the container, then marks done
-        } catch (err) {
-            console.log(`[asset:${assetId}] decommission error: ${err}`)
-            command.set("status", "error")
-            $app.save(command)
-        }
+        // No-op: contmgr watches attempt.desired_state and decommissions assets directly.
+        // This handler is kept as a stub in case the commands queue is reused for other ops.
     }
 
     e.next()
