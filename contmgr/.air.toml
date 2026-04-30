@@ -1,5 +1,0 @@
-[build]
-  cmd = "go build -o ./tmp/contmgr ."
-  bin = "./tmp/contmgr"
-  include_ext = ["go", "mod"]
-  exclude_dir = ["tmp"]
