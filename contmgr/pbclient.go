@@ -75,7 +75,7 @@ func newPBClient(baseURL, email, password string) (*pbClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("auth failed: status %d", resp.StatusCode)
 	}
@@ -102,7 +102,7 @@ func (c *pbClient) get(path string, out any) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNotFound {
 		return fmt.Errorf("not found: %s", path)
 	}
@@ -128,7 +128,7 @@ func (c *pbClient) patch(path string, fields map[string]any) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("PATCH %s: status %d: %s", path, resp.StatusCode, body)
