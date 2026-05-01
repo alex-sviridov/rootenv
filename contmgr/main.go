@@ -41,6 +41,7 @@ func main() {
 	mgr := NewContmgr(pb, k8s, cfg.infraNamespace, cfg.imagePullSecret)
 
 	go startHealthServer(ctx, cfg.healthAddr, mgr, 5*cfg.pollInterval)
+	go (&statusWatcher{pb: pb, k8s: k8s}).Run(ctx)
 
 	ticker := time.NewTicker(cfg.pollInterval)
 	defer ticker.Stop()

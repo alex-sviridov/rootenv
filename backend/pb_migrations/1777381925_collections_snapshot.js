@@ -1106,9 +1106,9 @@ migrate((app) => {
           "system": false,
           "type": "select",
           "values": [
-            "poweredon",
-            "rebooting",
-            "poweredoff"
+            "running",
+            "booting",
+            "stopped"
           ]
         },
         {

@@ -25,7 +25,7 @@ beforeEach(() => vi.clearAllMocks())
 
 describe('fetchServers', () => {
   it('queries assets collection filtered by attemptId', async () => {
-    const servers = [{ id: 's1', name: 'web', state: 'provisioned', status: 'poweredon', protocols: '[]' }]
+    const servers = [{ id: 's1', name: 'web', state: 'provisioned', status: 'running', protocols: '[]' }]
     mockGetFullList.mockResolvedValue(servers)
 
     const result = await fetchServers('attempt-1')
@@ -80,7 +80,7 @@ describe('subscribeToServers', () => {
   it('calls callback with update action for matching attempt on update event', async () => {
     let innerHandler
     mockSubscribe.mockImplementation(async (_topic, fn) => { innerHandler = fn; return vi.fn() })
-    const record = { id: 's1', name: 'web', state: 'provisioned', status: 'poweredon', attempt: 'attempt-1', protocols: '["ssh"]' }
+    const record = { id: 's1', name: 'web', state: 'provisioned', status: 'running', attempt: 'attempt-1', protocols: '["ssh"]' }
     const callback = vi.fn()
 
     await subscribeToServers('attempt-1', callback)

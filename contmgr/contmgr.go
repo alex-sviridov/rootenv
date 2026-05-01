@@ -22,9 +22,11 @@ type pbDoer interface {
 	ListPendingAssets() ([]Asset, error)
 	ListProvisioningAssets() ([]Asset, error)
 	GetAsset(id string) (*Asset, error)
+	GetAssetByNameAndAttempt(name, attemptID string) (*Asset, error)
 	GetAssetConfig(assetID string) (*AssetConfig, error)
 	GetKeysByAsset(assetID string) (*KeysRecord, error)
 	PatchAsset(id string, fields map[string]any) error
+	PatchAssetStatus(id, status string) error
 	PatchAssetConfig(id string, fields map[string]any) error
 	PatchKeys(id string, fields map[string]any) error
 	ListAttemptsToDecommission() ([]AttemptRecord, error)
@@ -84,7 +86,7 @@ func (p *Contmgr) cleanupAssetK8s(ctx context.Context, attemptID, assetName stri
 }
 
 func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
-	if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "provisioning"}); err != nil {
+	if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "provisioning", "status": "booting"}); err != nil {
 		return fmt.Errorf("mark provisioning: %w", err)
 	}
 
@@ -142,7 +144,7 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), k8sOpTimeout)
 		defer cleanupCancel()
 		p.cleanupAssetK8s(cleanupCtx, asset.Attempt, asset.Name)
-		if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "pending"}); err != nil {
+		if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "pending", "status": "stopped"}); err != nil {
 			slog.Warn("reset asset to pending after provision failure", "asset", asset.ID, "err", err)
 		}
 		return provisionErr
@@ -217,6 +219,14 @@ func (p *Contmgr) doProvision(ctx context.Context, asset Asset, cfg *AssetConfig
 		return fmt.Errorf("write authorized_keys: %w", err)
 	}
 
+	if def.Setup != "" {
+		setupCtx, setupCancel := withK8s(ctx)
+		defer setupCancel()
+		if err := p.k8s.ExecInPod(setupCtx, ns, pName, []string{"sh", "-c", def.Setup}); err != nil {
+			return fmt.Errorf("run setup script: %w", err)
+		}
+	}
+
 	host := svcDNS(svcName(asset.Name), ns)
 
 	keysRecord, err := p.pb.GetKeysByAsset(asset.ID)
@@ -255,7 +265,7 @@ func (p *Contmgr) doProvision(ctx context.Context, asset Asset, cfg *AssetConfig
 		return fmt.Errorf("patch asset config provisioned: %w", err)
 	}
 
-	if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "provisioned"}); err != nil {
+	if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "provisioned", "status": "running"}); err != nil {
 		return fmt.Errorf("patch asset state provisioned: %w", err)
 	}
 
@@ -264,7 +274,7 @@ func (p *Contmgr) doProvision(ctx context.Context, asset Asset, cfg *AssetConfig
 }
 
 func (p *Contmgr) DecommissionAsset(ctx context.Context, asset Asset) error {
-	if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "decommissioning"}); err != nil {
+	if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "decommissioning", "status": "stopped"}); err != nil {
 		return fmt.Errorf("mark decommissioning: %w", err)
 	}
 
@@ -293,7 +303,7 @@ func (p *Contmgr) DecommissionAsset(ctx context.Context, asset Asset) error {
 		}
 	}
 
-	if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "decommissioned"}); err != nil {
+	if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "decommissioned", "status": "stopped"}); err != nil {
 		return fmt.Errorf("patch asset state: %w", err)
 	}
 
@@ -372,7 +382,7 @@ func (p *Contmgr) RunOnce(ctx context.Context) error {
 			defer sem.Release(1)
 			slog.Info("resetting stuck provisioning asset", "asset", asset.ID)
 			p.cleanupAssetK8s(egCtx, asset.Attempt, asset.Name)
-			if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "pending"}); err != nil {
+			if err := p.pb.PatchAsset(asset.ID, map[string]any{"state": "pending", "status": "stopped"}); err != nil {
 				slog.Error("reset stuck provisioning asset to pending", "asset", asset.ID, "err", err)
 			}
 			return nil

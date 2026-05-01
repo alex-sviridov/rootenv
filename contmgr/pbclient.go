@@ -47,6 +47,7 @@ type AssetDef struct {
 	CPU     string `json:"cpu"`
 	Memory  string `json:"memory"`
 	Disk    string `json:"disk"`
+	Setup   string `json:"setup"`
 }
 
 func (d *AssetDef) validate() error {
@@ -178,6 +179,20 @@ func (c *pbClient) GetAsset(id string) (*Asset, error) {
 	return &a, nil
 }
 
+func (c *pbClient) GetAssetByNameAndAttempt(name, attemptID string) (*Asset, error) {
+	var result struct {
+		Items []Asset `json:"items"`
+	}
+	filter := url.QueryEscape("(name='" + name + "'&&attempt='" + attemptID + "')")
+	if err := c.get("/api/collections/assets/records?filter="+filter+"&perPage=1", &result); err != nil {
+		return nil, err
+	}
+	if len(result.Items) == 0 {
+		return nil, fmt.Errorf("no asset name=%s attempt=%s", name, attemptID)
+	}
+	return &result.Items[0], nil
+}
+
 func (c *pbClient) GetAssetConfig(assetID string) (*AssetConfig, error) {
 	var result struct {
 		Items []AssetConfig `json:"items"`
@@ -208,6 +223,10 @@ func (c *pbClient) GetKeysByAsset(assetID string) (*KeysRecord, error) {
 
 func (c *pbClient) PatchAsset(id string, fields map[string]any) error {
 	return c.patch("/api/collections/assets/records/"+url.PathEscape(id), fields)
+}
+
+func (c *pbClient) PatchAssetStatus(id, status string) error {
+	return c.patch("/api/collections/assets/records/"+url.PathEscape(id), map[string]any{"status": status})
 }
 
 func (c *pbClient) PatchAssetConfig(id string, fields map[string]any) error {

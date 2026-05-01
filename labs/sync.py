@@ -135,6 +135,12 @@ def validate_lab(path: Path) -> bool:
                         if n in seen:
                             errors.append(f"environment.assets has duplicate name '{n}'")
                         seen.add(n)
+                    for i, a in enumerate(assets):
+                        if not isinstance(a, dict):
+                            continue
+                        setup = a.get("setup")
+                        if setup is not None and not isinstance(setup, str):
+                            errors.append(f"environment.assets[{i}].setup must be a string")
         except yaml.YAMLError as e:
             errors.append(f"YAML parse error: {e}")
         except OSError as e:

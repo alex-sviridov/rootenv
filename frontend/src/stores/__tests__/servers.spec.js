@@ -24,7 +24,7 @@ describe('initial state', () => {
 
 describe('loadServers', () => {
   it('fetches and sets servers on success', async () => {
-    const servers = [{ id: 's1', name: 'web', state: 'provisioned', status: 'poweredon', attempt_id: 'a1' }]
+    const servers = [{ id: 's1', name: 'web', state: 'provisioned', status: 'running', attempt_id: 'a1' }]
     fetchServers.mockResolvedValue(servers)
 
     const store = useServersStore()
@@ -80,7 +80,7 @@ describe('startWatching', () => {
     const store = useServersStore()
     await store.startWatching('a1')
 
-    const newServer = { id: 's1', name: 'web', state: 'provisioning', status: 'poweredoff' }
+    const newServer = { id: 's1', name: 'web', state: 'provisioning', status: 'stopped' }
     capturedCallback({ action: 'create', record: newServer })
 
     expect(store.servers).toContainEqual(newServer)
@@ -94,10 +94,10 @@ describe('startWatching', () => {
     })
 
     const store = useServersStore()
-    store.servers = [{ id: 's1', name: 'web', state: 'provisioning', status: 'poweredoff' }]
+    store.servers = [{ id: 's1', name: 'web', state: 'provisioning', status: 'stopped' }]
     await store.startWatching('a1')
 
-    const updated = { id: 's1', name: 'web', state: 'provisioned', status: 'poweredon' }
+    const updated = { id: 's1', name: 'web', state: 'provisioned', status: 'running' }
     capturedCallback({ action: 'update', record: updated })
 
     expect(store.servers).toHaveLength(1)

@@ -100,7 +100,7 @@ onRecordAfterCreateSuccess((e) => {
             asset.set("protocols", JSON.stringify(assetDef.relay_protocols || ["none"]))
             asset.set("state", "pending")
             asset.set("user", attempt.get("user"))
-            asset.set("status", "poweredoff")
+            asset.set("status", "stopped")
             asset.set("expires_at", new Date(Date.now() + duration * 60 * 1000).toISOString())
             $app.save(asset)
 

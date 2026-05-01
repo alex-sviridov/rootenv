@@ -3,23 +3,27 @@ package main
 import (
 	"context"
 	"errors"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/watch"
 )
 
 // --- fakeK8s ---
 
 type fakeK8s struct {
-	ensureNamespaceFunc      func(ctx context.Context, p NamespaceParams) error
-	ensureRoleBindingFunc    func(ctx context.Context, namespace string) error
-	deleteNamespaceFunc      func(ctx context.Context, namespace string) error
-	ensureNetworkPolicyFunc  func(ctx context.Context, p NetPolParams) error
+	ensureNamespaceFunc       func(ctx context.Context, p NamespaceParams) error
+	ensureRoleBindingFunc     func(ctx context.Context, namespace string) error
+	deleteNamespaceFunc       func(ctx context.Context, namespace string) error
+	ensureNetworkPolicyFunc   func(ctx context.Context, p NetPolParams) error
 	ensureHeadlessServiceFunc func(ctx context.Context, namespace, assetName string) error
-	createPodFunc            func(ctx context.Context, p PodParams) error
-	createServiceFunc       func(ctx context.Context, p PodParams) error
-	waitPodRunningFunc      func(ctx context.Context, namespace, podName string) error
-	execInPodFunc           func(ctx context.Context, namespace, podName string, cmd []string) error
-	deletePodFunc           func(ctx context.Context, namespace, podName string) error
-	deleteServiceFunc       func(ctx context.Context, namespace, svcName string) error
-	deleteNetworkPolicyFunc func(ctx context.Context, namespace, netpolName string) error
+	createPodFunc             func(ctx context.Context, p PodParams) error
+	createServiceFunc         func(ctx context.Context, p PodParams) error
+	waitPodRunningFunc        func(ctx context.Context, namespace, podName string) error
+	execInPodFunc             func(ctx context.Context, namespace, podName string, cmd []string) error
+	deletePodFunc             func(ctx context.Context, namespace, podName string) error
+	deleteServiceFunc         func(ctx context.Context, namespace, svcName string) error
+	deleteNetworkPolicyFunc   func(ctx context.Context, namespace, netpolName string) error
+	watchPodStatusesFunc      func(ctx context.Context, onEvent func(string, string, corev1.PodPhase, watch.EventType)) error
 }
 
 func (f *fakeK8s) EnsureNamespace(ctx context.Context, p NamespaceParams) error {
@@ -94,6 +98,13 @@ func (f *fakeK8s) DeleteNetworkPolicy(ctx context.Context, namespace, name strin
 	}
 	return nil
 }
+func (f *fakeK8s) WatchPodStatuses(ctx context.Context, onEvent func(string, string, corev1.PodPhase, watch.EventType)) error {
+	if f.watchPodStatusesFunc != nil {
+		return f.watchPodStatusesFunc(ctx, onEvent)
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
 
 // --- fakePB ---
 
@@ -158,6 +169,20 @@ func (f *fakePB) GetAsset(id string) (*Asset, error) {
 		return nil, errors.New("not found: " + id)
 	}
 	return a, nil
+}
+
+func (f *fakePB) GetAssetByNameAndAttempt(name, attemptID string) (*Asset, error) {
+	for _, a := range f.assets {
+		if a.Name == name && a.Attempt == attemptID {
+			return a, nil
+		}
+	}
+	return nil, errors.New("not found: name=" + name + " attempt=" + attemptID)
+}
+
+func (f *fakePB) PatchAssetStatus(id, status string) error {
+	f.patchAssetCalls = append(f.patchAssetCalls, patchCall{id, map[string]any{"status": status}})
+	return nil
 }
 
 func (f *fakePB) GetAssetConfig(assetID string) (*AssetConfig, error) {

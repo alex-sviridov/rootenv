@@ -24,7 +24,7 @@ export const serverStateConfig = {
 }
 
 export const serverStatusConfig = {
-  poweredon:  { icon: BoltIcon,      iconCls: 'text-green-400',  label: 'On',       labelCls: 'text-green-400'  },
-  poweredoff: { icon: BoltSlashIcon, iconCls: 'text-slate-500',  label: 'Off',      labelCls: 'text-slate-500'  },
-  rebooting:  { icon: ArrowPathIcon, iconCls: 'text-yellow-400', label: 'Rebooting', labelCls: 'text-yellow-400', spin: true },
+  running:  { icon: BoltIcon,      iconCls: 'text-green-400',  label: 'On',      labelCls: 'text-green-400'  },
+  stopped:  { icon: BoltSlashIcon, iconCls: 'text-slate-500',  label: 'Off',     labelCls: 'text-slate-500'  },
+  booting:  { icon: ArrowPathIcon, iconCls: 'text-yellow-400', label: 'Booting', labelCls: 'text-yellow-400', spin: true },
 }

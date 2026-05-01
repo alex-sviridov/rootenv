@@ -482,6 +482,61 @@ func TestProvisionPatchAssetConfigFailsAfterExec(t *testing.T) {
 	}
 }
 
+func TestProvisionSetupScriptIsExecuted(t *testing.T) {
+	pb := newFakePB()
+	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
+	pb.assetConfigs["asset1"].Configuration = []byte(`{"image":"alpine","ssh_user":"lab","cpu":"1","memory":"128MB","setup":"touch /tmp/flag"}`)
+
+	var calls [][]string
+	k8s := &fakeK8s{
+		execInPodFunc: func(_ context.Context, _, _ string, cmd []string) error {
+			calls = append(calls, cmd)
+			return nil
+		},
+	}
+
+	mgr := newTestContmgr(pb, k8s)
+	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) < 2 {
+		t.Fatalf("expected at least 2 ExecInPod calls, got %d", len(calls))
+	}
+	got := calls[len(calls)-1]
+	want := []string{"sh", "-c", "touch /tmp/flag"}
+	if len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Errorf("setup call: want %v, got %v", want, got)
+	}
+	if pb.assets["asset1"].State != "provisioned" {
+		t.Errorf("want state=provisioned, got %q", pb.assets["asset1"].State)
+	}
+}
+
+func TestProvisionSetupScriptFailureResetsStateToPending(t *testing.T) {
+	pb := newFakePB()
+	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
+	pb.assetConfigs["asset1"].Configuration = []byte(`{"image":"alpine","ssh_user":"lab","cpu":"1","memory":"128MB","setup":"exit 1"}`)
+
+	var callCount int
+	k8s := &fakeK8s{
+		execInPodFunc: func(_ context.Context, _, _ string, _ []string) error {
+			callCount++
+			if callCount >= 2 {
+				return errors.New("setup script failed")
+			}
+			return nil
+		},
+	}
+
+	mgr := newTestContmgr(pb, k8s)
+	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err == nil {
+		t.Fatal("expected error when setup script fails")
+	}
+	if pb.assets["asset1"].State != "pending" {
+		t.Errorf("want state=pending, got %q", pb.assets["asset1"].State)
+	}
+}
+
 // Final PatchAsset("provisioned") failing is the worst case: k8s resources are
 // live and the asset is stuck in "provisioning". The stuck-provisioning recovery
 // handles it on the next cycle.
