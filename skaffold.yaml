@@ -32,6 +32,10 @@ build:
         manual:
           - src: '.'
             dest: '/app'
+    - image: docker.io/library/rootenv-ubuntu-sshd
+      context: images/ubuntu-sshd
+      docker:
+        dockerfile: Dockerfile
     - image: docker.io/library/rootenv-frontend
       context: frontend
       docker:

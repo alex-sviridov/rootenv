@@ -68,3 +68,56 @@ The relay dials this host:port directly — no port forwarding or host IP needed
 ## ContMgr Never Dials SSH
 ContMgr communicates with pods exclusively through the Kubernetes API (pod phase polling + exec).
 It does not dial port 22 on the service or the pod IP. Only the relay does.
+
+## Controller-Runtime Architecture (current)
+
+```
+ctrl.Manager
+├── LabReconciler          — polls PocketBase every pollInterval, calls RunOnce()
+│     trigger: source.Channel (startup event) + RequeueAfter
+└── PodStatusController    — reacts to pod phase changes → patches PB asset status
+      trigger: For(&corev1.Pod{}) via filtered informer cache
+```
+
+- Manager owns graceful shutdown (ctrl.SetupSignalHandler), /healthz + /readyz (port 8081), shared informer cache.
+- `NewContmgr(*pbClient, *K8sClient, ...)` is shared between both controllers via `*Contmgr` pointer.
+- Manager's `client.Client` (cache-backed) used only by PodStatusController for `Get(pod)`.
+- Raw `*K8sClient` (client-go) used for all provisioning: CreatePod, WaitPodRunning, ExecInPod, etc.
+- Informer cache is label-filtered: only watches pods with `app.kubernetes.io/managed-by=rootenv-contmgr`.
+- Pod labels set at pod creation: `rootenv.io/asset-name` and `rootenv.io/attempt-id` (used by PodStatusController to look up PB asset).
+
+## PID Limit via LimitRange
+
+When `CONTMGR_PID_PER_NAMESPACE > 0`, contmgr creates a `LimitRange` named `pids` in each
+attempt namespace (idempotent, alongside NetworkPolicy). Sets `type: Container`, `max.pids`,
+`default.pids`, `defaultRequest.pids` to the configured value.
+
+`config.pidLimit` ← `CONTMGR_PID_PER_NAMESPACE` env var (int64, 0 = disabled).
+`Contmgr.pidLimit` field; `EnsureLimitRange(ctx, namespace, pidLimit)` in `k8sDoer`.
+Deployment default: `2000`.
+
+Note: `pids` is NOT a valid container resource in `pod.spec.containers[].resources` — it
+is only valid inside a `LimitRange`. Attempting to set it in resource limits/requests causes
+a pod validation error.
+
+## Pod Security Context (current)
+
+Every user pod gets:
+- **`spec.hostUsers: false`** — kernel user-namespace remapping (K8s 1.30+)
+- **`spec.securityContext.seccompProfile: RuntimeDefault`** — container runtime's default syscall filter
+- **`containers[0].securityContext.capabilities.drop: [NET_RAW]`** — only NET_RAW dropped; all other caps kept for lab compatibility
+- **`resources.requests`** — CPU = limit/4, memory = limit/2 (predictable scheduling)
+- **`resources.limits.pids`** — default 500, overridable via `AssetDef.pids`; prevents fork bombs
+- **`spec.runtimeClassName`** — set from `CONTMGR_RUNTIME_CLASS` env var (empty = unset = cluster default; "gvisor" = gVisor)
+
+`PodParams` fields: `Pids int64`, `RuntimeClass string`.
+`AssetDef` fields: `Pids int64 json:"pids"` (0 → use default 500).
+`config` field: `runtimeClass string` from `CONTMGR_RUNTIME_CLASS`.
+
+## Key Files
+- `main.go` — Manager setup, controller registration
+- `lab_reconciler.go` — LabReconciler (polls PB)
+- `pod_controller.go` — PodStatusController (pod events → PB status) + namespaceToAttemptID()
+- `contmgr.go` — business logic: RunOnce, ProvisionAsset, DecommissionAsset, UpdateAssetStatusFromPod, podPhaseToStatus
+- `k8s.go` — raw k8s operations (no WatchPodStatuses — removed)
+- `config.go` — env config; probeAddr (CONTMGR_PROBE_ADDR, :8081), metricsAddr (CONTMGR_METRICS_ADDR, "0")

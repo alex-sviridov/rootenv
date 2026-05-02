@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -24,6 +25,8 @@ import (
 // podWatchTimeoutSec is the server-side timeout passed to the pod Watch call.
 // Declared as a var so its address can be taken for the k8s ListOptions field.
 var podWatchTimeoutSec = int64(120)
+
+func boolPtr(b bool) *bool { return &b }
 
 // k8sDoer is the Kubernetes operations contmgr needs.
 type k8sDoer interface {
@@ -67,10 +70,11 @@ type PodParams struct {
 	Memory          string // e.g. "512MB"
 	Disk            string // e.g. "5GB"; empty = no limit
 	ImagePullSecret string // empty = omit
+	RuntimeClass    string // empty = cluster default; "gvisor" = gVisor
 }
 
 type K8sClient struct {
-	clientset  *kubernetes.Clientset
+	clientset  kubernetes.Interface
 	restConfig *rest.Config
 }
 
@@ -108,10 +112,64 @@ func (k *K8sClient) EnsureNamespace(ctx context.Context, p NamespaceParams) erro
 		},
 	}
 	_, err := k.clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+	if err == nil {
+		return nil
+	}
+	if !k8serrors.IsAlreadyExists(err) {
+		return err
+	}
+	// Namespace exists — check if it is terminating. If so, wait for it to
+	// disappear before recreating; provisioning into a terminating namespace
+	// is forbidden by the API server.
+	existing, err := k.clientset.CoreV1().Namespaces().Get(ctx, p.Name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		// Deleted between Create and Get — retry create once.
+		_, err = k.clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+		if k8serrors.IsAlreadyExists(err) {
+			return nil
+		}
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	if existing.Status.Phase != corev1.NamespaceTerminating {
+		return nil // exists and healthy
+	}
+	// Wait for the terminating namespace to be fully deleted.
+	if err := k.waitNamespaceGone(ctx, p.Name); err != nil {
+		return fmt.Errorf("wait for terminating namespace %s: %w", p.Name, err)
+	}
+	_, err = k.clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
 	if k8serrors.IsAlreadyExists(err) {
 		return nil
 	}
 	return err
+}
+
+func (k *K8sClient) waitNamespaceGone(ctx context.Context, name string) error {
+	watcher, err := k.clientset.CoreV1().Namespaces().Watch(ctx, metav1.ListOptions{
+		FieldSelector:  "metadata.name=" + name,
+		TimeoutSeconds: &podWatchTimeoutSec,
+	})
+	if err != nil {
+		return err
+	}
+	defer watcher.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case event, ok := <-watcher.ResultChan():
+			if !ok {
+				// Channel closed — namespace is gone or watch timed out.
+				return nil
+			}
+			if event.Type == watch.Deleted {
+				return nil
+			}
+		}
+	}
 }
 
 func (k *K8sClient) EnsureRoleBinding(ctx context.Context, namespace string) error {
@@ -274,6 +332,11 @@ func (k *K8sClient) CreatePod(ctx context.Context, p PodParams) error {
 		}
 		limits[corev1.ResourceEphemeralStorage] = *resource.NewQuantity(diskBytes, resource.BinarySI)
 	}
+	// Requests at 25% CPU / 50% memory of limits for predictable scheduling.
+	requests := corev1.ResourceList{
+		corev1.ResourceCPU:    *resource.NewMilliQuantity(cpuMilli/4, resource.DecimalSI),
+		corev1.ResourceMemory: *resource.NewQuantity(memBytes/2, resource.BinarySI),
+	}
 
 	labels := map[string]string{
 		"app.kubernetes.io/managed-by": "rootenv-contmgr",
@@ -289,19 +352,34 @@ func (k *K8sClient) CreatePod(ctx context.Context, p PodParams) error {
 		},
 		Spec: corev1.PodSpec{
 			RestartPolicy: corev1.RestartPolicyNever,
+			// hostUsers: false maps container root to an unprivileged UID on the host
+			// via kernel user namespaces. Requires K8s 1.30+ with the feature gate enabled.
+			HostUsers: boolPtr(false),
+			SecurityContext: &corev1.PodSecurityContext{
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
+			},
 			Containers: []corev1.Container{{
 				Name:            p.AssetName,
 				Image:           p.Image,
 				ImagePullPolicy: corev1.PullIfNotPresent,
-				Env: []corev1.EnvVar{{
-					Name:  "SSH_USERS",
-					Value: p.SSHUser + ":1000:1000",
-				}},
 				Resources: corev1.ResourceRequirements{
-					Limits: limits,
+					Limits:   limits,
+					Requests: requests,
+				},
+				// Drop NET_RAW to block raw socket abuse (ping floods, ARP spoofing).
+				// Other caps intentionally kept: RHCSA labs need SYS_ADMIN, NET_ADMIN, etc.
+				SecurityContext: &corev1.SecurityContext{
+					Capabilities: &corev1.Capabilities{
+						Drop: []corev1.Capability{"NET_RAW"},
+					},
 				},
 			}},
 		},
+	}
+	if p.RuntimeClass != "" {
+		pod.Spec.RuntimeClassName = &p.RuntimeClass
 	}
 	if p.ImagePullSecret != "" {
 		pod.Spec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: p.ImagePullSecret}}
@@ -375,6 +453,28 @@ func (k *K8sClient) WaitPodRunning(ctx context.Context, namespace, name string) 
 }
 
 func (k *K8sClient) ExecInPod(ctx context.Context, namespace, name string, cmd []string) error {
+	const maxAttempts = 5
+	for attempt := range maxAttempts {
+		err := k.execInPodOnce(ctx, namespace, name, cmd)
+		if err == nil {
+			return nil
+		}
+		// containerd reports "task not found" briefly after the pod reaches Running
+		// while the shim is still initialising. Retry with backoff.
+		if attempt < maxAttempts-1 && strings.Contains(err.Error(), "task") && strings.Contains(err.Error(), "not found") {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(attempt+1) * time.Second):
+			}
+			continue
+		}
+		return err
+	}
+	return fmt.Errorf("exec in pod %s/%s: unreachable", namespace, name)
+}
+
+func (k *K8sClient) execInPodOnce(ctx context.Context, namespace, name string, cmd []string) error {
 	req := k.clientset.CoreV1().RESTClient().Post().
 		Resource("pods").
 		Name(name).

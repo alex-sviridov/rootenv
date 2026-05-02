@@ -5,6 +5,10 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
 // ── Relay connection address ─────────────────────────────────────────────────
@@ -527,6 +531,102 @@ func TestProvisionWritesConfigurationWithNamespace(t *testing.T) {
 	}
 	if platform, _ := cfgPatch["platform"].(string); platform != "container" {
 		t.Errorf("configuration.platform=%q, want container", platform)
+	}
+}
+
+// ── Pod security hardening ───────────────────────────────────────────────────
+
+// createPodWithFakeClient calls K8sClient.CreatePod against a fake k8s server
+// and returns the pod that was actually created.
+func createPodWithFakeClient(t *testing.T, p PodParams) *corev1.Pod {
+	t.Helper()
+	cs := k8sfake.NewSimpleClientset()
+	k8s := &K8sClient{clientset: cs}
+	if err := k8s.CreatePod(context.Background(), p); err != nil {
+		t.Fatalf("CreatePod: %v", err)
+	}
+	pod, err := cs.CoreV1().Pods(p.Namespace).Get(context.Background(), podName(p.AssetName), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get pod: %v", err)
+	}
+	return pod
+}
+
+func baseTestParams() PodParams {
+	return PodParams{
+		Namespace: "rootenv-lab-test",
+		AssetName: "server-0",
+		Image:     "test-image:latest",
+		SSHUser:   "user",
+		CPU:       "1",
+		Memory:    "512MB",
+	}
+}
+
+func TestCreatePodSeccompRuntimeDefault(t *testing.T) {
+	pod := createPodWithFakeClient(t, baseTestParams())
+	sc := pod.Spec.SecurityContext
+	if sc == nil || sc.SeccompProfile == nil {
+		t.Fatal("pod SecurityContext.SeccompProfile not set")
+	}
+	if sc.SeccompProfile.Type != corev1.SeccompProfileTypeRuntimeDefault {
+		t.Errorf("SeccompProfile.Type want RuntimeDefault, got %q", sc.SeccompProfile.Type)
+	}
+}
+
+func TestCreatePodHostUsersFalse(t *testing.T) {
+	pod := createPodWithFakeClient(t, baseTestParams())
+	if pod.Spec.HostUsers == nil || *pod.Spec.HostUsers {
+		t.Error("HostUsers must be false")
+	}
+}
+
+func TestCreatePodDropsNETRAW(t *testing.T) {
+	pod := createPodWithFakeClient(t, baseTestParams())
+	csc := pod.Spec.Containers[0].SecurityContext
+	if csc == nil || csc.Capabilities == nil {
+		t.Fatal("container SecurityContext.Capabilities not set")
+	}
+	for _, cap := range csc.Capabilities.Drop {
+		if cap == "NET_RAW" {
+			return
+		}
+	}
+	t.Errorf("NET_RAW not in capabilities drop list: %v", csc.Capabilities.Drop)
+}
+
+func TestCreatePodResourceRequestsSetBelowLimits(t *testing.T) {
+	pod := createPodWithFakeClient(t, baseTestParams())
+	res := pod.Spec.Containers[0].Resources
+	if res.Requests == nil {
+		t.Fatal("resource Requests not set")
+	}
+	cpuReq := res.Requests.Cpu().MilliValue()
+	cpuLim := res.Limits.Cpu().MilliValue()
+	if cpuReq <= 0 || cpuReq > cpuLim {
+		t.Errorf("cpu request %dm must be > 0 and <= limit %dm", cpuReq, cpuLim)
+	}
+	memReq := res.Requests.Memory().Value()
+	memLim := res.Limits.Memory().Value()
+	if memReq <= 0 || memReq > memLim {
+		t.Errorf("memory request %d must be > 0 and <= limit %d", memReq, memLim)
+	}
+}
+
+
+func TestCreatePodRuntimeClassAbsentByDefault(t *testing.T) {
+	pod := createPodWithFakeClient(t, baseTestParams())
+	if pod.Spec.RuntimeClassName != nil {
+		t.Errorf("RuntimeClassName must be nil when not set, got %q", *pod.Spec.RuntimeClassName)
+	}
+}
+
+func TestCreatePodRuntimeClassSet(t *testing.T) {
+	p := baseTestParams()
+	p.RuntimeClass = "gvisor"
+	pod := createPodWithFakeClient(t, p)
+	if pod.Spec.RuntimeClassName == nil || *pod.Spec.RuntimeClassName != "gvisor" {
+		t.Errorf("RuntimeClassName want gvisor, got %v", pod.Spec.RuntimeClassName)
 	}
 }
 

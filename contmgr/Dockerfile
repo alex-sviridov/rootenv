@@ -7,7 +7,7 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o contmgr .
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates && \
-    addgroup -S contmgr && adduser -S contmgr -G contmgr
+    addgroup -S -g 10001 contmgr && adduser -S -u 10001 -G contmgr contmgr
 WORKDIR /app
 COPY --from=builder /app/contmgr .
 EXPOSE 8081

@@ -42,11 +42,12 @@ type Contmgr struct {
 	k8s            k8sDoer
 	infraNamespace string
 	pullSecret     string
+	runtimeClass   string
 	needsReconn    atomic.Bool
 }
 
-func NewContmgr(pb *pbClient, k8s *K8sClient, infraNamespace, pullSecret string) *Contmgr {
-	return &Contmgr{pb: pb, k8s: k8s, infraNamespace: infraNamespace, pullSecret: pullSecret}
+func NewContmgr(pb *pbClient, k8s *K8sClient, infraNamespace, pullSecret, runtimeClass string) *Contmgr {
+	return &Contmgr{pb: pb, k8s: k8s, infraNamespace: infraNamespace, pullSecret: pullSecret, runtimeClass: runtimeClass}
 }
 
 func (p *Contmgr) NeedsReconnect() bool { return p.needsReconn.Swap(false) }
@@ -154,6 +155,7 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 		Memory:          def.Memory,
 		Disk:            def.Disk,
 		ImagePullSecret: p.pullSecret,
+		RuntimeClass:    p.runtimeClass,
 	}
 
 	provisionErr := p.doProvision(ctx, asset, cfg, def, nsParams, params, ns)
@@ -226,17 +228,25 @@ func (p *Contmgr) doProvision(ctx context.Context, asset Asset, cfg *AssetConfig
 	}
 
 	pubKeyStr := strings.TrimSpace(string(pubKeyLine))
-	// chown uses numeric UID:GID (1000:1000) because the user may not yet exist
-	// in /etc/passwd when the pod reaches Running phase — the container init
-	// creates it asynchronously via SSH_USERS.
+	// Contmgr owns full user setup: create group+user if missing, unlock the
+	// account for PAM pubkey auth, then write authorized_keys.
+	// Images only need sshd running as root — no SSH_USERS contract required.
 	script := fmt.Sprintf(
-		"mkdir -p /home/%[1]s/.ssh && chown 1000:1000 /home/%[1]s/.ssh && chmod 700 /home/%[1]s/.ssh && printf '%%s' %[2]q > /home/%[1]s/.ssh/authorized_keys && chown 1000:1000 /home/%[1]s/.ssh/authorized_keys && chmod 600 /home/%[1]s/.ssh/authorized_keys",
+		"getent group %[1]s || groupadd %[1]s && "+
+			"id %[1]s || useradd -m -s /bin/bash -g %[1]s %[1]s && "+
+			"usermod -p '*' %[1]s && "+
+			"mkdir -p /home/%[1]s/.ssh && "+
+			"chown %[1]s:%[1]s /home/%[1]s/.ssh && "+
+			"chmod 700 /home/%[1]s/.ssh && "+
+			"printf '%%s' %[2]q > /home/%[1]s/.ssh/authorized_keys && "+
+			"chown %[1]s:%[1]s /home/%[1]s/.ssh/authorized_keys && "+
+			"chmod 600 /home/%[1]s/.ssh/authorized_keys",
 		def.SSHUser, pubKeyStr,
 	)
 	execCtx, execCancel := withK8s(ctx)
 	defer execCancel()
 	if err := p.k8s.ExecInPod(execCtx, ns, pName, []string{"sh", "-c", script}); err != nil {
-		return fmt.Errorf("write authorized_keys: %w", err)
+		return fmt.Errorf("setup ssh user: %w", err)
 	}
 
 	if def.Setup != "" {
@@ -335,13 +345,28 @@ func (p *Contmgr) RunOnce(ctx context.Context) error {
 	sem := semaphore.NewWeighted(maxConcurrentOps)
 	eg, egCtx := errgroup.WithContext(ctx)
 
+	// Build decommission set first (synchronous) so provision can skip those attempts.
+	attemptsToDecommission, err := p.pb.ListAttemptsToDecommission()
+	if err != nil {
+		slog.Error("list attempts to decommission", "err", err)
+		p.needsReconn.Store(true)
+	}
+	decommissionAttempts := make(map[string]bool, len(attemptsToDecommission))
+	for _, a := range attemptsToDecommission {
+		decommissionAttempts[a.ID] = true
+	}
+
+	// Provision pending assets, skipping any whose attempt is being decommissioned.
 	assets, err := p.pb.ListPendingAssets()
 	if err != nil {
-		slog.Error("list provisioning assets", "err", err)
+		slog.Error("list pending assets", "err", err)
 		p.needsReconn.Store(true)
 	}
 	for _, asset := range assets {
 		asset := asset
+		if decommissionAttempts[asset.Attempt] {
+			continue
+		}
 		if err := sem.Acquire(egCtx, 1); err != nil {
 			break
 		}
@@ -354,12 +379,7 @@ func (p *Contmgr) RunOnce(ctx context.Context) error {
 		})
 	}
 
-	// Reconcile: decommission all active assets for attempts where desired_state=decommissioned.
-	attemptsToDecommission, err := p.pb.ListAttemptsToDecommission()
-	if err != nil {
-		slog.Error("list attempts to decommission", "err", err)
-		p.needsReconn.Store(true)
-	}
+	// Decommission all active assets for attempts where desired_state=decommissioned.
 	for _, attempt := range attemptsToDecommission {
 		attempt := attempt
 		activeAssets, err := p.pb.ListActiveAssetsByAttempt(attempt.ID)
@@ -395,6 +415,10 @@ func (p *Contmgr) RunOnce(ctx context.Context) error {
 	}
 	for _, asset := range stuckProvisioning {
 		asset := asset
+		if decommissionAttempts[asset.Attempt] {
+			// Will be handled by the decommission path above; don't reset to pending.
+			continue
+		}
 		if err := sem.Acquire(egCtx, 1); err != nil {
 			break
 		}
