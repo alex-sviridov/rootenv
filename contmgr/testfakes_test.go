@@ -3,9 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/watch"
 )
 
 // --- fakeK8s ---
@@ -23,7 +20,6 @@ type fakeK8s struct {
 	deletePodFunc             func(ctx context.Context, namespace, podName string) error
 	deleteServiceFunc         func(ctx context.Context, namespace, svcName string) error
 	deleteNetworkPolicyFunc   func(ctx context.Context, namespace, netpolName string) error
-	watchPodStatusesFunc      func(ctx context.Context, onEvent func(string, string, corev1.PodPhase, watch.EventType)) error
 }
 
 func (f *fakeK8s) EnsureNamespace(ctx context.Context, p NamespaceParams) error {
@@ -97,13 +93,6 @@ func (f *fakeK8s) DeleteNetworkPolicy(ctx context.Context, namespace, name strin
 		return f.deleteNetworkPolicyFunc(ctx, namespace, name)
 	}
 	return nil
-}
-func (f *fakeK8s) WatchPodStatuses(ctx context.Context, onEvent func(string, string, corev1.PodPhase, watch.EventType)) error {
-	if f.watchPodStatusesFunc != nil {
-		return f.watchPodStatusesFunc(ctx, onEvent)
-	}
-	<-ctx.Done()
-	return ctx.Err()
 }
 
 // --- fakePB ---

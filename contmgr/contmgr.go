@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
@@ -42,8 +43,6 @@ type Contmgr struct {
 	infraNamespace string
 	pullSecret     string
 	needsReconn    atomic.Bool
-	lastPollAt     atomic.Int64 // unix nanos; 0 = not yet polled
-	pbHealthy      atomic.Bool  // true after a cycle where PB was reachable
 }
 
 func NewContmgr(pb *pbClient, k8s *K8sClient, infraNamespace, pullSecret string) *Contmgr {
@@ -53,11 +52,32 @@ func NewContmgr(pb *pbClient, k8s *K8sClient, infraNamespace, pullSecret string)
 func (p *Contmgr) NeedsReconnect() bool { return p.needsReconn.Swap(false) }
 func (p *Contmgr) SetPB(pb *pbClient)   { p.pb = pb }
 
-// RecordPoll marks the completion of a poll cycle. pbOK must be false when
-// the cycle triggered a PocketBase reconnect.
-func (p *Contmgr) RecordPoll(pbOK bool) {
-	p.lastPollAt.Store(time.Now().UnixNano())
-	p.pbHealthy.Store(pbOK)
+// UpdateAssetStatusFromPod patches the PocketBase asset status based on a pod phase change.
+// Called by PodStatusController on every pod event. phase is the pod phase string;
+// empty string means the pod was deleted (maps to "stopped").
+func (p *Contmgr) UpdateAssetStatusFromPod(ctx context.Context, assetName, attemptID, phase string) error {
+	status := podPhaseToStatus(phase)
+	asset, err := p.pb.GetAssetByNameAndAttempt(assetName, attemptID)
+	if err != nil {
+		slog.Debug("UpdateAssetStatusFromPod: asset not found", "asset", assetName, "attempt", attemptID, "err", err)
+		return nil
+	}
+	if err := p.pb.PatchAssetStatus(asset.ID, status); err != nil {
+		return fmt.Errorf("patch asset status: %w", err)
+	}
+	slog.Info("asset status updated", "asset", asset.ID, "status", status)
+	return nil
+}
+
+func podPhaseToStatus(phase string) string {
+	switch phase {
+	case string(corev1.PodRunning):
+		return "running"
+	case string(corev1.PodPending):
+		return "booting"
+	default:
+		return "stopped"
+	}
 }
 
 // withK8s returns a child context with k8sOpTimeout applied.

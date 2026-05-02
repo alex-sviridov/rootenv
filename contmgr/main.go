@@ -4,17 +4,22 @@ import (
 	"context"
 	"log/slog"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
 
 func main() {
-	level := slog.LevelInfo
-	if os.Getenv("LOG_LEVEL") == "debug" {
-		level = slog.LevelDebug
-	}
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
+	zapOpts := zap.Options{Development: os.Getenv("LOG_LEVEL") == "debug"}
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
 
 	cfg, err := loadConfig()
 	if err != nil {
@@ -22,8 +27,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
+	ctx := ctrl.SetupSignalHandler()
 
 	pb, err := authWithRetry(ctx, cfg)
 	if err != nil {
@@ -32,44 +36,70 @@ func main() {
 	}
 	slog.Info("authenticated with PocketBase", "url", cfg.pbURL)
 
-	k8s, err := newK8sClient()
+	k8sRaw, err := newK8sClient()
 	if err != nil {
 		slog.Error("k8s client error", "err", err)
 		os.Exit(1)
 	}
 
-	mgr := NewContmgr(pb, k8s, cfg.infraNamespace, cfg.imagePullSecret)
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		slog.Error("scheme setup", "err", err)
+		os.Exit(1)
+	}
 
-	go startHealthServer(ctx, cfg.healthAddr, mgr, 5*cfg.pollInterval)
-	go (&statusWatcher{pb: pb, k8s: k8s}).Run(ctx)
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme:                 scheme,
+		HealthProbeBindAddress: cfg.probeAddr,
+		Metrics:                metricsserver.Options{BindAddress: cfg.metricsAddr},
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				&corev1.Pod{}: {
+					Label: labels.SelectorFromSet(labels.Set{
+						"app.kubernetes.io/managed-by": "rootenv-contmgr",
+					}),
+				},
+			},
+		},
+	})
+	if err != nil {
+		slog.Error("manager create", "err", err)
+		os.Exit(1)
+	}
 
-	ticker := time.NewTicker(cfg.pollInterval)
-	defer ticker.Stop()
+	business := NewContmgr(pb, k8sRaw, cfg.infraNamespace, cfg.imagePullSecret)
 
-	slog.Info("contmgr started", "infra_namespace", cfg.infraNamespace, "poll_interval", cfg.pollInterval)
+	if err := (&LabReconciler{
+		contmgr:      business,
+		pollInterval: cfg.pollInterval,
+		cfg:          cfg,
+	}).SetupWithManager(mgr); err != nil {
+		slog.Error("lab reconciler setup", "err", err)
+		os.Exit(1)
+	}
 
-	for {
-		select {
-		case <-ctx.Done():
-			slog.Info("shutting down")
-			return
-		case <-ticker.C:
-			if err := mgr.RunOnce(ctx); err != nil {
-				slog.Error("run cycle error", "err", err)
-			}
-			needsReconn := mgr.NeedsReconnect()
-			mgr.RecordPoll(!needsReconn)
-			if needsReconn {
-				slog.Warn("PocketBase unavailable, reconnecting")
-				newPB, err := authWithRetry(ctx, cfg)
-				if err != nil {
-					slog.Error("PocketBase reconnect failed", "err", err)
-					continue
-				}
-				mgr.SetPB(newPB)
-				slog.Info("reconnected to PocketBase")
-			}
-		}
+	if err := (&PodStatusController{
+		Client:  mgr.GetClient(),
+		contmgr: business,
+	}).SetupWithManager(mgr); err != nil {
+		slog.Error("pod status controller setup", "err", err)
+		os.Exit(1)
+	}
+
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		slog.Error("add healthz", "err", err)
+		os.Exit(1)
+	}
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		slog.Error("add readyz", "err", err)
+		os.Exit(1)
+	}
+
+	slog.Info("contmgr starting", "infra_namespace", cfg.infraNamespace, "poll_interval", cfg.pollInterval)
+
+	if err := mgr.Start(ctx); err != nil {
+		slog.Error("manager exited", "err", err)
+		os.Exit(1)
 	}
 }
 

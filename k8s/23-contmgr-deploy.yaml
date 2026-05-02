@@ -27,6 +27,21 @@ spec:
             limits:
               cpu: "200m"
               memory: "128Mi"
+          ports:
+            - containerPort: 8081
+              name: health
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
           env:
             - name: CONTMGR_BACKEND_URL
               value: http://backend-svc:8090

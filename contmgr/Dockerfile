@@ -10,8 +10,8 @@ RUN apk add --no-cache ca-certificates && \
     addgroup -S contmgr && adduser -S contmgr -G contmgr
 WORKDIR /app
 COPY --from=builder /app/contmgr .
-EXPOSE 8080
+EXPOSE 8081
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD wget -qO /dev/null http://localhost:8080/healthz
+    CMD wget -qO /dev/null http://localhost:8081/healthz
 USER contmgr
 CMD ["./contmgr"]

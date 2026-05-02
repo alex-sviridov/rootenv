@@ -100,7 +100,7 @@ environment:
   duration: 60
   assets:
     - name: server-0
-      image: hermsi/alpine-sshd
+      image: °/alpine-sshd
       platform: container
       ssh_user: lab
       cpu: 100m

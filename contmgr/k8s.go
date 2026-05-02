@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -40,7 +39,6 @@ type k8sDoer interface {
 	DeletePod(ctx context.Context, namespace, podName string) error
 	DeleteService(ctx context.Context, namespace, svcName string) error
 	DeleteNetworkPolicy(ctx context.Context, namespace, netpolName string) error
-	WatchPodStatuses(ctx context.Context, onEvent func(assetName, attemptID string, phase corev1.PodPhase, eventType watch.EventType)) error
 }
 
 type NamespaceParams struct {
@@ -442,41 +440,3 @@ func (k *K8sClient) DeleteNetworkPolicy(ctx context.Context, namespace, name str
 	return err
 }
 
-// WatchPodStatuses streams phase-change events for all contmgr-managed pods across all
-// namespaces. It reconnects automatically on watch channel close or API error. Runs until
-// ctx is cancelled — callers should run it in a goroutine.
-func (k *K8sClient) WatchPodStatuses(ctx context.Context, onEvent func(assetName, attemptID string, phase corev1.PodPhase, eventType watch.EventType)) error {
-	resourceVersion := ""
-	for {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		watcher, err := k.clientset.CoreV1().Pods("").Watch(ctx, metav1.ListOptions{
-			LabelSelector:   "app.kubernetes.io/managed-by=rootenv-contmgr",
-			ResourceVersion: resourceVersion,
-		})
-		if err != nil {
-			// Transient API error — wait briefly and retry rather than aborting.
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(5 * time.Second):
-			}
-			continue
-		}
-		for event := range watcher.ResultChan() {
-			pod, ok := event.Object.(*corev1.Pod)
-			if !ok {
-				continue
-			}
-			resourceVersion = pod.ResourceVersion
-			assetName := pod.Labels["rootenv.io/asset-name"]
-			attemptID := pod.Labels["rootenv.io/attempt-id"]
-			if assetName == "" || attemptID == "" {
-				continue
-			}
-			onEvent(assetName, attemptID, pod.Status.Phase, event.Type)
-		}
-		watcher.Stop()
-	}
-}
