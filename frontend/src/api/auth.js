@@ -17,3 +17,6 @@ export const deleteAccount = (id) =>
   pb.collection('users').delete(id)
 
 export const authRefresh = () => pb.collection('users').authRefresh()
+
+export const updateSettings = (id, settings) =>
+  pb.collection('users').update(id, { settings })

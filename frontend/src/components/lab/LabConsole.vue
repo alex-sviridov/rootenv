@@ -41,7 +41,7 @@ function onDragEnd() {
 </script>
 
 <template>
-  <div class="w-2/5 shrink-0 border-l border-slate-800 bg-slate-950 flex flex-col overflow-hidden">
+  <div class="w-full h-full border-l border-slate-800 bg-slate-950 flex flex-col overflow-hidden">
 
     <!-- Tab bar -->
     <div v-if="tabs.length" class="flex flex-wrap items-center border-b border-slate-800 shrink-0">

@@ -1,7 +1,7 @@
 FROM ubuntu:22.04
 
-RUN apt-get update -qq && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -qq -y --no-install-recommends \
+RUN apt-get update -y && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         openssh-server \
         openssh-client \
         ca-certificates \

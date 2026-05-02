@@ -66,6 +66,7 @@ export const useAttemptsStore = defineStore('attempts', () => {
     withLoading(async () => {
       const attempt = await createAttempt(labId, labName)
       lastAttempt.value = attempt
+      activeAttempt.value = attempt
     })
 
   const removeAttempt = () => {

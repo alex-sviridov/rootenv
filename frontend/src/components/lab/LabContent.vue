@@ -15,7 +15,7 @@ const html = computed(() => {
 </script>
 
 <template>
-  <div class="flex-1 overflow-y-auto p-8 min-w-0">
+  <div class="w-full h-full overflow-y-auto p-8">
     <template v-if="task">
       <h1 class="text-xl font-semibold text-white mb-6">{{ task.title }}</h1>
       <div class="prose" v-html="html" />

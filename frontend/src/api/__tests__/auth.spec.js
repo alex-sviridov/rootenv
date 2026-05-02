@@ -16,7 +16,7 @@ vi.mock('@/lib/pb', () => ({
   pb: { collection: mockCollection, authStore: mockAuthStore },
 }))
 
-import { login, register, logout, getAuthStore, changePassword, deleteAccount, authRefresh } from '../auth'
+import { login, register, logout, getAuthStore, changePassword, deleteAccount, authRefresh, updateSettings } from '../auth'
 
 beforeEach(() => vi.clearAllMocks())
 
@@ -118,5 +118,22 @@ describe('authRefresh', () => {
   it('propagates errors', async () => {
     mockAuthRefresh.mockRejectedValue(new Error('401'))
     await expect(authRefresh()).rejects.toThrow('401')
+  })
+})
+
+describe('updateSettings', () => {
+  it('calls update on the users collection with settings payload', async () => {
+    const settings = { dividerConsoleWidth: 320 }
+    mockUpdate.mockResolvedValue({ id: 'u1', settings })
+
+    await updateSettings('u1', settings)
+
+    expect(mockCollection).toHaveBeenCalledWith('users')
+    expect(mockUpdate).toHaveBeenCalledWith('u1', { settings })
+  })
+
+  it('propagates errors', async () => {
+    mockUpdate.mockRejectedValue(new Error('unauthorized'))
+    await expect(updateSettings('u1', {})).rejects.toThrow('unauthorized')
   })
 })

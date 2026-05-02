@@ -1,11 +1,9 @@
-# frontend
-- allow moving border between labcontent and labconsole, hovering on border show buttons to hide (not destroying component just hide from user) one or another. 
+
 - hide console when lab is not started
 - allow minimizing sidebar keeping minimal info
 - tabs reordering make better, more contrasted, color tabs where sever is unavailable
 - add attempts list
 - close tabs on decommission or do something like that`
-- false 'Another lab is active' message in the same lab
 
 # relay
 - http forwarding into iframe

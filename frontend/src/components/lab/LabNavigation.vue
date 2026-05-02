@@ -1,6 +1,6 @@
 <script setup>
 defineProps({
-  lab: { type: Object, required: true },
+  tasks: { type: Array, required: true },
   selectedTask: { type: Number, required: true },
 })
 
@@ -14,7 +14,7 @@ const emit = defineEmits(['selectTask'])
     </div>
     <div>
       <button
-        v-for="(task, i) in lab.content"
+        v-for="(task, i) in tasks"
         :key="i"
         class="w-full text-left px-4 py-2.5 text-sm border-l-2 transition-colors"
         :class="i === selectedTask

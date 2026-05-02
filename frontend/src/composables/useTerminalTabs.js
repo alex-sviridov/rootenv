@@ -55,5 +55,9 @@ export function useTerminalTabs() {
     limitError.value = null
   }
 
-  return { tabs, activeTabId, limitError, openTab, closeTab, moveTab, resetTabs }
+  function selectTab(tabId) {
+    activeTabId.value = tabId
+  }
+
+  return { tabs, activeTabId, limitError, openTab, selectTab, closeTab, moveTab, resetTabs }
 }

@@ -21,7 +21,7 @@ export function useLabSession() {
   const error = ref(null)
   const secrets = ref({})
 
-  const { tabs, activeTabId, limitError, openTab, closeTab, moveTab, resetTabs } = useTerminalTabs()
+  const { tabs, activeTabId, limitError, openTab, selectTab, closeTab, moveTab, resetTabs } = useTerminalTabs()
 
   const currentTask = computed(() => lab.value?.content?.[selectedTask.value] ?? null)
 
@@ -87,6 +87,6 @@ export function useLabSession() {
 
   return {
     lab, selectedTask, currentTask, error, secrets,
-    tabs, activeTabId, limitError, openTab, closeTab, moveTab,
+    tabs, activeTabId, limitError, openTab, selectTab, closeTab, moveTab,
   }
 }

@@ -9,9 +9,10 @@ vi.mock('@/api/auth', () => ({
   changePassword: vi.fn(),
   deleteAccount: vi.fn(),
   authRefresh: vi.fn(),
+  updateSettings: vi.fn(),
 }))
 
-import { login, register, logout, getAuthStore, changePassword, deleteAccount as deleteAccountApi, authRefresh } from '@/api/auth'
+import { login, register, logout, getAuthStore, changePassword, deleteAccount as deleteAccountApi, authRefresh, updateSettings } from '@/api/auth'
 import { useUserStore } from '../user'
 
 beforeEach(() => {
@@ -287,5 +288,63 @@ describe('init', () => {
     await store.authReady
     expect(store.user).toBeNull()
     expect(logout).toHaveBeenCalled()
+  })
+})
+
+describe('settings', () => {
+  it('returns empty object when user has no settings', () => {
+    const store = useUserStore()
+    store.user = { id: 'u1' }
+    expect(store.settings).toEqual({})
+  })
+
+  it('returns user settings when present', () => {
+    const store = useUserStore()
+    store.user = { id: 'u1', settings: { dividerConsoleWidth: 320 } }
+    expect(store.settings).toEqual({ dividerConsoleWidth: 320 })
+  })
+
+  it('returns empty object when user is null', () => {
+    const store = useUserStore()
+    expect(store.settings).toEqual({})
+  })
+})
+
+describe('saveSetting', () => {
+  it('merges key into existing settings and calls updateSettings', async () => {
+    updateSettings.mockResolvedValue({})
+    const store = useUserStore()
+    store.user = { id: 'u1', settings: { dividerConsoleWidth: 300 } }
+
+    await store.saveSetting('dividerConsoleWidth', 400)
+
+    expect(store.user.settings).toEqual({ dividerConsoleWidth: 400 })
+    expect(updateSettings).toHaveBeenCalledWith('u1', { dividerConsoleWidth: 400 })
+  })
+
+  it('creates settings from scratch when user has none', async () => {
+    updateSettings.mockResolvedValue({})
+    const store = useUserStore()
+    store.user = { id: 'u1' }
+
+    await store.saveSetting('dividerConsoleWidth', 350)
+
+    expect(store.user.settings).toEqual({ dividerConsoleWidth: 350 })
+    expect(updateSettings).toHaveBeenCalledWith('u1', { dividerConsoleWidth: 350 })
+  })
+
+  it('does not call updateSettings when user is not authenticated', async () => {
+    const store = useUserStore()
+    await store.saveSetting('dividerConsoleWidth', 350)
+    expect(updateSettings).not.toHaveBeenCalled()
+  })
+
+  it('silently ignores API errors', async () => {
+    updateSettings.mockRejectedValue(new Error('network error'))
+    const store = useUserStore()
+    store.user = { id: 'u1', settings: {} }
+
+    await expect(store.saveSetting('dividerConsoleWidth', 300)).resolves.not.toThrow()
+    expect(store.user.settings).toEqual({ dividerConsoleWidth: 300 })
   })
 })

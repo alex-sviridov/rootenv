@@ -29,7 +29,7 @@ const runningAttempt = computed(() => {
 const anotherLabRunning = computed(() => {
   const a = attempts.activeAttempt
   const last = attempts.lastAttempt
-  return a && a.id !== last?.id ? a : null
+  return a && a.lab !== last?.lab ? a : null
 })
 
 const canProvision = computed(() =>
