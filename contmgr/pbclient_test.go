@@ -30,7 +30,7 @@ func TestAssetDefValidate(t *testing.T) {
 	}{
 		{"valid", AssetDef{Image: "alpine", SSHUser: "lab", CPU: "1", Memory: "128MB"}, true},
 		{"missing image", AssetDef{SSHUser: "lab", CPU: "1", Memory: "128MB"}, false},
-		{"missing ssh_user", AssetDef{Image: "alpine", CPU: "1", Memory: "128MB"}, false},
+		{"missing ssh_user", AssetDef{Image: "alpine", CPU: "1", Memory: "128MB"}, true},
 		{"missing cpu", AssetDef{Image: "alpine", SSHUser: "lab", Memory: "128MB"}, false},
 		{"missing memory", AssetDef{Image: "alpine", SSHUser: "lab", CPU: "1"}, false},
 	}

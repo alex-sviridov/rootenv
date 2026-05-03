@@ -12,6 +12,7 @@ type config struct {
 	pbPassword      string
 	infraNamespace  string
 	imagePullSecret string
+	imageRegistry   string
 	runtimeClass    string
 	pollInterval    time.Duration
 	probeAddr       string
@@ -37,6 +38,7 @@ func loadConfig() (config, error) {
 		pbPassword:      os.Getenv("CONTMGR_BACKEND_PASSWORD"),
 		infraNamespace:  infraNS,
 		imagePullSecret: os.Getenv("CONTMGR_IMAGE_PULL_SECRET"),
+		imageRegistry:   os.Getenv("CONTMGR_IMAGE_REGISTRY"),
 		runtimeClass:    os.Getenv("CONTMGR_RUNTIME_CLASS"),
 		pollInterval:    5 * time.Second,
 		probeAddr:       probeAddr,

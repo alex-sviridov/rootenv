@@ -305,25 +305,28 @@ func TestProvisionValidatesMissingImage(t *testing.T) {
 	}
 }
 
-func TestProvisionValidatesMissingSSHUser(t *testing.T) {
+func TestProvisionNoSSHUser(t *testing.T) {
 	pb := newFakePB()
 	addProvisionFixtures(pb, "asset1", "attempt1", "server-0", "user1")
 	pb.assetConfigs["asset1"].Configuration = []byte(`{"image":"alpine","cpu":"1","memory":"128MB"}`)
 
-	var podCalled bool
+	var execCalled bool
 	k8s := &fakeK8s{
-		createPodFunc: func(_ context.Context, _ PodParams) error {
-			podCalled = true
+		execInPodFunc: func(_ context.Context, _, _ string, _ []string) error {
+			execCalled = true
 			return nil
 		},
 	}
 
 	mgr := newTestContmgr(pb, k8s)
-	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err == nil {
-		t.Fatal("expected error for missing ssh_user")
+	if err := mgr.ProvisionAsset(context.Background(), *pb.assets["asset1"]); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if podCalled {
-		t.Error("CreatePod must not be called when validation fails")
+	if execCalled {
+		t.Error("ExecInPod must not be called when ssh_user is absent")
+	}
+	if len(pb.patchKeysCalls) != 0 {
+		t.Error("PatchKeys must not be called when ssh_user is absent")
 	}
 }
 

@@ -290,7 +290,7 @@ func (f *fakePB) ListProvisionedAssetsByAttempt(attemptID string) ([]Asset, erro
 // --- test helpers ---
 
 func newTestContmgr(pb pbDoer, k8s k8sDoer) *Contmgr {
-	return &Contmgr{pb: pb, k8s: k8s, infraNamespace: "rootenv-infra"}
+	return &Contmgr{pb: pb, k8s: k8s, infraNamespace: "rootenv-infra", imageRegistry: ""}
 }
 
 func addProvisionFixtures(pb *fakePB, assetID, attemptID, name, userID string) {

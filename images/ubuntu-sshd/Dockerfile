@@ -21,7 +21,8 @@ RUN apt-get update -y && \
         psmisc \
         lsof \
     && rm -rf /var/lib/apt/lists/* && \
-    mkdir -p /run/sshd
+    mkdir -p /run/sshd && \
+    chmod u+s /usr/bin/ping
 
 COPY sshd_config /etc/ssh/sshd_config
 COPY entrypoint.sh /entrypoint.sh

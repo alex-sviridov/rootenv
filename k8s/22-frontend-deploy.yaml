@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: docker.io/library/rootenv-frontend
+        image: rootenv-registry:5000/rootenv-frontend
         ports:
         - containerPort: 51
         resources:

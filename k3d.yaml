@@ -1,0 +1,31 @@
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: rootenv
+servers: 1
+agents: 0
+registries:
+  create:
+    name: rootenv-registry
+    host: "0.0.0.0"
+    hostPort: "5000"
+  config: |
+    mirrors:
+      rootenv-registry:5000:
+        endpoint:
+        - http://rootenv-registry:5000
+    configs:
+      rootenv-registry:5000:
+        tls:
+          insecureSkipVerify: true
+        auth: {}
+ports:
+  - port: "8080:80"
+    nodeFilters:
+      - loadbalancer
+options:
+  k3s:
+    extraArgs:
+      - arg: --tls-san=0.0.0.0
+        nodeFilters:
+          - server:*

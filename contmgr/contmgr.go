@@ -42,12 +42,24 @@ type Contmgr struct {
 	k8s            k8sDoer
 	infraNamespace string
 	pullSecret     string
+	imageRegistry  string
 	runtimeClass   string
 	needsReconn    atomic.Bool
 }
 
-func NewContmgr(pb *pbClient, k8s *K8sClient, infraNamespace, pullSecret, runtimeClass string) *Contmgr {
-	return &Contmgr{pb: pb, k8s: k8s, infraNamespace: infraNamespace, pullSecret: pullSecret, runtimeClass: runtimeClass}
+func NewContmgr(pb *pbClient, k8s *K8sClient, infraNamespace, pullSecret, imageRegistry, runtimeClass string) *Contmgr {
+	return &Contmgr{pb: pb, k8s: k8s, infraNamespace: infraNamespace, pullSecret: pullSecret, imageRegistry: imageRegistry, runtimeClass: runtimeClass}
+}
+
+// resolveImage prepends registry to single-component image names (no '/').
+// Images with a '/' are assumed to already encode their source
+// ("hermsi/alpine-sshd" → Docker Hub, "ghcr.io/foo/bar" → explicit registry)
+// and are left untouched. No-op when registry is empty.
+func resolveImage(image, registry string) string {
+	if registry == "" || strings.Contains(image, "/") {
+		return image
+	}
+	return registry + "/" + image
 }
 
 func (p *Contmgr) NeedsReconnect() bool { return p.needsReconn.Swap(false) }
@@ -149,7 +161,7 @@ func (p *Contmgr) ProvisionAsset(ctx context.Context, asset Asset) error {
 		UserID:          userID,
 		AttemptID:       asset.Attempt,
 		AssetName:       asset.Name,
-		Image:           def.Image,
+		Image:           resolveImage(def.Image, p.imageRegistry),
 		SSHUser:         def.SSHUser,
 		CPU:             def.CPU,
 		Memory:          def.Memory,
@@ -196,11 +208,6 @@ func (p *Contmgr) doProvision(ctx context.Context, asset Asset, cfg *AssetConfig
 		return fmt.Errorf("ensure network policy: %w", err)
 	}
 
-	privKeyPEM, pubKeyLine, err := GenerateKeypair()
-	if err != nil {
-		return fmt.Errorf("generate keypair: %w", err)
-	}
-
 	podCtx, podCancel := withK8s(ctx)
 	defer podCancel()
 	if err := p.k8s.CreatePod(podCtx, params); err != nil {
@@ -227,26 +234,39 @@ func (p *Contmgr) doProvision(ctx context.Context, asset Asset, cfg *AssetConfig
 		return fmt.Errorf("wait pod running: %w", err)
 	}
 
-	pubKeyStr := strings.TrimSpace(string(pubKeyLine))
-	// Contmgr owns full user setup: create group+user if missing, unlock the
-	// account for PAM pubkey auth, then write authorized_keys.
-	// Images only need sshd running as root — no SSH_USERS contract required.
-	script := fmt.Sprintf(
-		"getent group %[1]s || groupadd %[1]s && "+
-			"id %[1]s || useradd -m -s /bin/bash -g %[1]s %[1]s && "+
-			"usermod -p '*' %[1]s && "+
-			"mkdir -p /home/%[1]s/.ssh && "+
-			"chown %[1]s:%[1]s /home/%[1]s/.ssh && "+
-			"chmod 700 /home/%[1]s/.ssh && "+
-			"printf '%%s' %[2]q > /home/%[1]s/.ssh/authorized_keys && "+
-			"chown %[1]s:%[1]s /home/%[1]s/.ssh/authorized_keys && "+
-			"chmod 600 /home/%[1]s/.ssh/authorized_keys",
-		def.SSHUser, pubKeyStr,
-	)
-	execCtx, execCancel := withK8s(ctx)
-	defer execCancel()
-	if err := p.k8s.ExecInPod(execCtx, ns, pName, []string{"sh", "-c", script}); err != nil {
-		return fmt.Errorf("setup ssh user: %w", err)
+	if def.SSHUser != "" {
+		privKeyPEM, pubKeyLine, err := GenerateKeypair()
+		if err != nil {
+			return fmt.Errorf("generate keypair: %w", err)
+		}
+
+		pubKeyStr := strings.TrimSpace(string(pubKeyLine))
+		script := buildSSHSetupScript(def.SSHUser, pubKeyStr)
+		execCtx, execCancel := withK8s(ctx)
+		defer execCancel()
+		if err := p.k8s.ExecInPod(execCtx, ns, pName, []string{"sh", "-c", script}); err != nil {
+			return fmt.Errorf("setup ssh user: %w", err)
+		}
+
+		keysRecord, err := p.pb.GetKeysByAsset(asset.ID)
+		if err != nil {
+			return fmt.Errorf("get keys: %w", err)
+		}
+		if keysRecord.Secret == "" {
+			return fmt.Errorf("keys record has empty secret for asset %s", asset.ID)
+		}
+		slog.Debug("encrypting key", "asset", asset.ID, "secret_len", len(keysRecord.Secret))
+
+		ciphertext, err := EncryptPrivateKey(privKeyPEM, keysRecord.Secret)
+		if err != nil {
+			return fmt.Errorf("encrypt key: %w", err)
+		}
+
+		if err := p.pb.PatchKeys(keysRecord.ID, map[string]any{
+			"key_encrypted": ciphertext,
+		}); err != nil {
+			return fmt.Errorf("patch keys: %w", err)
+		}
 	}
 
 	if def.Setup != "" {
@@ -258,26 +278,6 @@ func (p *Contmgr) doProvision(ctx context.Context, asset Asset, cfg *AssetConfig
 	}
 
 	host := svcDNS(svcName(asset.Name), ns)
-
-	keysRecord, err := p.pb.GetKeysByAsset(asset.ID)
-	if err != nil {
-		return fmt.Errorf("get keys: %w", err)
-	}
-	if keysRecord.Secret == "" {
-		return fmt.Errorf("keys record has empty secret for asset %s", asset.ID)
-	}
-	slog.Debug("encrypting key", "asset", asset.ID, "secret_len", len(keysRecord.Secret))
-
-	ciphertext, err := EncryptPrivateKey(privKeyPEM, keysRecord.Secret)
-	if err != nil {
-		return fmt.Errorf("encrypt key: %w", err)
-	}
-
-	if err := p.pb.PatchKeys(keysRecord.ID, map[string]any{
-		"key_encrypted": ciphertext,
-	}); err != nil {
-		return fmt.Errorf("patch keys: %w", err)
-	}
 
 	if err := p.pb.PatchAssetConfig(cfg.ID, map[string]any{
 		"connection": map[string]any{
@@ -301,6 +301,32 @@ func (p *Contmgr) doProvision(ctx context.Context, asset Asset, cfg *AssetConfig
 
 	slog.Info("provisioned", "asset", asset.ID, "pod", pName, "namespace", ns)
 	return nil
+}
+
+// buildSSHSetupScript returns a POSIX sh one-liner that creates the SSH user
+// (if missing) and writes the authorized key. It works on both Alpine/busybox
+// (addgroup/adduser) and glibc-based images (groupadd/useradd), choosing the
+// right toolchain at runtime. The password field is set to '*' so PAM account
+// checks pass without enabling password login.
+func buildSSHSetupScript(user, pubKey string) string {
+	return fmt.Sprintf(
+		"if command -v useradd >/dev/null 2>&1; then "+
+			"getent group %[1]s || groupadd %[1]s; "+
+			"id %[1]s || useradd -m -s /bin/bash -g %[1]s %[1]s; "+
+			"usermod -p '*' %[1]s; "+
+			"else "+
+			"getent group %[1]s || addgroup %[1]s; "+
+			"id %[1]s || adduser -D -s /bin/bash -G %[1]s -h /home/%[1]s %[1]s; "+
+			"printf '%%s:*' %[1]q | chpasswd -e; "+
+			"fi && "+
+			"mkdir -p /home/%[1]s/.ssh && "+
+			"chown %[1]s:%[1]s /home/%[1]s/.ssh && "+
+			"chmod 700 /home/%[1]s/.ssh && "+
+			"printf '%%s' %[2]q > /home/%[1]s/.ssh/authorized_keys && "+
+			"chown %[1]s:%[1]s /home/%[1]s/.ssh/authorized_keys && "+
+			"chmod 600 /home/%[1]s/.ssh/authorized_keys",
+		user, pubKey,
+	)
 }
 
 func (p *Contmgr) DecommissionAsset(ctx context.Context, asset Asset) error {

@@ -3,8 +3,12 @@ kind: Config
 metadata:
   name: rootenv
 build:
+  local:
+    useBuildkit: true
+  insecureRegistries:
+    - rootenv-registry:5000
   artifacts:
-    - image: docker.io/library/rootenv-backend
+    - image: rootenv-registry:5000/rootenv-backend
       context: backend
       docker:
         dockerfile: Dockerfile
@@ -16,7 +20,7 @@ build:
           after:
             - container:
                 command: ["sh", "-c", "kill -HUP 1"]
-    - image: docker.io/library/rootenv-relay-ssh
+    - image: rootenv-registry:5000/rootenv-relay-ssh
       context: relay
       docker:
         dockerfile: ./ssh/Dockerfile
@@ -24,7 +28,7 @@ build:
         manual:
           - src: '.'
             dest: '/app'
-    - image: docker.io/library/rootenv-contmgr
+    - image: rootenv-registry:5000/rootenv-contmgr
       context: contmgr
       docker:
         dockerfile: Dockerfile
@@ -32,11 +36,11 @@ build:
         manual:
           - src: '.'
             dest: '/app'
-    - image: docker.io/library/rootenv-ubuntu-sshd
+    - image: rootenv-registry:5000/rootenv-ubuntu-sshd
       context: images/ubuntu-sshd
       docker:
         dockerfile: Dockerfile
-    - image: docker.io/library/rootenv-frontend
+    - image: rootenv-registry:5000/rootenv-frontend
       context: frontend
       docker:
         dockerfile: Dockerfile.dev

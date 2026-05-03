@@ -18,7 +18,7 @@ spec:
       serviceAccountName: contmgr
       containers:
         - name: contmgr
-          image: docker.io/library/rootenv-contmgr
+          image: rootenv-registry:5000/rootenv-contmgr
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true
@@ -57,6 +57,8 @@ spec:
               value: http://backend-svc:8090
             - name: CONTMGR_POLL_INTERVAL
               value: "5s"
+            - name: CONTMGR_IMAGE_REGISTRY
+              value: "rootenv-registry:5000"
           envFrom:
             - secretRef:
                 name: contmgr-secrets

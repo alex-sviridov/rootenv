@@ -22,7 +22,7 @@ spec:
             claimName: backend-pb-data-pvc
       containers:
       - name: backend
-        image: docker.io/library/rootenv-backend
+        image: rootenv-registry:5000/rootenv-backend
         ports:
         - containerPort: 8090
         volumeMounts:

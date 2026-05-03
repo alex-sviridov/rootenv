@@ -67,7 +67,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	business := NewContmgr(pb, k8sRaw, cfg.infraNamespace, cfg.imagePullSecret, cfg.runtimeClass)
+	business := NewContmgr(pb, k8sRaw, cfg.infraNamespace, cfg.imagePullSecret, cfg.imageRegistry, cfg.runtimeClass)
 
 	if err := (&LabReconciler{
 		contmgr:      business,

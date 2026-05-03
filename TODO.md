@@ -1,4 +1,6 @@
+# frontend
 
+- add failure logic when unable to run asset
 - hide console when lab is not started
 - allow minimizing sidebar keeping minimal info
 - tabs reordering make better, more contrasted, color tabs where sever is unavailable

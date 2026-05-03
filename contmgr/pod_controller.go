@@ -37,6 +37,8 @@ func (c *PodStatusController) Reconcile(ctx context.Context, req reconcile.Reque
 		return reconcile.Result{}, nil
 	}
 
+	logPodEarlyExit(&pod)
+
 	return reconcile.Result{}, c.contmgr.UpdateAssetStatusFromPod(ctx, assetName, attemptID, string(pod.Status.Phase))
 }
 

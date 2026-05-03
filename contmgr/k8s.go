@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -442,12 +443,73 @@ func (k *K8sClient) WaitPodRunning(ctx context.Context, namespace, name string) 
 			if !ok {
 				continue
 			}
+			logPodContainerStates(pod)
 			switch pod.Status.Phase {
 			case corev1.PodRunning:
 				return nil
 			case corev1.PodFailed, corev1.PodSucceeded:
 				return fmt.Errorf("pod %s ended unexpectedly: phase=%s", name, pod.Status.Phase)
 			}
+		}
+	}
+}
+
+// logPodEarlyExit logs terminated containers with a non-zero exit code so that
+// pods that start and die immediately are visible without kubectl.
+func logPodEarlyExit(pod *corev1.Pod) {
+	images := make(map[string]string, len(pod.Spec.Containers))
+	for _, c := range pod.Spec.Containers {
+		images[c.Name] = c.Image
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		t := cs.State.Terminated
+		if t == nil {
+			t = cs.LastTerminationState.Terminated
+		}
+		if t != nil && t.ExitCode != 0 {
+			slog.Warn("pod container exited unexpectedly",
+				"pod", pod.Name,
+				"namespace", pod.Namespace,
+				"container", cs.Name,
+				"image", images[cs.Name],
+				"exit_code", t.ExitCode,
+				"reason", t.Reason,
+				"message", t.Message,
+			)
+		}
+	}
+}
+
+// logPodContainerStates emits a log line for each container that is waiting
+// (e.g. ImagePullBackOff, ErrImagePull, CrashLoopBackOff) or terminated
+// unexpectedly, so that stuck-provisioning causes are visible without kubectl.
+func logPodContainerStates(pod *corev1.Pod) {
+	// Build a name→image map from the spec for fast lookup.
+	images := make(map[string]string, len(pod.Spec.Containers))
+	for _, c := range pod.Spec.Containers {
+		images[c.Name] = c.Image
+	}
+
+	for _, cs := range pod.Status.ContainerStatuses {
+		if w := cs.State.Waiting; w != nil {
+			slog.Warn("pod container waiting",
+				"pod", pod.Name,
+				"namespace", pod.Namespace,
+				"container", cs.Name,
+				"image", images[cs.Name],
+				"reason", w.Reason,
+				"message", w.Message,
+			)
+		} else if t := cs.State.Terminated; t != nil && t.ExitCode != 0 {
+			slog.Warn("pod container terminated",
+				"pod", pod.Name,
+				"namespace", pod.Namespace,
+				"container", cs.Name,
+				"image", images[cs.Name],
+				"exit_code", t.ExitCode,
+				"reason", t.Reason,
+				"message", t.Message,
+			)
 		}
 	}
 }

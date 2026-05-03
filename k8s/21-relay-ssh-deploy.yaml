@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: relay-ssh
-        image: docker.io/library/rootenv-relay-ssh
+        image: rootenv-registry:5000/rootenv-relay-ssh
         ports:
         - containerPort: 8080
         resources:

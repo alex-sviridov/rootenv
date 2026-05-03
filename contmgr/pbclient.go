@@ -54,8 +54,6 @@ func (d *AssetDef) validate() error {
 	switch {
 	case d.Image == "":
 		return errors.New("asset def: image required")
-	case d.SSHUser == "":
-		return errors.New("asset def: ssh_user required")
 	case d.CPU == "":
 		return errors.New("asset def: cpu required")
 	case d.Memory == "":
