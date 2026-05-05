@@ -8,17 +8,23 @@ registries:
   create:
     name: rootenv-registry
     host: "0.0.0.0"
-    hostPort: "5000"
+    hostPort: "5111"
   config: |
     mirrors:
       rootenv-registry:5000:
+        endpoint:
+        - http://rootenv-registry:5000
+      localhost:5111:
         endpoint:
         - http://rootenv-registry:5000
     configs:
       rootenv-registry:5000:
         tls:
           insecureSkipVerify: true
-        auth: {}
+      localhost:5111:
+        tls:
+          insecureSkipVerify: true
+    auths: {}
 ports:
   - port: "8080:80"
     nodeFilters:

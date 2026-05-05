@@ -7,9 +7,10 @@ build:
     useBuildkit: true
   insecureRegistries:
     - rootenv-registry:5000
+    - localhost:5111
   artifacts:
     - image: rootenv-registry:5000/rootenv-backend
-      context: backend
+      context: services/backend
       docker:
         dockerfile: Dockerfile
       sync:
@@ -21,7 +22,7 @@ build:
             - container:
                 command: ["sh", "-c", "kill -HUP 1"]
     - image: rootenv-registry:5000/rootenv-relay-ssh
-      context: relay
+      context: services/relay
       docker:
         dockerfile: ./ssh/Dockerfile
       sync:
@@ -29,7 +30,7 @@ build:
           - src: '.'
             dest: '/app'
     - image: rootenv-registry:5000/rootenv-contmgr
-      context: contmgr
+      context: services/contmgr
       docker:
         dockerfile: Dockerfile
       sync:
@@ -37,11 +38,11 @@ build:
           - src: '.'
             dest: '/app'
     - image: rootenv-registry:5000/rootenv-ubuntu-sshd
-      context: images/ubuntu-sshd
+      context: labs/images/ubuntu-sshd
       docker:
         dockerfile: Dockerfile
     - image: rootenv-registry:5000/rootenv-frontend
-      context: frontend
+      context: services/frontend
       docker:
         dockerfile: Dockerfile.dev
       sync:
@@ -54,4 +55,4 @@ build:
             dest: '/app'
 manifests:
   rawYaml: 
-  - k8s/*.yaml
+  - deploy/k8s/*.yaml

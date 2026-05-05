@@ -62,5 +62,14 @@ typings/
 *.key
 *.crt
 contmgr/k8s.go
+deploy/k8s/*-secrets.yaml
 
-contmgr/contmgr
+# binaries
+bin/
+
+# claude details
+.claude/
+
+test-results/
+
+pb_data/

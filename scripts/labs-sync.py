@@ -11,8 +11,10 @@ import yaml
 
 _SLUG_RE = re.compile(r'^[A-Za-z0-9]+$')
 
-LABS_DIR = Path(__file__).parent
-ENV_FILE = LABS_DIR / ".env"
+THIS_DIR = Path(__file__).parent
+ENV_FILE = THIS_DIR / ".env"
+
+LABS_DIR: Path  # set in main() from args.path
 
 
 def load_env():
@@ -22,7 +24,6 @@ def load_env():
             if line and not line.startswith("#") and "=" in line:
                 k, v = line.split("=", 1)
                 os.environ.setdefault(k.strip(), v.strip())
-
 
 def api(token, method, path, body=None):
     url = os.environ["POCKETBASE_URL"].rstrip("/") + path.removeprefix("/api")
@@ -38,6 +39,20 @@ def api(token, method, path, body=None):
     except urllib.error.HTTPError as e:
         body = e.read()
         return e.code, json.loads(body) if body else {}
+
+
+def check_available():
+    pb_url = os.environ["POCKETBASE_URL"].rstrip("/")
+    req = urllib.request.Request(pb_url, method="HEAD")
+    try:
+        urllib.request.urlopen(req, timeout=5)
+    except urllib.error.URLError as e:
+        reason = e.reason
+        if hasattr(reason, "errno") and reason.errno == 111:
+            raise SystemExit(f"Error: PocketBase is not running at {pb_url} (connection refused)")
+        raise SystemExit(f"Error: could not reach PocketBase at {pb_url}: {e.reason}")
+    except OSError as e:
+        raise SystemExit(f"Error: could not reach PocketBase at {pb_url}: {e}")
 
 
 def authenticate():
@@ -62,21 +77,23 @@ def lab_id(lab_path: Path) -> str:
     return "_".join(rel.with_suffix("").parts)
 
 
-def collect_folders() -> list[Path]:
-    """Return all subdirectory paths under LABS_DIR, sorted (parents before children)."""
+def collect_folders(directory) -> list[Path]:
+    """Return all subdirectory paths under directory, sorted (parents before children)."""
+    path = Path(directory)
     folders = sorted(
-        p for p in LABS_DIR.rglob("*")
-        if p.is_dir() and not any(part.startswith(".") for part in p.relative_to(LABS_DIR).parts)
+        p for p in path.rglob("*")
+        if p.is_dir() and not any(part.startswith(".") for part in p.relative_to(path).parts)
     )
     return folders
 
 
-def collect_labs() -> list[Path]:
+def collect_labs(directory) -> list[Path]:
     """Return all lab YAML files (excludes index.yaml)."""
+    path = Path(directory)
     return sorted(
-        p for p in LABS_DIR.rglob("*.yaml")
+        p for p in path.rglob("*.yaml")
         if p.name != "index.yaml"
-        and not any(part.startswith(".") for part in p.relative_to(LABS_DIR).parts)
+        and not any(part.startswith(".") for part in p.relative_to(path).parts)
     )
 
 
@@ -227,12 +244,19 @@ def fetch_all_ids(token, collection) -> set[str]:
 
 
 def main():
+    global LABS_DIR
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--verify", action="store_true", help="validate files without syncing")
+    parser.add_argument("path", help="Path to lab definitions folder")
     args = parser.parse_args()
 
-    folders = collect_folders()
-    labs = collect_labs()
+    LABS_DIR = Path(args.path).resolve()
+    if not LABS_DIR.is_dir():
+        raise SystemExit(f"Error: '{LABS_DIR}' is not a directory")
+
+    folders = collect_folders(LABS_DIR)
+    labs = collect_labs(LABS_DIR)
 
     print(f"Validating {len(folders)} folder(s) and {len(labs)} lab(s)...")
     results = [validate_folder(p) for p in folders] + [validate_lab(p) for p in labs]
@@ -250,6 +274,7 @@ def main():
         if not os.environ.get(var):
             raise SystemExit(f"Missing env var: {var}")
 
+    check_available()
     token = authenticate()
 
     print(f"\nUploading {len(folders)} folder(s)...")

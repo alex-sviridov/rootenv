@@ -1,7 +1,11 @@
-migr-sync:
-	./backend/pull-migrations.sh
 
-dev:
+skaffold-run:
+	skaffold run --cleanup=false
+
+k3d-run:
+	k3d cluster start rootenv
+
+dev: k3d-run
 	skaffold dev --cleanup=false
 
 # Recreate the k3d cluster, fix the containerd registry config, push all images,
@@ -13,7 +17,7 @@ cluster:
 	$(MAKE) fix-registry
 	skaffold build
 	$(MAKE) push-latest
-	kubectl apply -f k8s/
+	kubectl apply -f deploy/k8s/
 
 # Patch the hosts.toml that k3s auto-generates with https — must use http for the local registry.
 # Re-run this if pods get "http: server gave HTTP response to HTTPS client".
@@ -36,10 +40,4 @@ push-latest:
 	done
 
 labs-sync:
-	python3 labs/sync.py
-
-test:
-	cd frontend && npm run test:unit 
-
-test-e2e:
-	cd frontend && npm run test:e2e 
+	python3 ./scripts/labs-sync.py labs/definitions/
