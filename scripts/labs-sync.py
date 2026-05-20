@@ -46,6 +46,8 @@ def check_available():
     req = urllib.request.Request(pb_url, method="HEAD")
     try:
         urllib.request.urlopen(req, timeout=5)
+    except urllib.error.HTTPError:
+        pass  # any HTTP response means PocketBase is up
     except urllib.error.URLError as e:
         reason = e.reason
         if hasattr(reason, "errno") and reason.errno == 111:

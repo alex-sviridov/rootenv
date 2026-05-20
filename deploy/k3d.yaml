@@ -5,22 +5,12 @@ metadata:
 servers: 1
 agents: 0
 registries:
-  create:
-    name: rootenv-registry
-    host: "0.0.0.0"
-    hostPort: "5111"
   config: |
     mirrors:
-      rootenv-registry:5000:
-        endpoint:
-        - http://rootenv-registry:5000
       localhost:5111:
         endpoint:
-        - http://rootenv-registry:5000
+        - http://localhost:30511
     configs:
-      rootenv-registry:5000:
-        tls:
-          insecureSkipVerify: true
       localhost:5111:
         tls:
           insecureSkipVerify: true
@@ -29,6 +19,9 @@ ports:
   - port: "8080:80"
     nodeFilters:
       - loadbalancer
+  - port: "5111:30511"
+    nodeFilters:
+      - server:0
 options:
   k3s:
     extraArgs:

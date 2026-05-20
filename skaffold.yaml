@@ -6,10 +6,10 @@ build:
   local:
     useBuildkit: true
   insecureRegistries:
-    - rootenv-registry:5000
+    - localhost:5111
     - localhost:5111
   artifacts:
-    - image: rootenv-registry:5000/rootenv-backend
+    - image: localhost:5111/rootenv-backend
       context: services/backend
       docker:
         dockerfile: Dockerfile
@@ -21,7 +21,7 @@ build:
           after:
             - container:
                 command: ["sh", "-c", "kill -HUP 1"]
-    - image: rootenv-registry:5000/rootenv-relay-ssh
+    - image: localhost:5111/rootenv-relay-ssh
       context: services/relay
       docker:
         dockerfile: ./ssh/Dockerfile
@@ -29,7 +29,7 @@ build:
         manual:
           - src: '.'
             dest: '/app'
-    - image: rootenv-registry:5000/rootenv-contmgr
+    - image: localhost:5111/rootenv-contmgr
       context: services/contmgr
       docker:
         dockerfile: Dockerfile
@@ -37,11 +37,11 @@ build:
         manual:
           - src: '.'
             dest: '/app'
-    - image: rootenv-registry:5000/rootenv-ubuntu-sshd
+    - image: localhost:5111/rootenv-ubuntu-sshd
       context: labs/images/ubuntu-sshd
       docker:
         dockerfile: Dockerfile
-    - image: rootenv-registry:5000/rootenv-frontend
+    - image: localhost:5111/rootenv-frontend
       context: services/frontend
       docker:
         dockerfile: Dockerfile.dev

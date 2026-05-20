@@ -111,7 +111,7 @@ environment:
     - name: server-0
       cpu: 200m 
       platform: container
-      image: hermsi/alpine-sshd
+      image: rootenv-registry:5000/rootenv-ubuntu-sshd
       ssh_user: lab
       memory: 128MB
       disk: 5GB
@@ -120,7 +120,7 @@ environment:
     - name: server-1
       cpu: 200m 
       platform: container
-      image: hermsi/alpine-sshd
+      image: rootenv-ubuntu-sshd
       ssh_user: lab
       memory: 128MB
       disk: 5GB

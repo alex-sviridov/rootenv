@@ -31,6 +31,12 @@ spec:
         env:
         - name: PB_ORIGINS
           value: "*"
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 8090
+          initialDelaySeconds: 5
+          periodSeconds: 10
         resources:
           requests:
             memory: "128Mi"

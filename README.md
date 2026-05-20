@@ -40,7 +40,7 @@ graph LR
 ## Tech stack
 
 - **Kubernetes** — orchestration and isolation primitives (namespaces, NetworkPolicies, RBAC, ResourceQuotas)
-- **Go** — `contmgr` and `relay` services [CHECK — really Go?]
+- **Go** — `contmgr` and `relay` services
 - **PocketBase** — `backend` (embedded DB + REST API)
 - **Vue.js** — `frontend` (JS)
 - **Skaffold + k3d** — local development workflow
@@ -50,20 +50,49 @@ graph LR
 Prerequisites: Docker, [k3d](https://k3d.io), [Skaffold](https://skaffold.dev), `kubectl`, `make`.
 
 ```bash
-# Create local cluster
-k3d cluster create --config k3d.yaml
+# Create cluster, start in-cluster registry, build and push all images, apply manifests
+make cluster
 
-# Run platform with hot reload
-skaffold dev
+# Seed the database: create superuser and service accounts
+make dbusers-init
 
 # Load lab definitions into the backend
-make load-labs
+make labs-sync
 
 # Open the UI
-open http://localhost:[CHECK port]
+open http://localhost:8080
 ```
 
-See [docs/development.md](docs/development.md) for detailed development setup.
+After a cluster restart (e.g. after a reboot), just start it back up — no rebuild needed:
+
+```bash
+make k3d-run
+```
+
+For active development with hot reload:
+
+```bash
+make dev   # starts the cluster then runs skaffold dev
+```
+
+### Image registry
+
+The platform uses a private registry running inside the cluster (`registry:2`).
+Images are stored on a PersistentVolume and survive pod restarts.
+
+| | URL |
+|---|---|
+| Push from host | `localhost:5111` |
+| Pull inside cluster | `rootenv-registry:5000` |
+
+```bash
+# See what's in the registry
+curl -s http://localhost:5111/v2/_catalog
+
+# Rebuild and push all images after a code change
+skaffold build
+make push-latest
+```
 
 ## Repository layout
 
@@ -76,7 +105,8 @@ See [docs/development.md](docs/development.md) for detailed development setup.
 │   └── images/      # Dockerfiles for lab base images
 ├── scripts/         # operational scripts
 ├── docs/            # architecture and operational documentation
-└── skaffold.yaml    # development workflow
+├── skaffold.yaml    # development workflow
+└── scripts/         # management scripts and goodies
 ```
 
 ## Status
@@ -88,16 +118,17 @@ This is an active personal project exploring patterns in self-service infrastruc
 - Single-cluster deployment; no HA control plane
 - Namespace-level isolation only (no VM-grade boundaries — labs must be considered semi-trusted)
 - No persistent state for labs across restarts
-- [CHECK — что ещё знаешь честно]
+- Images lost on full cluster recreate (`make cluster`) — re-push with `skaffold build && make push-latest`
 
 ## Roadmap
 
 Tracked in [GitHub Issues](../../issues). Major directions:
 
+- VM-based labs with Kata Containers
+- Lab content for variosus certification tracks
 - Hybrid deployment model: on-prem Kubernetes runtime with AWS-based backup, observability, and DR
 - Terraform modules for repeatable infrastructure provisioning
 - Centralized observability via Prometheus + Grafana
-- Lab content for additional certification tracks
 
 ## License
 

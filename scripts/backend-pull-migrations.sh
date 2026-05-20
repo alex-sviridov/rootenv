@@ -8,7 +8,7 @@ if [ -z "$POD" ]; then
   exit 1
 fi
 
-kubectl cp $POD:/app/pb_migrations ./pb_migrations  -n rootenv-infra
+kubectl cp $POD:/app/pb_migrations ../backend/pb_migrations  -n rootenv-infra
 
 if [ $? -ne 0 ]; then
   echo "Failed to pull migrations from the backend pod."
