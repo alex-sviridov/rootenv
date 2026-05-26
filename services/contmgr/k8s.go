@@ -29,6 +29,13 @@ var podWatchTimeoutSec = int64(120)
 
 func boolPtr(b bool) *bool { return &b }
 
+func pullPolicy(s string) corev1.PullPolicy {
+	if s == "" {
+		return corev1.PullIfNotPresent
+	}
+	return corev1.PullPolicy(s)
+}
+
 // k8sDoer is the Kubernetes operations contmgr needs.
 type k8sDoer interface {
 	EnsureNamespace(ctx context.Context, p NamespaceParams) error
@@ -66,6 +73,7 @@ type PodParams struct {
 	AttemptID       string
 	AssetName       string
 	Image           string
+	ImagePullPolicy string
 	SSHUser         string
 	CPU             string // e.g. "1" or "500m"
 	Memory          string // e.g. "512MB"
@@ -364,7 +372,7 @@ func (k *K8sClient) CreatePod(ctx context.Context, p PodParams) error {
 			Containers: []corev1.Container{{
 				Name:            p.AssetName,
 				Image:           p.Image,
-				ImagePullPolicy: corev1.PullIfNotPresent,
+				ImagePullPolicy: pullPolicy(p.ImagePullPolicy),
 				Resources: corev1.ResourceRequirements{
 					Limits:   limits,
 					Requests: requests,

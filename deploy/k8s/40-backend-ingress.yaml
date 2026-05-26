@@ -4,7 +4,7 @@ metadata:
   name: backend-ingress
   namespace: rootenv-infra
   annotations:
-    kubernetes.io/ingress.class: traefik
+    spec.ingressClassName: traefik
     traefik.ingress.kubernetes.io/router.entrypoints: web
 spec:
   rules:

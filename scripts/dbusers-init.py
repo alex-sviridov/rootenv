@@ -24,8 +24,8 @@ NAMESPACE = "rootenv-infra"
 BACKEND_SVC = "http://localhost:8080"
 
 SVC_ACCOUNTS = [
-    {"secret": "contmgr-secrets", "email_key": "CONTMGR_BACKEND_USERNAME", "password_key": "CONTMGR_BACKEND_PASSWORD", role: "contmgr"},
-    {"secret": "relay-secrets",   "email_key": "RELAY_BACKEND_USERNAME",   "password_key": "RELAY_BACKEND_PASSWORD", role: "relay"},
+    {"secret": "contmgr-secrets", "email_key": "CONTMGR_BACKEND_USERNAME", "password_key": "CONTMGR_BACKEND_PASSWORD", "role": "contmgr"},
+    {"secret": "relay-secrets",   "email_key": "RELAY_BACKEND_USERNAME",   "password_key": "RELAY_BACKEND_PASSWORD", "role": "relay"},
 ]
 
 

@@ -111,7 +111,7 @@ environment:
     - name: server-0
       cpu: 200m 
       platform: container
-      image: rootenv-registry:5000/rootenv-ubuntu-sshd
+      image: rootenv-ubuntu-sshd
       ssh_user: lab
       memory: 128MB
       disk: 5GB

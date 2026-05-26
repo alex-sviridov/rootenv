@@ -18,7 +18,8 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: rootenv-registry:5000/rootenv-frontend
+        image: rootenv-frontend
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5173
         resources:

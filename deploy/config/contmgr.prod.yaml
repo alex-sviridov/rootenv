@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: contmgr-config
+  namespace: rootenv-infra
+data:
+  CONTMGR_IMAGE_REGISTRY: "ghcr.io/alex-sviridov/rootenv"
+  CONTMGR_BACKEND_URL: "http://backend-svc:8090"
+  CONTMGR_POLL_INTERVAL: "5s"

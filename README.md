@@ -50,11 +50,15 @@ graph LR
 Prerequisites: Docker, [k3d](https://k3d.io), [Skaffold](https://skaffold.dev), `kubectl`, `make`.
 
 ```bash
-# Create cluster, start in-cluster registry, build and push all images, apply manifests
-make cluster
+# Create cluster, apply manifests
+make dev-cluster
 
 # Seed the database: create superuser and service accounts
 make dbusers-init
+
+# Build lab images
+
+make labs-build
 
 # Load lab definitions into the backend
 make labs-sync
@@ -73,25 +77,6 @@ For active development with hot reload:
 
 ```bash
 make dev   # starts the cluster then runs skaffold dev
-```
-
-### Image registry
-
-The platform uses a private registry running inside the cluster (`registry:2`).
-Images are stored on a PersistentVolume and survive pod restarts.
-
-| | URL |
-|---|---|
-| Push from host | `localhost:5111` |
-| Pull inside cluster | `rootenv-registry:5000` |
-
-```bash
-# See what's in the registry
-curl -s http://localhost:5111/v2/_catalog
-
-# Rebuild and push all images after a code change
-skaffold build
-make push-latest
 ```
 
 ## Repository layout

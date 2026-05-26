@@ -18,7 +18,7 @@ spec:
       serviceAccountName: contmgr
       containers:
         - name: contmgr
-          image: rootenv-registry:5000/rootenv-contmgr
+          image: rootenv-contmgr
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true
@@ -52,13 +52,8 @@ spec:
               port: 8081
             initialDelaySeconds: 5
             periodSeconds: 10
-          env:
-            - name: CONTMGR_BACKEND_URL
-              value: http://backend-svc:8090
-            - name: CONTMGR_POLL_INTERVAL
-              value: "5s"
-            - name: CONTMGR_IMAGE_REGISTRY
-              value: "rootenv-registry:5000"
           envFrom:
+            - configMapRef:
+                name: contmgr-config
             - secretRef:
                 name: contmgr-secrets

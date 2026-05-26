@@ -4,24 +4,10 @@ metadata:
   name: rootenv
 servers: 1
 agents: 0
-registries:
-  config: |
-    mirrors:
-      localhost:5111:
-        endpoint:
-        - http://localhost:30511
-    configs:
-      localhost:5111:
-        tls:
-          insecureSkipVerify: true
-    auths: {}
 ports:
   - port: "8080:80"
     nodeFilters:
       - loadbalancer
-  - port: "5111:30511"
-    nodeFilters:
-      - server:0
 options:
   k3s:
     extraArgs:

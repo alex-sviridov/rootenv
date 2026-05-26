@@ -22,7 +22,8 @@ spec:
             claimName: backend-pb-data-pvc
       containers:
       - name: backend
-        image: rootenv-registry:5000/rootenv-backend
+        image: rootenv-backend
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8090
         volumeMounts:
