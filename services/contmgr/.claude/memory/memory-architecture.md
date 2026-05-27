@@ -32,8 +32,8 @@ Each attempt gets its own namespace `rootenv-lab-{attemptID}`.
 6. Generates Ed25519 keypair
 7. Creates Pod `{assetName}` and Service `{assetName}-svc` in `rootenv-lab-{attemptID}`
 8. Waits for pod phase `Running`
-9. Injects public key via pod exec: writes to `/home/{ssh_user}/.ssh/authorized_keys`
-10. Fetches `keys` record → encrypts private key → patches `keys.key_encrypted`
+9. If `ssh_user` is set: injects public key via pod exec (writes `/home/{ssh_user}/.ssh/authorized_keys`), encrypts private key → patches `keys.key_encrypted`
+10. If `setup` script is defined: runs it via pod exec (`sh -c <setup>`) — this is k8s exec, not SSH
 11. Patches `assets_configs.connection` (host = service DNS, port = 22) + `.configuration` (namespace, pod, svc) → patches `assets.state=provisioned`
 
 ## NetworkPolicy (simplified)
@@ -68,6 +68,8 @@ The relay dials this host:port directly — no port forwarding or host IP needed
 ## ContMgr Never Dials SSH
 ContMgr communicates with pods exclusively through the Kubernetes API (pod phase polling + exec).
 It does not dial port 22 on the service or the pod IP. Only the relay does.
+SSH (`ssh_user`) is optional — a lab YAML without `ssh_user` still provisions and runs setup scripts fine.
+`PermitRootLogin yes` is NOT required in sshd_config; setup scripts run as container root via k8s exec, not SSH.
 
 ## Controller-Runtime Architecture (current)
 

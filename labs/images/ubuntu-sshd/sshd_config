@@ -16,7 +16,7 @@ PermitEmptyPasswords no
 
 # Users are created as unprivileged (uid 1000) but the lab content requires
 # root-equivalent operations. Allow root login for contmgr exec (setup scripts).
-PermitRootLogin yes
+PermitRootLogin no
 
 # Keep connections alive through the relay.
 ClientAliveInterval 30
