@@ -13,7 +13,7 @@ import (
 	"github.com/alexsviridov/linuxlab/relay/pkg/pbclient"
 	"github.com/alexsviridov/linuxlab/relay/pkg/relaybase"
 	gossh "golang.org/x/crypto/ssh"
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 )
 
 // maxMessageBytes is the read limit per WebSocket message.
@@ -182,7 +182,7 @@ func (h *SSHHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = conn.Close(websocket.StatusInternalError, "ssh unavailable")
 		return
 	}
-	defer sshClient.Close()
+	defer func() { _ = sshClient.Close() }()
 
 	session, sshStdin, sshStdout, err := openShellWithPipes(sshClient, h.Metrics)
 	if err != nil {
@@ -190,7 +190,7 @@ func (h *SSHHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = conn.Close(websocket.StatusInternalError, "ssh unavailable")
 		return
 	}
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()

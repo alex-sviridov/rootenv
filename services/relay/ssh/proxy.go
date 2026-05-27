@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 )
 
 const (
@@ -68,7 +68,7 @@ func runProxy(
 
 	// closeReason tracks why the connection is closing.
 	var closeReasonMu sync.Mutex
-	var closeReason string = "normal"
+	closeReason := "normal"
 	setCloseReason := func(reason string) {
 		closeReasonMu.Lock()
 		if closeReason == "normal" {

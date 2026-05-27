@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 )
 
 // proxyHarness holds all the moving parts of a proxied session.
@@ -58,7 +58,7 @@ func newProxyHarnessWithFn(t *testing.T, cfg proxyConfig, windowChangeFn func(ro
 	}))
 	t.Cleanup(func() {
 		proxyCancel()
-		sshStdoutW.Close()
+		_ = sshStdoutW.Close()
 		srv.Close()
 	})
 

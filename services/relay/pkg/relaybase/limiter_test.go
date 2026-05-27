@@ -74,17 +74,17 @@ func TestConnLimiter_total(t *testing.T) {
 		t.Errorf("want total=0 initially, got %d", got)
 	}
 
-	l.Acquire("u1")
+	_ = l.Acquire("u1")
 	if got := l.Total(); got != 1 {
 		t.Errorf("want total=1 after acquire, got %d", got)
 	}
 
-	l.Acquire("u1")
+	_ = l.Acquire("u1")
 	if got := l.Total(); got != 2 {
 		t.Errorf("want total=2 after second acquire, got %d", got)
 	}
 
-	l.Acquire("u2")
+	_ = l.Acquire("u2")
 	if got := l.Total(); got != 3 {
 		t.Errorf("want total=3 with different user, got %d", got)
 	}

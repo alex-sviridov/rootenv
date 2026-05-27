@@ -88,24 +88,24 @@ func openShellWithPipes(client *gossh.Client, m *SSHMetrics) (*gossh.Session, io
 		gossh.TTY_OP_OSPEED: 14400,
 	}
 	if err := session.RequestPty("xterm-256color", 24, 80, modes); err != nil {
-		session.Close()
+		_ = session.Close()
 		return nil, nil, nil, fmt.Errorf("request pty: %w", err)
 	}
 
 	// Get pipes before calling Shell().
 	stdin, err := session.StdinPipe()
 	if err != nil {
-		session.Close()
+		_ = session.Close()
 		return nil, nil, nil, fmt.Errorf("stdin pipe: %w", err)
 	}
 	stdout, err := session.StdoutPipe()
 	if err != nil {
-		session.Close()
+		_ = session.Close()
 		return nil, nil, nil, fmt.Errorf("stdout pipe: %w", err)
 	}
 
 	if err := session.Shell(); err != nil {
-		session.Close()
+		_ = session.Close()
 		return nil, nil, nil, fmt.Errorf("start shell: %w", err)
 	}
 	if m != nil {
