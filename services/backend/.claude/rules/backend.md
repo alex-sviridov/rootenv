@@ -27,13 +27,13 @@
 Mock only — hooks immediately advance state without real cloud calls.
 
 ## Memory Maintenance
-At the start of any backend work, read `/home/alex/linuxlab/backend/.claude/memory/MEMORY.md`.
+At the start of any backend work, read `services/backend/.claude/memory/MEMORY.md`.
 Write immediately when a decision, invariant, or preference is discovered — not at session end:
-- Architecture invariant → `/home/alex/linuxlab/backend/.claude/memory/memory-architecture.md`
-- Implementation decision → `/home/alex/linuxlab/backend/.claude/memory/memory-decisions.md`
-- Coding style or workflow preference → `/home/alex/linuxlab/backend/.claude/memory/memory-preferences.md`
-Only write to this module's memory. Cross-module concerns go to `/home/alex/linuxlab/.claude/memory/`.
-When any collection schema changes, also update `/home/alex/linuxlab/.claude/memory/memory-backend.md` — other modules depend on it.
+- Architecture invariant → `services/backend/.claude/memory/memory-architecture.md`
+- Implementation decision → `services/backend/.claude/memory/memory-decisions.md`
+- Coding style or workflow preference → `services/backend/.claude/memory/memory-preferences.md`
+Only write to this module's memory. Cross-module concerns go to `.claude/memory/`.
+When any collection schema changes, also update `.claude/memory/memory-backend.md` — other modules depend on it.
 
 ## Dockerfiles
 - `Dockerfile` — production; `Dockerfile.dev` — dev with mounted data dir

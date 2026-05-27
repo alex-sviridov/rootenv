@@ -84,12 +84,12 @@ Applied per namespace (idempotent), named `allow-relay`:
 - Credentials via `contmgr-secrets` Secret (CONTMGR_BACKEND_USERNAME, CONTMGR_BACKEND_PASSWORD, optionally CONTMGR_IMAGE_PULL_SECRET)
 
 ## Memory Maintenance
-At the start of any contmgr work, read `/home/alex/linuxlab/contmgr/.claude/memory/MEMORY.md`.
+At the start of any contmgr work, read `services/contmgr/.claude/memory/MEMORY.md`.
 Write immediately when a decision, invariant, or preference is discovered — not at session end:
-- Architecture invariant → `/home/alex/linuxlab/contmgr/.claude/memory/memory-architecture.md`
-- Implementation decision → `/home/alex/linuxlab/contmgr/.claude/memory/memory-decisions.md`
-- Coding style or workflow preference → `/home/alex/linuxlab/contmgr/.claude/memory/memory-preferences.md`
-Only write to this module's memory. Cross-module concerns go to `/home/alex/linuxlab/.claude/memory/`.
+- Architecture invariant → `services/contmgr/.claude/memory/memory-architecture.md`
+- Implementation decision → `services/contmgr/.claude/memory/memory-decisions.md`
+- Coding style or workflow preference → `services/contmgr/.claude/memory/memory-preferences.md`
+Only write to this module's memory. Cross-module concerns go to `.claude/memory/`.
 When the encryption scheme or PocketBase API contract changes, update memory-architecture.md — relay depends on it.
 
 ## Dockerfiles

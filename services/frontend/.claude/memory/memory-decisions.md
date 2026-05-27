@@ -33,5 +33,11 @@ All tab panels are mounted once and toggled with `v-show` so the WebSocket conne
 ## xterm.js integration
 `@xterm/xterm` + `@xterm/addon-fit` for terminal rendering. Status messages (connecting, errors, disconnection) are written to the terminal buffer itself via `terminal.writeln()` — not HTML overlays — so they render like real terminal output. WebSocket binary frames are passed as `Uint8Array` to `terminal.write()`. `FitAddon` resizes the terminal to fill its container; `ResizeObserver` on the terminal DOM element ensures fit updates when the sidebar/panels resize. `cursorBlink: true`, `cursorStyle: 'block'`, `fontSize: 12` with Tailwind slate theme.
 
+## Canonical container port: 8080
+Both dev (Vite `--port 8080`) and prod (nginx-unprivileged) run on 8080. All k8s manifests (Deployment containerPort, Service, Ingress) and skaffold use 8080. Never use 5173 in manifests — that was the old default before alignment.
+
+## Production Dockerfile: nginxinc/nginx-unprivileged + explicit USER
+`Dockerfile` uses `nginxinc/nginx-unprivileged:alpine` (runs as uid 101 by default). `USER nginx` must be declared explicitly even though the image already sets it — static scanners (Trivy/Hadolint DS-0002) check for the instruction in the file, not the runtime user.
+
 ## Test mocking strategy
 API tests mock `@/lib/pb` directly. Store tests mock `@/api/*`. Using `vi.hoisted()` for mock variables referenced inside `vi.mock()` factories.

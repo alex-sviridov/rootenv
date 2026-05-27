@@ -40,7 +40,12 @@ vi.mock('@xterm/addon-fit', () => {
   return { FitAddon: MockFitAddon }
 })
 
-import { useRelayConnection } from '../useSshRelayConnection'
+vi.mock('@xterm/addon-web-links', () => {
+  class MockWebLinksAddon {}
+  return { WebLinksAddon: MockWebLinksAddon }
+})
+
+import { useSshRelayConnection as useRelayConnection } from '../useSshRelayConnection'
 
 // Minimal WebSocket mock
 class MockWebSocket {
@@ -120,7 +125,7 @@ describe('health check passes', () => {
     await flushPromises()
 
     expect(MockWebSocket.lastInstance).not.toBeNull()
-    expect(MockWebSocket.lastInstance.url).toBe('ws://localhost:8080/relay/server1/')
+    expect(MockWebSocket.lastInstance.url).toBe('ws://localhost:8080/relay/ssh/server1/')
     expect(MockWebSocket.lastInstance.url).not.toContain('token')
     unmount()
   })
@@ -227,7 +232,7 @@ describe('cleanup on unmount', () => {
   it('closes WebSocket with code 1000 when unmounted while open', async () => {
     fetch.mockResolvedValue({ ok: true })
 
-    const { result, unmount } = withSetup(() => useRelayConnection('server1'))
+    const { unmount } = withSetup(() => useRelayConnection('server1'))
     await flushPromises()
 
     MockWebSocket.lastInstance.readyState = MockWebSocket.OPEN
@@ -239,7 +244,7 @@ describe('cleanup on unmount', () => {
   it('does not close WebSocket when already closing', async () => {
     fetch.mockResolvedValue({ ok: true })
 
-    const { result, unmount } = withSetup(() => useRelayConnection('server1'))
+    const { unmount } = withSetup(() => useRelayConnection('server1'))
     await flushPromises()
 
     MockWebSocket.lastInstance.readyState = MockWebSocket.CLOSING

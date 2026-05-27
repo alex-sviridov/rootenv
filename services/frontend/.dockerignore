@@ -1,1 +1,7 @@
-.env
+node_modules
+dist
+.eslintcache
+test-results
+Dockerfile*
+.dockerignore
+Makefile

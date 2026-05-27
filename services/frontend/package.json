@@ -8,7 +8,6 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:unit": "vitest",
-    "test:e2e": "playwright test --reporter=line",
     "lint": "run-s lint:*",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
@@ -30,7 +29,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.59.1",
     "@vitejs/plugin-vue": "^6.0.5",
     "@vitest/eslint-plugin": "^1.6.13",
     "@vue/test-utils": "^2.4.6",
@@ -44,7 +42,6 @@
     "oxlint": "~1.57.0",
     "prettier": "3.8.1",
     "vite": "^8.0.3",
-    "vite-plugin-vue-devtools": "^8.1.1",
     "vitest": "^4.1.2"
   },
   "engines": {

@@ -28,16 +28,17 @@ const visibleProtocols = (server) =>
       />
       <span class="text-xs font-medium text-slate-200 truncate flex-1">{{ server.name }}</span>
 
-      <button
-          v-if="server.state === 'provisioned'"
-          v-for="(protocol, i) in visibleProtocols(server)"
-          :key="protocol"
-          class="text-xs font-medium px-1.5 py-0.5 rounded transition-colors"
-          :class="protocol === 'ssh'
-            ? 'bg-yellow-500/15 text-yellow-400 hover:bg-yellow-500/25'
-            : 'bg-slate-700 text-slate-300 hover:bg-slate-600'"
-          @click="$emit('open-tab', { server, protocol })"
-        >{{ protocol }}</button>
+      <template v-if="server.state === 'provisioned'">
+        <button
+            v-for="protocol in visibleProtocols(server)"
+            :key="protocol"
+            class="text-xs font-medium px-1.5 py-0.5 rounded transition-colors"
+            :class="protocol === 'ssh'
+              ? 'bg-yellow-500/15 text-yellow-400 hover:bg-yellow-500/25'
+              : 'bg-slate-700 text-slate-300 hover:bg-slate-600'"
+            @click="$emit('open-tab', { server, protocol })"
+          >{{ protocol }}</button>
+      </template>
 
       <span
         v-if="server.state === 'pending' || server.state === 'provisioning'"

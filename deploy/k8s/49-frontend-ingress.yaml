@@ -16,6 +16,6 @@ spec:
           service:
             name: frontend-svc
             port:
-              number: 5173
+              number: 8080
 status:
   loadBalancer: {}
