@@ -1,0 +1,110 @@
+meta:
+  title: User and Group Management
+  description: Practice creating and managing users, groups, and passwords — core RHCSA exam objectives.
+
+content:
+  - title: Create and Delete Users
+    content: |
+      `useradd` creates a new user; `userdel` removes one.
+
+      ```bash
+      # Create user with home directory
+      useradd -m alice
+
+      # Verify
+      id alice
+      grep alice /etc/passwd
+
+      # Delete user and home directory
+      userdel -r alice
+      ```
+
+      **Task:** Create user `carol` with a home directory, then confirm the entry exists in `/etc/passwd`.
+
+  - title: Set and Expire Passwords
+    content: |
+      `passwd` sets a password; `chage` controls password aging policy.
+
+      ```bash
+      # Set password interactively
+      passwd carol
+
+      # Force password change on next login
+      chage -d 0 carol
+
+      # Set password to expire in 90 days
+      chage -M 90 carol
+
+      # View aging info
+      chage -l carol
+      ```
+
+      **Task:** Set a password for `carol`, then configure her password to expire in 60 days with a minimum age of 7 days (`-m 7`).
+
+  - title: Create and Manage Groups
+    content: |
+      `groupadd` creates groups; `usermod` assigns users to them.
+
+      ```bash
+      # Create a group
+      groupadd developers
+
+      # Add carol to the group (supplementary)
+      usermod -aG developers carol
+
+      # Verify
+      id carol
+      grep developers /etc/group
+      ```
+
+      **Task:** Create group `ops`, then add `carol` to it. Confirm with `id carol`.
+
+  - title: Primary vs Supplementary Groups
+    content: |
+      Every user has one *primary* group (used for new file ownership) and zero or more *supplementary* groups.
+
+      ```bash
+      # Change primary group
+      usermod -g ops carol
+
+      # View all groups for a user
+      groups carol
+
+      # Switch active group in current session
+      newgrp developers
+      ```
+
+      **Task:** Change `carol`'s primary group to `ops`, create `/tmp/carol-file` as `carol`, and verify the file's group with `ls -l`.
+
+  - title: Restrict Login with Shell and Lock
+    content: |
+      Service accounts should not have interactive login access. User accounts can be temporarily locked.
+
+      ```bash
+      # Create a no-login service account
+      useradd -r -s /sbin/nologin appuser
+
+      # Lock an existing account
+      usermod -L carol
+
+      # Unlock
+      usermod -U carol
+
+      # Verify lock (look for '!' in password field)
+      grep carol /etc/shadow
+      ```
+
+      **Task:** Lock `carol`'s account, verify the `!` prefix in `/etc/shadow`, then unlock it.
+
+environment:
+  duration: 60
+  assets:
+    - name: server-0
+      image: rootenv-ubuntu-sshd
+      platform: container
+      ssh_user: lab
+      cpu: 100m
+      memory: 128MB
+      disk: 5GB
+      relay_protocols:
+        - ssh

@@ -1,0 +1,29 @@
+Port 22
+AddressFamily any
+ListenAddress 0.0.0.0
+
+# Host keys are generated at container startup by entrypoint.sh (ssh-keygen -A).
+HostKey /etc/ssh/ssh_host_rsa_key
+HostKey /etc/ssh/ssh_host_ecdsa_key
+HostKey /etc/ssh/ssh_host_ed25519_key
+
+# Contmgr injects the authorized_keys after the pod reaches Running phase.
+# Password auth is disabled; key-only access.
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+PasswordAuthentication no
+PermitEmptyPasswords no
+
+# Users are created as unprivileged (uid 1000) but the lab content requires
+# root-equivalent operations. Allow root login for contmgr exec (setup scripts).
+PermitRootLogin yes
+
+# Keep connections alive through the relay.
+ClientAliveInterval 30
+ClientAliveCountMax 10
+
+# Misc hardening.
+X11Forwarding no
+AllowTcpForwarding yes
+PrintMotd no
+AcceptEnv LANG LC_*

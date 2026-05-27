@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: frontend
+  name: frontend
+  namespace: rootenv-infra
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: rootenv-frontend
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5173
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        envFrom:
+        - configMapRef:
+            name: frontend-config
+status: {}

@@ -1,5 +1,0 @@
-[build]
-  cmd = "go build -o ./tmp/relay ."
-  bin = "./tmp/relay"
-  include_ext = ["go", "mod"]
-  exclude_dir = ["tmp"]

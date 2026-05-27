@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: backend
+  name: backend
+  namespace: rootenv-infra
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      volumes:
+        - name: pb-storage
+          persistentVolumeClaim:
+            claimName: backend-pb-data-pvc
+      containers:
+      - name: backend
+        image: rootenv-backend
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8090
+        volumeMounts:
+        - name: pb-storage
+          mountPath: /app/pb_data
+        env:
+        - name: PB_ORIGINS
+          value: "*"
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 8090
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+status: {}

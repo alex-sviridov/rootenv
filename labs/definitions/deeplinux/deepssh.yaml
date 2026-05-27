@@ -1,0 +1,1083 @@
+meta:
+  title: SSH в глубину — построение инфраструктуры доступа на сертификатах
+  description: |
+    Построение реальной SSH-инфраструктуры корпоративного уровня:
+    собственный CA для подписи host- и user-сертификатов, единая точка входа
+    через bastion, разграничение прав через principals и Match-блоки,
+    отзыв скомпрометированных сертификатов через KRL.
+
+    К концу лабы у вас будет рабочая мини-инфраструктура, которую можно
+    переносить в реальные проекты, и понимание модели доверия SSH целиком,
+    а не отдельных опций sshd_config.
+
+content:
+  - title: Введение — что не так с паролями и known_hosts
+    content: |
+      Вы — новый SRE в небольшой компании. Предыдущий администратор держал
+      всё на парольной аутентификации и `authorized_keys`, разбросанных по
+      хостам. Ваша задача — построить нормальную инфраструктуру доступа.
+
+      В вашем распоряжении четыре хоста:
+
+      - `workstation` — ваша рабочая машина, вы сейчас на ней.
+      - `ca-host` — отдельный сервер для центра сертификации.
+      - `bastion` — будущая единая точка входа во внутреннюю сеть.
+      - `app-1` — внутренний сервер с приложением.
+
+      На workstation в `~/.ssh/` уже лежит ваша пара ключей `id_ed25519`.
+      На bastion и app-1 ваш публичный ключ временно прописан в `authorized_keys`
+      — это унаследованный legacy-доступ, который мы заменим на сертификаты.
+
+      ## Почему пароли — плохая идея в проде
+
+      Паролям подвержен брутфорс. Посмотрите на любой SSH-сервер с открытым
+      22-м портом — в auth.log будет тысячи попыток в день. Даже с fail2ban
+      это лишний шум и нагрузка. Кроме того, при смене сотрудника нужно
+      менять пароли на всех серверах — или не менять, что хуже.
+
+      Ключевая аутентификация лучше: нельзя взять брутфорсом, легко отозвать
+      один ключ. Но и у неё проблема — `authorized_keys` разбросаны по хостам.
+      Уволился сотрудник — его ключ нужно удалить везде вручную. Забыли один
+      сервер — дыра осталась.
+
+      ## Проблема TOFU и почему «нажать yes» — это риск
+
+      Запустите с workstation подключение к bastion и посмотрите на вопрос,
+      который задаёт ssh:
+
+      ```bash
+      ssh root@bastion
+      ```
+
+      SSH показывает fingerprint хоста и спрашивает, доверять ли ему.
+      Это модель **TOFU — Trust On First Use**: при первом подключении
+      клиент не знает, правильный ли это хост. Он показывает отпечаток
+      и перекладывает решение на пользователя.
+
+      В реальности почти никто этот fingerprint не сверяет. Откуда его взять?
+      Нужно зайти на сервер по другому каналу (через консоль гипервизора,
+      out-of-band management) и выполнить:
+
+      ```bash
+      ssh-keygen -l -f /etc/ssh/ssh_host_ed25519_key.pub
+      ```
+
+      Сравнить вывод с тем, что показал клиент — и только тогда набрать `yes`.
+      Это правильный процесс, и его никто не делает. Вместо этого все жмут `yes`
+      вслепую, и TOFU превращается в «нажми yes на всё».
+
+      **Чем это опасно.** В момент первого подключения между вами и сервером
+      может стоять MITM. Вы шифруете трафик ключом атакующего, думая, что это
+      сервер. Особенно актуально при первом деплое нового хоста, при подключении
+      через незнакомую сеть, при восстановлении после инцидента — именно тогда,
+      когда риск выше всего.
+
+      После того как вы набрали `yes`, fingerprint записывается в `~/.ssh/known_hosts`.
+      При следующих подключениях ssh сверяет ключ хоста с записью — если не
+      совпадает, кричит и отказывает. Это хорошо. Но первое подключение всё равно
+      остаётся уязвимым окном.
+
+      ## Решение: host-сертификаты
+
+      CA подписывает публичный ключ каждого хоста. Клиент доверяет CA — и автоматически
+      принимает любой хост с валидным сертификатом от этого CA. Никаких вопросов
+      «доверять?», никакого ручного сравнения fingerprint'ов. Компрометированный
+      хост можно отозвать через KRL (об этом позже).
+
+      Именно это мы будем строить.
+
+      ## Замечание про сетевую изоляцию
+
+      В лабе прямое подключение с workstation к app-1 технически работает.
+      В реальной инфраструктуре между такими сегментами стоит файрвол, и app-1
+      был бы доступен только с bastion. **Считайте, что эта изоляция есть**,
+      и сознательно ходите на app-1 только через bastion.
+
+    check:
+      - host: workstation
+        description: |
+          Можно подключиться к bastion с legacy-доступом:
+          `ssh root@bastion echo OK` отвечает OK.
+          `~/.ssh/id_ed25519` и `~/.ssh/id_ed25519.pub` существуют.
+
+  - title: Host CA — генерация и подпись ключей серверов
+    content: |
+      Переключитесь на вкладку `ca-host`. Каталог `/etc/ssh-ca` уже создан
+      и принадлежит вашему пользователю.
+
+      ## Генерация host CA
+
+      ```bash
+      cd /etc/ssh-ca
+      ssh-keygen -t ed25519 -f host_ca -C "host CA" -N ""
+      ```
+
+      `-N ""` — ключ без парольной фразы. В проде CA-ключ защищают паролем
+      или держат на HSM (YubiKey, AWS CloudHSM). Здесь пароль мешал бы
+      автоматизации.
+
+      Проверьте что получилось:
+
+      ```bash
+      ls -la /etc/ssh-ca/
+      ```
+
+      `host_ca` — приватный ключ (права `600`), `host_ca.pub` — публичный.
+      Приватный ключ **никуда не уходит с ca-host**. Публичный — отправится
+      на клиентов как метка доверия.
+
+      ## Почему CA-ключ держат на отдельном хосте
+
+      В проде ca-host — это максимально изолированный сервер: минимум сервисов,
+      аудит каждого входа, возможно без SSH вообще (только локальная консоль
+      или jump через выделенный bastion). Если ca-host скомпрометирован,
+      атакующий может подписать сертификат для любого хоста или пользователя.
+      Это катастрофа. Поэтому CA-сервер обычно физически изолирован или
+      является air-gapped машиной.
+
+      ## Сбор host-ключей и подпись
+
+      `ssh-keyscan` забирает публичный ключ хоста без аутентификации — это
+      безопасно, потому что ключ публичный. Но именно этот ключ вы сейчас
+      и будете подписывать, поэтому убедитесь, что сканируете нужный хост.
+
+      На ca-host:
+
+      ```bash
+      ssh-keyscan -t ed25519 bastion 2>/dev/null > /tmp/bastion_host_key.pub
+      ssh-keyscan -t ed25519 app-1  2>/dev/null > /tmp/app1_host_key.pub
+      ```
+
+      Подпишите оба:
+
+      ```bash
+      ssh-keygen -s /etc/ssh-ca/host_ca \
+        -I bastion-host-2026 \
+        -h \
+        -n bastion,bastion.lab \
+        -V +52w \
+        /tmp/bastion_host_key.pub
+
+      ssh-keygen -s /etc/ssh-ca/host_ca \
+        -I app-1-host-2026 \
+        -h \
+        -n app-1,app-1.lab \
+        -V +52w \
+        /tmp/app1_host_key.pub
+      ```
+
+      Разбор флагов:
+
+      | Флаг | Что делает |
+      |------|-----------|
+      | `-s` | Приватный ключ CA для подписи |
+      | `-I` | Identity — попадает в логи sshd при каждом подключении |
+      | `-h` | Host-сертификат (без `-h` был бы user-сертификат) |
+      | `-n` | Principals — имена, под которыми хост может представляться |
+      | `-V +52w` | Срок действия 52 недели; host-сертификаты живут долго |
+
+      Посмотрите содержимое получившегося сертификата:
+
+      ```bash
+      ssh-keygen -L -f /tmp/bastion_host_key-cert.pub
+      ```
+
+      Видно: тип (host certificate), principals, validity period, подпись CA.
+      Сертификат — это просто публичный ключ хоста плюс метаданные, подписанные CA.
+
+      ## Зачем несколько principals
+
+      В `-n bastion,bastion.lab` мы перечислили оба имени, по которым к хосту
+      будут подключаться. Если клиент подключается как `ssh bastion` — SSH
+      проверяет, есть ли `bastion` в principals сертификата. Если подключается
+      как `ssh bastion.lab` — проверяет `bastion.lab`. Имя, которого нет
+      в principals, не пройдёт проверку — это защита от переиспользования
+      сертификата одного хоста для другого.
+
+    check:
+      - host: ca-host
+        description: |
+          `/etc/ssh-ca/host_ca` и `/etc/ssh-ca/host_ca.pub` существуют.
+          `/tmp/bastion_host_key-cert.pub` и `/tmp/app1_host_key-cert.pub` существуют.
+          `ssh-keygen -L -f /tmp/bastion_host_key-cert.pub` показывает тип
+          "host certificate" и principals bastion, bastion.lab.
+
+  - title: Установка host-сертификатов на серверы
+    content: |
+      Сертификаты нужно положить на bastion и app-1. Бинарные файлы через
+      буфер не передать — воспользуемся scp прямо с ca-host (там тоже работает
+      ssh-сервер).
+
+      ## Копирование сертификатов
+
+      На ca-host:
+
+      ```bash
+      scp /tmp/bastion_host_key-cert.pub root@bastion:/etc/ssh/ssh_host_ed25519_key-cert.pub
+      scp /tmp/app1_host_key-cert.pub    root@app-1:/etc/ssh/ssh_host_ed25519_key-cert.pub
+      ```
+
+      Имя файла не случайное: SSH ищет сертификат рядом с приватным ключом,
+      с суффиксом `-cert.pub`. Приватный ключ хоста — `/etc/ssh/ssh_host_ed25519_key`,
+      значит сертификат — `/etc/ssh/ssh_host_ed25519_key-cert.pub`. Можно
+      указать произвольный путь через `HostCertificate`, но стандартное
+      расположение удобнее.
+
+      ## Включение сертификата в sshd_config
+
+      На bastion (зайдите через `ssh root@bastion`):
+
+      ```bash
+      echo 'HostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub' >> /etc/ssh/sshd_config
+      kill -HUP $(pgrep -f /usr/sbin/sshd | head -1)
+      ```
+
+      `kill -HUP` перечитывает конфиг без разрыва существующих сессий. Это
+      стандартный способ перезагрузки sshd в проде — `systemctl restart sshd`
+      грубее, потому что завершает все текущие сессии. В Ubuntu также работает
+      `sshd -t` для проверки синтаксиса конфига перед перезагрузкой.
+
+      Повторите то же самое на app-1.
+
+      ## Настройка доверия CA на workstation
+
+      На ca-host посмотрите публичный ключ host CA:
+
+      ```bash
+      cat /etc/ssh-ca/host_ca.pub
+      ```
+
+      Скопируйте строку в буфер. На workstation:
+
+      ```bash
+      # Очищаем старый known_hosts — все TOFU-записи больше не нужны
+      > ~/.ssh/known_hosts
+
+      # Добавляем запись о доверии CA
+      cat >> ~/.ssh/known_hosts <<'EOF'
+      @cert-authority bastion,bastion.lab,app-1,app-1.lab,*.lab ВСТАВЬТЕ_КЛЮЧ_CA
+      EOF
+      ```
+
+      Формат записи:
+
+      - `@cert-authority` — маркер, говорящий что это не отпечаток хоста, а CA.
+      - Список паттернов через запятую — для каких хостов действует.
+      - `*.lab` покрывает любые поддомены, если добавите новые серверы позже.
+
+      В проде `host_ca.pub` распространяют через конфиг-менеджмент (Ansible,
+      Puppet, Chef) или запекают в образы машин. Тогда каждая новая машина
+      сразу доверяет CA-подписанным хостам без ручного добавления.
+
+      ## Проверка
+
+      ```bash
+      ssh root@bastion echo OK
+      ssh root@app-1 echo OK
+      ```
+
+      Подключение должно пройти **без вопроса «The authenticity of host...»**.
+      Если вопрос всё ещё появляется — проверьте:
+
+      ```bash
+      ssh -v root@bastion 2>&1 | grep -E 'certificate|host key'
+      ```
+
+      Должна быть строка `Server host certificate: ...`. Если её нет — sshd
+      не отдаёт сертификат. Проверьте, перезапустили ли sshd и правильно ли
+      указан путь в `HostCertificate`.
+
+    check:
+      - host: bastion
+        description: |
+          `/etc/ssh/ssh_host_ed25519_key-cert.pub` существует.
+          `sshd_config` содержит строку `HostCertificate`.
+          `ssh-keygen -L -f /etc/ssh/ssh_host_ed25519_key-cert.pub` выполняется
+          без ошибок и показывает тип "host certificate".
+      - host: app-1
+        description: |
+          `/etc/ssh/ssh_host_ed25519_key-cert.pub` существует.
+          `sshd_config` содержит строку `HostCertificate`.
+      - host: workstation
+        description: |
+          `~/.ssh/known_hosts` содержит строку `@cert-authority`.
+          `ssh root@bastion echo OK` выполняется без вопроса об аутентичности хоста.
+          `ssh root@app-1 echo OK` выполняется без вопроса об аутентичности хоста.
+
+  - title: User CA — как работает авторизация без authorized_keys
+    content: |
+      Host-сертификаты решили вопрос «как клиент доверяет серверу». Теперь
+      обратная задача — «как сервер доверяет клиенту».
+
+      ## Проблема authorized_keys в масштабе
+
+      Классическая схема: на каждом сервере в `~/.ssh/authorized_keys` лежат
+      публичные ключи всех, кому разрешён доступ. Это работает для двух
+      серверов и двух человек. При десяти серверах и двадцати людях —
+      начинается боль:
+
+      - Уволился сотрудник — нужно удалить его ключ с каждого сервера.
+        Забыли один — дыра.
+      - Новому сотруднику нужно добавить ключ на каждый сервер, к которому
+        у него должен быть доступ.
+      - Ротация ключей (например, после компрометации ноутбука) — снова обход всех серверов.
+      - Нет единого места, где видно, у кого есть доступ куда.
+
+      ## User CA: централизованное доверие
+
+      С user CA схема другая. CA подписывает пользовательский ключ и выдаёт
+      **сертификат** с указанием **principal** — роли пользователя. Каждый сервер
+      знает только один публичный ключ CA и список principals, которым разрешён
+      вход. Сами ключи пользователей серверу не нужны.
+
+      Уволился сотрудник — отзываете его сертификат через KRL (или просто
+      ждёте истечения короткого validity). Ни на один сервер заходить не нужно.
+
+      ## Principal ≠ unix-user: важное различие
+
+      Это место, где обычно путаются. Запомните:
+
+      - **Principal** — роль внутри сертификата (`engineer`, `admin`, `readonly`).
+      - **Unix-user** — аккаунт в системе (`appuser`, `root`, `ubuntu`).
+      - **Связь** — файл `/etc/ssh/auth_principals/<unix-user>`, в котором
+        перечислены principals, которым разрешено входить под этим unix-user'ом.
+
+      Один сертификат с principal `engineer` может давать доступ как
+      `engineer` на bastion и как `appuser` на app-1 — потому что на каждом
+      сервере в `auth_principals` написано своё.
+
+      Для нашей лабы:
+
+      ```
+      principal=engineer → bastion: войти как engineer
+                           app-1:   войти как appuser
+      principal=admin    → bastion: войти как engineer
+                           app-1:   войти как appuser и root
+      ```
+
+      ## Генерация user CA
+
+      На ca-host:
+
+      ```bash
+      cd /etc/ssh-ca
+      ssh-keygen -t ed25519 -f user_ca -C "user CA" -N ""
+      ```
+
+      Это **отдельный** ключ, не тот же, что host CA. Разделение важно:
+      если скомпрометирован user CA — злоумышленник может подписать
+      пользовательские сертификаты, но не может фальсифицировать host-ключи.
+      И наоборот. Единый CA для всего — удобнее в управлении, но опаснее.
+
+    check:
+      - host: ca-host
+        description: |
+          `/etc/ssh-ca/user_ca` и `/etc/ssh-ca/user_ca.pub` существуют.
+          Ключи — разные файлы, не символические ссылки на host_ca.
+
+  - title: Подпись user-сертификата и настройка серверов
+    content: |
+      ## Подпись сертификата для engineer
+
+      На workstation посмотрите публичный ключ:
+
+      ```bash
+      cat ~/.ssh/id_ed25519.pub
+      ```
+
+      Скопируйте строку на ca-host в `/tmp/engineer_key.pub` (через буфер или
+      через `ssh-copy-id` в обратную сторону).
+
+      На ca-host:
+
+      ```bash
+      ssh-keygen -s /etc/ssh-ca/user_ca \
+        -I engineer@workstation \
+        -n engineer \
+        -V +8h \
+        -z 1001 \
+        /tmp/engineer_key.pub
+      ```
+
+      | Флаг | Что делает |
+      |------|-----------|
+      | `-I` | Identity — попадает в `auth.log` при каждом входе |
+      | `-n` | Principals — роли пользователя |
+      | `-V +8h` | Срок действия 8 часов — первая линия защиты при компрометации |
+      | `-z 1001` | Serial number — для логирования и отзыва через KRL |
+
+      Получится `/tmp/engineer_key-cert.pub`. Посмотрите его:
+
+      ```bash
+      ssh-keygen -L -f /tmp/engineer_key-cert.pub
+      ```
+
+      Обратите внимание на разницу между user- и host-сертификатом: тут нет
+      флага `-h`, тип — "user certificate", в principals — роль, а не
+      hostname.
+
+      Перенесите сертификат на workstation в `~/.ssh/id_ed25519-cert.pub`.
+      SSH автоматически ищет сертификат рядом с приватным ключом — `<ключ>-cert.pub`.
+
+      ## Настройка bastion и app-1
+
+      На каждом из серверов нужно сделать три вещи.
+
+      **1. Положить публичный ключ user CA.**
+
+      С ca-host:
+
+      ```bash
+      scp /etc/ssh-ca/user_ca.pub root@bastion:/etc/ssh/user_ca.pub
+      scp /etc/ssh-ca/user_ca.pub root@app-1:/etc/ssh/user_ca.pub
+      ```
+
+      **2. В sshd_config включить доверие CA и маппинг principals.**
+
+      На bastion (и аналогично на app-1):
+
+      ```bash
+      cat >> /etc/ssh/sshd_config <<'EOF'
+      TrustedUserCAKeys /etc/ssh/user_ca.pub
+      AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
+      EOF
+      ```
+
+      `%u` — подстановка: при входе `ssh engineer@bastion` будет проверен
+      файл `/etc/ssh/auth_principals/engineer`.
+
+      **3. Создать файлы principals.**
+
+      На bastion:
+
+      ```bash
+      mkdir -p /etc/ssh/auth_principals
+      echo "engineer" > /etc/ssh/auth_principals/engineer
+      echo "admin"    > /etc/ssh/auth_principals/appuser
+      chmod 644 /etc/ssh/auth_principals/*
+      ```
+
+      На app-1:
+
+      ```bash
+      mkdir -p /etc/ssh/auth_principals
+      printf "engineer\nadmin\n" > /etc/ssh/auth_principals/appuser
+      echo "admin" > /etc/ssh/auth_principals/root
+      chmod 644 /etc/ssh/auth_principals/*
+      ```
+
+      **Ловушка с правами.** Если файл `auth_principals` принадлежит
+      не root или не имеет корректных прав — sshd молча его проигнорирует
+      и откажет в доступе. Диагностируйте через `sshd -d` или `journalctl -u ssh`.
+
+      **4. Отключить парольную аутентификацию и убрать legacy authorized_keys.**
+
+      На bastion и app-1:
+
+      ```bash
+      sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+      sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+      rm -f /home/*/.ssh/authorized_keys /root/.ssh/authorized_keys
+      kill -HUP $(pgrep -f /usr/sbin/sshd | head -1)
+      ```
+
+      `PermitRootLogin prohibit-password` означает: root разрешён, но только
+      ключом или сертификатом, не паролем. Многие ставят `no`, но тогда нужен
+      промежуточный sudo-пользователь.
+
+      ## Проверка
+
+      С workstation:
+
+      ```bash
+      # Должно работать — engineer-principal в auth_principals/engineer
+      ssh engineer@bastion echo OK
+
+      # Должно отказать — root не в auth_principals для engineer
+      ssh -o BatchMode=yes root@bastion echo SHOULD_FAIL 2>&1 | tail -3
+      ```
+
+      Посмотрите на auth.log bastion после успешного входа:
+
+      ```bash
+      tail -n 5 /var/log/auth.log   # на bastion
+      ```
+
+      Увидите: `Accepted publickey for engineer ... ID engineer@workstation
+      (serial 1001) CA ...`. Serial в логах — именно для этого его и назначают.
+
+    check:
+      - host: bastion
+        description: |
+          `/etc/ssh/user_ca.pub` существует и совпадает с публичным ключом user CA на ca-host.
+          `sshd_config` содержит `TrustedUserCAKeys` и `AuthorizedPrincipalsFile`.
+          `/etc/ssh/auth_principals/engineer` содержит строку `engineer`.
+          `PasswordAuthentication no` в sshd_config.
+          `authorized_keys` у всех пользователей удалены.
+      - host: app-1
+        description: |
+          `/etc/ssh/user_ca.pub` существует.
+          `/etc/ssh/auth_principals/appuser` содержит строки `engineer` и `admin`.
+          `/etc/ssh/auth_principals/root` содержит строку `admin`.
+          `PasswordAuthentication no` в sshd_config.
+      - host: workstation
+        description: |
+          `~/.ssh/id_ed25519-cert.pub` существует.
+          `ssh-keygen -L -f ~/.ssh/id_ed25519-cert.pub` показывает principal `engineer`
+          и serial 1001.
+          `ssh engineer@bastion echo OK` выполняется успешно.
+          `ssh -o BatchMode=yes root@bastion echo X` завершается с ошибкой.
+
+  - title: Bastion и ProxyJump — единая точка входа
+    content: |
+      Сейчас вы можете зайти на app-1 напрямую. В реальной инфраструктуре
+      между workstation и app-1 стоит файрвол — прямого пути нет. Есть только
+      bastion, через который и проходит весь трафик.
+
+      ## Зачем нужен bastion
+
+      Bastion — это **единственная** машина с открытым 22-м портом во внешний мир.
+      Все остальные серверы доступны только изнутри сети. Это даёт:
+
+      - Одна точка логирования всех SSH-подключений.
+      - Одна точка применения ограничений (fail2ban, rate limiting, IP whitelist).
+      - Одна точка аудита и оповещений.
+
+      В AWS это Security Group с `0.0.0.0/0:22` только у bastion; у остальных
+      EC2 — только источник `sg-bastion`. В Kubernetes — NetworkPolicy. Принцип
+      одинаков.
+
+      ## Как работает ProxyJump
+
+      `ProxyJump` (флаг `-J`) делает следующее:
+
+      1. Устанавливает SSH-сессию с bastion.
+      2. Через эту сессию прокидывает TCP-соединение до app-1 (команда `direct-tcpip`).
+      3. Поверх этого TCP-канала устанавливает отдельную SSH-сессию до app-1.
+
+      Ключевой момент: ваш приватный ключ **не покидает workstation**. Bastion
+      видит только зашифрованный TCP-поток до app-1. Он не может расшифровать
+      вашу сессию с app-1 и не может использовать ваш ключ для других соединений.
+
+      Это принципиальное отличие от старого `ForwardAgent`: при forwarding'е
+      агента bastion получает доступ к вашему SSH-агенту и может аутентифицироваться
+      вашим ключом куда угодно. **`ForwardAgent yes` — это дыра безопасности.**
+      `ProxyJump` такого риска не создаёт.
+
+      ## ~/.ssh/config
+
+      Настройте на workstation:
+
+      ```bash
+      cat > ~/.ssh/config <<'EOF'
+      Host bastion
+          HostName bastion
+          User engineer
+          IdentityFile ~/.ssh/id_ed25519
+          CertificateFile ~/.ssh/id_ed25519-cert.pub
+
+      Host app-1
+          HostName app-1
+          User appuser
+          ProxyJump bastion
+          IdentityFile ~/.ssh/id_ed25519
+          CertificateFile ~/.ssh/id_ed25519-cert.pub
+      EOF
+      chmod 600 ~/.ssh/config
+      ```
+
+      Теперь `ssh app-1` автоматически идёт через bastion. Под капотом это
+      эквивалентно:
+
+      ```bash
+      ssh -J engineer@bastion appuser@app-1
+      ```
+
+      ## ProxyJump vs ProxyCommand
+
+      Старый способ через ProxyCommand:
+
+      ```
+      ProxyCommand ssh -W %h:%p engineer@bastion
+      ```
+
+      Работает, но: запускает отдельный процесс, не поддерживает несколько
+      jump-хостов нативно. `ProxyJump` — нативная функция протокола, работает
+      эффективнее и поддерживает цепочки: `ProxyJump host1,host2,host3`.
+
+      ## Проверка
+
+      ```bash
+      ssh app-1 echo OK
+      ```
+
+      На bastion посмотрите лог — увидите и вход engineer@bastion, и форвардинг
+      TCP до app-1:
+
+      ```bash
+      tail -n 10 /var/log/auth.log   # на bastion
+      ```
+
+    check:
+      - host: workstation
+        description: |
+          `~/.ssh/config` содержит блоки `Host bastion` и `Host app-1`.
+          `Host app-1` содержит `ProxyJump bastion`.
+          `ssh app-1 echo OK` выполняется успешно и проходит через bastion
+          (видно в auth.log bastion).
+      - host: bastion
+        description: |
+          В `/var/log/auth.log` есть записи о подключении с serial 1001,
+          и запись о прокидывании соединения до app-1.
+
+  - title: Match-блоки — разные права для разных ролей
+    content: |
+      Сейчас все, кто может войти через bastion, имеют одинаковые возможности.
+      В реальной инфраструктуре нужны ограничения: junior-инженер не должен
+      форвардить порты, подрядчик не должен иметь root, дежурный — только читать.
+
+      ## Admin-сертификат
+
+      Сначала добавим вторую роль. На ca-host:
+
+      ```bash
+      ssh-keygen -s /etc/ssh-ca/user_ca \
+        -I admin@workstation \
+        -n admin \
+        -V +8h \
+        -z 1002 \
+        /tmp/engineer_key.pub
+      ```
+
+      Тот же публичный ключ, но principal `admin` и serial `1002`. Перенесите
+      `/tmp/engineer_key-cert.pub` на workstation как `~/.ssh/id_ed25519-admin-cert.pub`.
+
+      Добавьте в `~/.ssh/config` отдельные хосты для admin-доступа:
+
+      ```
+      Host bastion-admin
+          HostName bastion
+          User engineer
+          IdentityFile ~/.ssh/id_ed25519
+          CertificateFile ~/.ssh/id_ed25519-admin-cert.pub
+
+      Host app-1-root
+          HostName app-1
+          User root
+          ProxyJump bastion-admin
+          IdentityFile ~/.ssh/id_ed25519
+          CertificateFile ~/.ssh/id_ed25519-admin-cert.pub
+      ```
+
+      ## Match-блоки в sshd_config
+
+      Match-блоки применяют дополнительные директивы к конкретным сессиям.
+      Можно матчить по User, Group, Host, Address, LocalPort и другим критериям.
+
+      Политика для лабы: engineer не может форвардить TCP-порты (обход сетевых
+      ограничений), admin — может.
+
+      На bastion, **в самом конце** `/etc/ssh/sshd_config`:
+
+      ```
+      Match User engineer
+          AllowTcpForwarding no
+          X11Forwarding no
+          PermitTunnel no
+
+      Match User engineer Principal admin
+          AllowTcpForwarding yes
+      ```
+
+      Логика: первый блок запрещает форвардинг для unix-user `engineer`.
+      Второй блок исключение — если в сертификате есть principal `admin`,
+      форвардинг разрешён.
+
+      **Важно: Match-блоки в конце файла.** Всё, что написано после `Match`,
+      применяется только к этому матч-блоку. Глобальные директивы после Match —
+      типичный баг, который трудно обнаружить.
+
+      **Не все директивы разрешены внутри Match.** Например, `Protocol`,
+      `ListenAddress`, `PermitRootLogin` нельзя ставить в Match. Полный список —
+      в `man sshd_config`, секция «AUTHORIZED_KEYS FILE FORMAT».
+
+      Перезагрузите sshd на bastion.
+
+      ## Проверка Match-блоков
+
+      С engineer-сертификатом — форвардинг должен отказать:
+
+      ```bash
+      ssh -L 8080:localhost:80 bastion -N -f
+      # должна быть ошибка: administratively prohibited
+      ```
+
+      С admin-сертификатом — разрешено:
+
+      ```bash
+      ssh -L 8080:localhost:80 bastion-admin -N -f
+      # должно запуститься; завершите потом: kill %1
+      ```
+
+      Проверка root-доступа на app-1:
+
+      ```bash
+      ssh app-1-root echo OK   # admin-сертификат — пустит
+      ssh -o BatchMode=yes -J bastion root@app-1 echo FAIL 2>&1 | tail -3   # engineer — откажет
+      ```
+
+      ## Один ключ, два сертификата
+
+      Обратите внимание: в обоих случаях используется один приватный ключ
+      `id_ed25519`. Разные сертификаты задают разные роли. Это соответствует
+      принципу least privilege: большую часть времени используется engineer-сертификат,
+      admin-сертификат берётся только когда нужно. В проде admin-сертификаты
+      часто живут 1-2 часа и выдаются по запросу через self-service (Vault SSH,
+      Smallstep).
+
+    check:
+      - host: bastion
+        description: |
+          `sshd_config` содержит Match-блоки в конце файла.
+          `Match User engineer` с `AllowTcpForwarding no`.
+          `Match User engineer Principal admin` с `AllowTcpForwarding yes`.
+      - host: workstation
+        description: |
+          `~/.ssh/id_ed25519-admin-cert.pub` существует.
+          `ssh-keygen -L -f ~/.ssh/id_ed25519-admin-cert.pub` показывает principal
+          `admin` и serial 1002.
+          `~/.ssh/config` содержит блоки `bastion-admin` и `app-1-root`.
+          `ssh app-1-root echo OK` выполняется успешно.
+          `ssh -L 8080:localhost:80 bastion -N -f` завершается с ошибкой.
+          `ssh -L 8080:localhost:80 bastion-admin -N -f` выполняется успешно.
+      - host: app-1
+        description: |
+          `/etc/ssh/auth_principals/root` содержит строку `admin`.
+
+  - title: KRL — отзыв сертификатов
+    content: |
+      Сертификаты у нас живут 8 часов — это хорошо. Но что если сертификат
+      скомпрометирован прямо сейчас и нужно отозвать его немедленно?
+
+      ## Что такое KRL
+
+      **KRL (Key Revocation List)** — бинарный файл, который sshd читает при
+      каждом подключении. Если предъявленный сертификат там есть — доступ
+      запрещён. Аналог CRL в мире TLS-сертификатов.
+
+      KRL может содержать отдельные серийные номера, диапазоны серийных номеров,
+      хэши ключей или весь CA целиком (отзыв всех сертификатов сразу).
+
+      ## Создание KRL
+
+      На ca-host:
+
+      ```bash
+      # Spec-файл: что отзываем
+      cat > /tmp/krl_spec.txt <<'EOF'
+      serial: 1001
+      EOF
+
+      # Генерируем KRL
+      ssh-keygen -k -f /etc/ssh-ca/krl -s /etc/ssh-ca/user_ca.pub /tmp/krl_spec.txt
+      ```
+
+      | Флаг | Что делает |
+      |------|-----------|
+      | `-k` | Создать/обновить KRL |
+      | `-f` | Путь к файлу KRL |
+      | `-s` | Публичный ключ CA, чьи сертификаты отзываются |
+
+      Проверьте, что serial 1001 действительно в KRL:
+
+      ```bash
+      ssh-keygen -Q -f /etc/ssh-ca/krl /tmp/engineer_key-cert.pub
+      ```
+
+      Вывод: `(REVOKED)`.
+
+      ## Дистрибуция KRL
+
+      KRL — бинарный файл. Копируем scp:
+
+      ```bash
+      scp /etc/ssh-ca/krl root@bastion:/etc/ssh/user_krl
+      scp /etc/ssh-ca/krl root@app-1:/etc/ssh/user_krl
+      ```
+
+      На bastion и app-1 в `sshd_config`:
+
+      ```bash
+      echo 'RevokedKeys /etc/ssh/user_krl' >> /etc/ssh/sshd_config
+      kill -HUP $(pgrep -f /usr/sbin/sshd | head -1)
+      ```
+
+      ## Обновление KRL без перезапуска
+
+      Когда нужно добавить новый отзыв — не пересоздавайте KRL с нуля,
+      обновляйте через `-u`:
+
+      ```bash
+      cat > /tmp/krl_update.txt <<'EOF'
+      serial: 1003
+      EOF
+      ssh-keygen -k -u -f /etc/ssh-ca/krl -s /etc/ssh-ca/user_ca.pub /tmp/krl_update.txt
+      ```
+
+      Копируйте на серверы атомарно — сначала во временный файл, потом `mv`:
+
+      ```bash
+      scp /etc/ssh-ca/krl root@bastion:/etc/ssh/user_krl.new
+      ssh root@bastion 'mv /etc/ssh/user_krl.new /etc/ssh/user_krl'
+      ```
+
+      Иначе sshd может прочитать наполовину записанный файл и временно отказывать всем.
+      sshd перечитывает KRL при каждой проверке — не нужен даже HUP.
+
+      ## Почему serial удобнее, чем отзыв по ключу
+
+      Альтернатива: отзывать по хэшу публичного ключа (`hash: SHA256:...`).
+      Это работает, но:
+
+      - Serial виден в auth.log при каждом входе — легко найти нужную запись при инциденте.
+      - По serial можно отзывать диапазонами (`serial: 1000-1999` — все engineer-сертификаты).
+      - Вести реестр `serial → кому выдан, когда` проще, чем хранить хэши ключей.
+
+      В проде заводят таблицу: serial, identity, issued_at, expires_at, revoked.
+      При инциденте достаточно посмотреть serial из лога и отозвать.
+
+      ## Проверка
+
+      С workstation:
+
+      ```bash
+      # Должно отказать — serial 1001 отозван
+      ssh -o BatchMode=yes engineer@bastion echo FAIL 2>&1 | tail -3
+
+      # Admin-сертификат (serial 1002) продолжает работать
+      ssh bastion-admin echo OK
+      ```
+
+      На bastion в логах:
+
+      ```bash
+      tail -n 5 /var/log/auth.log
+      ```
+
+      Запись будет: `error: certificate serial ... is revoked by the CA`.
+
+    check:
+      - host: ca-host
+        description: |
+          `/etc/ssh-ca/krl` существует.
+          `ssh-keygen -Q -f /etc/ssh-ca/krl /tmp/engineer_key-cert.pub`
+          выводит `(REVOKED)`.
+      - host: bastion
+        description: |
+          `/etc/ssh/user_krl` существует.
+          `sshd_config` содержит строку `RevokedKeys`.
+          В auth.log есть запись об отзыве serial 1001.
+      - host: app-1
+        description: |
+          `/etc/ssh/user_krl` существует.
+          `sshd_config` содержит строку `RevokedKeys`.
+      - host: workstation
+        description: |
+          `ssh -o BatchMode=yes engineer@bastion echo X` завершается с ошибкой.
+          `ssh bastion-admin echo OK` выполняется успешно.
+
+  - title: Финальный сценарий — выдача доступа новому сотруднику
+    content: |
+      Это интеграционная проверка — всё уже было, теперь без подсказок.
+
+      Сценарий: в компанию пришёл новый сотрудник. Нужно выдать ему
+      engineer-доступ на app-1 через bastion.
+
+      Публичный ключ нового сотрудника лежит на workstation в
+      `/tmp/newhire_id_ed25519.pub`, приватный — в `/tmp/newhire_id_ed25519`.
+
+      ## Задание
+
+      **1.** Перенесите публичный ключ нового сотрудника на ca-host.
+
+      **2.** На ca-host подпишите user-сертификат:
+      - principal: `engineer`
+      - serial: `1003`
+      - validity: `+8h`
+      - identity: `newhire@workstation`
+
+      **3.** Перенесите сертификат на workstation в `/tmp/newhire_id_ed25519-cert.pub`.
+
+      **4.** С workstation подключитесь на app-1 от имени нового сотрудника через bastion:
+
+      ```bash
+      ssh -i /tmp/newhire_id_ed25519 \
+          -o CertificateFile=/tmp/newhire_id_ed25519-cert.pub \
+          -J engineer@bastion \
+          appuser@app-1
+      ```
+
+      Почему здесь `-J engineer@bastion` вместо `-J bastion`? Потому что на
+      jump-хосте тоже нужна аутентификация — и вы используете свой engineer-сертификат
+      для прохода через bastion. В реальности новый сотрудник использовал бы
+      свой сертификат на обоих этапах.
+
+      **5.** На app-1 создайте файл:
+
+      ```bash
+      echo "hello from newhire" > /home/appuser/hello-from-newhire.txt
+      ```
+
+      **6.** Попробуйте с сертификатом newhire зайти как root на app-1 — должно отказать:
+
+      ```bash
+      ssh -i /tmp/newhire_id_ed25519 \
+          -o CertificateFile=/tmp/newhire_id_ed25519-cert.pub \
+          -o BatchMode=yes \
+          -J engineer@bastion \
+          root@app-1 echo FAIL 2>&1 | tail -3
+      ```
+
+      **7.** На bastion найдите в логе запись о входе с serial 1003:
+
+      ```bash
+      grep 'serial 1003' /var/log/auth.log
+      ```
+
+      ## Что вы построили
+
+      - **Host-сертификаты** — клиент доверяет серверу через CA, TOFU устранён.
+      - **User-сертификаты + principals** — сервер доверяет клиенту через CA,
+        `authorized_keys` убраны, доступ управляется централизованно.
+      - **Bastion + ProxyJump** — единая точка входа, ключи не покидают клиента.
+      - **Match-блоки** — разные ограничения для разных ролей на одном сервере.
+      - **KRL** — мгновенный отзыв без обхода всех серверов.
+
+      ## Что изучить дальше
+
+      - **ForceCommand** — бэкап-юзер, который может выполнить только одну команду.
+      - **Chroot SFTP** — подрядчики с ограниченным доступом к файловой системе.
+      - **Запись сессий** — `LogLevel VERBOSE`, `script`, `ttyrec`,
+        интеграция с auditd.
+      - **Self-service для сертификатов** — HashiCorp Vault SSH, Smallstep CA,
+        Teleport. Пользователь сам запрашивает короткоживущий сертификат,
+        CA выдаёт автоматически после проверки через SSO.
+      - **Certificate Authority иерархия** — root CA (offline), intermediate CA
+        (online). Компрометация intermediate не требует перевыпуска root.
+
+    check:
+      - host: ca-host
+        description: |
+          Существует сертификат для newhire (или `/tmp/newhire_key-cert.pub`,
+          или аналогичный файл).
+          `ssh-keygen -L` на этом файле показывает principal `engineer`, serial 1003.
+      - host: app-1
+        description: |
+          `/home/appuser/hello-from-newhire.txt` существует.
+      - host: bastion
+        description: |
+          `grep 'serial 1003' /var/log/auth.log` возвращает хотя бы одну запись.
+      - host: workstation
+        description: |
+          Попытка `root@app-1` с сертификатом newhire завершается с ошибкой
+          (Permission denied или certificate not valid).
+
+environment:
+  duration: 90
+  assets:
+    - name: workstation
+      image: rootenv-ubuntu-sshd
+      platform: container
+      cpu: 200m
+      memory: 256MB
+      disk: 2GB
+      ssh_user: lab
+      relay_protocols:
+        - ssh
+      setup: |
+        # Заранее заготовленная пара ключей для пользователя lab
+        mkdir -p /home/lab/.ssh
+        cat > /home/lab/.ssh/id_ed25519 <<'EOF'
+        -----BEGIN OPENSSH PRIVATE KEY-----
+        b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+        QyNTUxOQAAACDww84xlmieaYrXWNRxDOLUS9MKmJTs/w+44chdN89isgAAAJjn7Li35+y4
+        twAAAAtzc2gtZWQyNTUxOQAAACDww84xlmieaYrXWNRxDOLUS9MKmJTs/w+44chdN89isg
+        AAAEC/SQWnNGgxMTKLRA2UIEH0KGG9xcpe2/P7bSKceTadnPDDzjGWaJ5pitdY1HEM4tRL
+        0wqYlOz/D7jhyF03z2KyAAAAD2xhYkB3b3Jrc3RhdGlvbgECAwQFBg==
+        -----END OPENSSH PRIVATE KEY-----
+        EOF
+        echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPDDzjGWaJ5pitdY1HEM4tRL0wqYlOz/D7jhyF03z2Ky lab@workstation' > /home/lab/.ssh/id_ed25519.pub
+        # Заранее заготовленная пара ключей для "нового сотрудника" из финального стейджа
+        ssh-keygen -t ed25519 -f /tmp/newhire_id_ed25519 -N "" -C "newhire" -q
+        chown lab:lab /tmp/newhire_id_ed25519 /tmp/newhire_id_ed25519.pub
+        chown -R lab:lab /home/lab/.ssh
+        chmod 700 /home/lab/.ssh
+        chmod 600 /home/lab/.ssh/id_ed25519
+        chmod 644 /home/lab/.ssh/id_ed25519.pub
+    - name: ca-host
+      image: rootenv-ubuntu-sshd
+      platform: container
+      cpu: 100m
+      memory: 128MB
+      disk: 1GB
+      ssh_user: lab
+      relay_protocols:
+        - ssh
+      setup: |
+        # Каталог для CA-ключей, владелец lab — обучаемый сам нагенерит ключи
+        mkdir -p /etc/ssh-ca
+        chown lab:lab /etc/ssh-ca
+    - name: bastion
+      image: rootenv-ubuntu-sshd
+      platform: container
+      cpu: 200m
+      memory: 128MB
+      disk: 1GB
+      ssh_user: lab
+      relay_protocols:
+        - ssh
+      setup: |
+        # Юзеры лабы
+        useradd -m -s /bin/bash engineer
+        useradd -m -s /bin/bash appuser
+        passwd -l engineer
+        passwd -l appuser
+        # Унаследованные authorized_keys для всех (это то "плохое" состояние,
+        # которое обучаемый будет исправлять)
+        PUBKEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPDDzjGWaJ5pitdY1HEM4tRL0wqYlOz/D7jhyF03z2Ky lab@workstation'
+        for u in root engineer appuser; do
+          home=$(getent passwd $u | cut -d: -f6)
+          mkdir -p $home/.ssh
+          echo "$PUBKEY" > $home/.ssh/authorized_keys
+          chown -R $u:$u $home/.ssh
+          chmod 700 $home/.ssh
+          chmod 600 $home/.ssh/authorized_keys
+        done
+        # Стартовый sshd_config — "до миграции"
+        sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+        sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+        kill -HUP 1
+    - name: app-1
+      image: rootenv-ubuntu-sshd
+      platform: container
+      cpu: 200m
+      memory: 128MB
+      disk: 1GB
+      ssh_user: lab
+      relay_protocols:
+        - ssh
+      setup: |
+        useradd -m -s /bin/bash appuser
+        passwd -l appuser
+        PUBKEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPDDzjGWaJ5pitdY1HEM4tRL0wqYlOz/D7jhyF03z2Ky lab@workstation'
+        for u in root appuser; do
+          home=$(getent passwd $u | cut -d: -f6)
+          mkdir -p $home/.ssh
+          echo "$PUBKEY" > $home/.ssh/authorized_keys
+          chown -R $u:$u $home/.ssh
+          chmod 700 $home/.ssh
+          chmod 600 $home/.ssh/authorized_keys
+        done
+        sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+        sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+        kill -HUP 1

@@ -56,11 +56,25 @@ typings/
 
 # dotenv environment variables file
 .env
+scripts/.env
 
 # keys
 *.pem
 *.key
 *.crt
 contmgr/k8s.go
+deploy/k8s/*-secrets.yaml
 
-contmgr/contmgr
+# binaries
+bin/
+
+# __pycache__ directories and .pyc files
+__pycache__/
+*.pyc
+
+# claude details
+.claude/
+
+test-results/
+
+pb_data/
