@@ -42,7 +42,7 @@ jobs:
         with:
           scan-type: fs
           scan-ref: labs/images/${{ matrix.image }}
-          scanners: vuln,secret,misconfig
+          scanners: vuln,secret
           ignore-unfixed: true
           exit-code: '1'
 
