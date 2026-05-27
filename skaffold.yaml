@@ -50,5 +50,5 @@ deploy:
   kubectl: {}
   kubeContext: k3d-rootenv
 manifests:
-  rawYaml: 
+  rawYaml:
   - deploy/k8s/*.yaml

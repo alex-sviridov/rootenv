@@ -20,17 +20,23 @@ func TestIntegration_limiterTracksTotal(t *testing.T) {
 		t.Errorf("want total=0 initially, got %d", got)
 	}
 
-	l.Acquire("u1")
+	if err := l.Acquire("u1"); err != nil {
+		t.Fatal(err)
+	}
 	if got := l.Total(); got != 1 {
 		t.Errorf("want total=1 after acquire, got %d", got)
 	}
 
-	l.Acquire("u1")
+	if err := l.Acquire("u1"); err != nil {
+		t.Fatal(err)
+	}
 	if got := l.Total(); got != 2 {
 		t.Errorf("want total=2 after second acquire, got %d", got)
 	}
 
-	l.Acquire("u2")
+	if err := l.Acquire("u2"); err != nil {
+		t.Fatal(err)
+	}
 	if got := l.Total(); got != 3 {
 		t.Errorf("want total=3 with different user, got %d", got)
 	}

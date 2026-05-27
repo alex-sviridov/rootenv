@@ -7,10 +7,10 @@ metadata:
   namespace: rootenv-infra
 spec:
   ports:
-  - name: 5173-5173
-    port: 5173
+  - name: http
+    port: 8080
     protocol: TCP
-    targetPort: 5173
+    targetPort: 8080
   selector:
     app: frontend
   type: ClusterIP

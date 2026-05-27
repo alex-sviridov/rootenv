@@ -6,7 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/alexsviridov/linuxlab/relay/pkg/pbclient"
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 )
 
 // AuthInfo is returned by Authenticator.Authenticate on success.

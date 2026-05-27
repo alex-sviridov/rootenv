@@ -2,19 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const {
   mockGetFullList,
-  mockGetFirstListItem,
   mockSubscribe,
   mockCollection,
 } = vi.hoisted(() => {
   const mockGetFullList = vi.fn()
-  const mockGetFirstListItem = vi.fn()
+  const _mockGetFirstListItem = vi.fn()
   const mockSubscribe = vi.fn()
   const mockCollection = vi.fn(() => ({
     getFullList: mockGetFullList,
-    getFirstListItem: mockGetFirstListItem,
+    getFirstListItem: _mockGetFirstListItem,
     subscribe: mockSubscribe,
   }))
-  return { mockGetFullList, mockGetFirstListItem, mockSubscribe, mockCollection }
+  return { mockGetFullList, mockSubscribe, mockCollection }
 })
 
 vi.mock('@/lib/pb', () => ({ pb: { collection: mockCollection } }))

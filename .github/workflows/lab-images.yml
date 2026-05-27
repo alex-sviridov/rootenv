@@ -1,0 +1,124 @@
+name: Lab Images CI
+
+on:
+  push:
+    branches: [master]
+    paths: [ 'labs/images/**', '.github/workflows/lab-images.yml' ]
+  pull_request:
+    branches: [master]
+    paths: [ 'labs/images/**', '.github/workflows/lab-images.yml' ]
+    types: [opened, synchronize, reopened]
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+
+  setup:
+    name: Set matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        run: echo 'matrix={"image":["ubuntu-sshd"]}' >> $GITHUB_OUTPUT
+
+  security-scan:
+    name: Security Scan ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    needs: setup
+    strategy:
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Cache Trivy DB
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: trivy-db-
+      - name: Run Trivy Security Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: labs/images/${{ matrix.image }}
+          scanners: vuln,secret
+          ignore-unfixed: true
+          exit-code: '1'
+
+  docker-build:
+    name: Build ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    needs: [setup, security-scan]
+    strategy:
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: labs/images/${{ matrix.image }}
+          file: labs/images/${{ matrix.image }}/Dockerfile
+          push: false
+          tags: ${{ env.REGISTRY }}/${{ github.repository }}/lab/${{ matrix.image }}:pr-${{ github.sha }}
+          cache-from: type=gha,scope=lab-${{ matrix.image }}
+          cache-to: type=gha,scope=lab-${{ matrix.image }},mode=max
+
+  integration-test:
+    name: Integration Test ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    needs: [setup, docker-build]
+    strategy:
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (load into daemon)
+        uses: docker/build-push-action@v6
+        with:
+          context: labs/images/${{ matrix.image }}
+          file: labs/images/${{ matrix.image }}/Dockerfile
+          push: false
+          load: true
+          tags: lab-test/${{ matrix.image }}:ci
+          cache-from: type=gha,scope=lab-${{ matrix.image }}
+      - name: Run integration test
+        run: |
+          chmod +x labs/images/${{ matrix.image }}/test.sh
+          labs/images/${{ matrix.image }}/test.sh lab-test/${{ matrix.image }}:ci
+
+  docker-push:
+    name: Push ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    needs: [setup, integration-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/lab/${{ matrix.image }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-,format=short
+      - uses: docker/build-push-action@v6
+        with:
+          context: labs/images/${{ matrix.image }}
+          file: labs/images/${{ matrix.image }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=lab-${{ matrix.image }}
+          cache-to: type=gha,scope=lab-${{ matrix.image }},mode=max
