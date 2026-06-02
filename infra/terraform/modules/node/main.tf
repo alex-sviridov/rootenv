@@ -7,8 +7,8 @@ resource "hcloud_ssh_key" "admin" {
 resource "hcloud_firewall" "node" {
   name = "${var.name}-fw"
   rule {
-    direction = "in"
-    protocol  = "icmp"
+    direction  = "in"
+    protocol   = "icmp"
     source_ips = var.allowed_ssh_ips
   }
 
@@ -74,11 +74,11 @@ resource "hcloud_server" "node" {
   }
 
   user_data = templatefile("${path.module}/cloud-init.yaml.tftpl", {
-    node_name   = var.name
-    environment = var.environment
-    k3s_version = var.k3s_version
-    k3s_token   = var.k3s_token
-    public_ip   = hcloud_primary_ip.node_ipv4.ip_address
+    node_name       = var.name
+    environment     = var.environment
+    k3s_version     = var.k3s_version
+    k3s_token       = var.k3s_token
+    public_ip       = hcloud_primary_ip.node_ipv4.ip_address
     ssh_public_keys = var.ssh_public_keys
   })
 

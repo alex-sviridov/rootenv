@@ -25,3 +25,6 @@ labs-sync:
 labs-build:
 	docker build -t rootenv-ubuntu-sshd:latest labs/images/ubuntu-sshd
 	k3d image import rootenv-ubuntu-sshd:latest -c rootenv
+
+pre-commit:
+	pre-commit run --all-files

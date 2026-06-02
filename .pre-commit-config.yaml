@@ -1,0 +1,11 @@
+# .pre-commit-config.yaml
+# Runs automatically before each git commit.
+# Manual run: pre-commit run --all-files
+# Skip once:  git commit --no-verify
+
+repos:
+- repo: https://github.com/antonbabenko/pre-commit-terraform
+  rev: v1.106.0
+  hooks:
+    - id: terraform_fmt
+    - id: terraform_docs

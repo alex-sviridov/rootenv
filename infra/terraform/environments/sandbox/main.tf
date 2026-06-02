@@ -9,7 +9,7 @@ resource "random_password" "k3s_token" {
 }
 
 module "k3s" {
-  source = "../../modules/node"
+  source          = "../../modules/node"
   name            = "node1"
   environment     = var.environment
   ssh_public_keys = var.ssh_public_keys
@@ -27,7 +27,7 @@ resource "null_resource" "fetch_kubeconfig" {
 
   provisioner "local-exec" {
     interpreter = ["bash", "-c"]
-    command = <<-EOT
+    command     = <<-EOT
       set -euo pipefail
 
       SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR"

@@ -40,10 +40,10 @@ variable "k3s_version" {
 variable "allowed_ssh_ips" {
   description = "CIDRs allowed to reach SSH. Restrict to your IP."
   type        = list(string)
-  default     = [
-      "0.0.0.0/0",
-      "::/0"
-    ]
+  default = [
+    "0.0.0.0/0",
+    "::/0"
+  ]
 }
 
 variable "k3s_token" {
