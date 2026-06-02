@@ -1,0 +1,53 @@
+variable "name" {
+  description = "Server name and base for resource labels"
+  type        = string
+}
+
+variable "environment" {
+  description = "Environment name (sandbox/prod)"
+  type        = string
+}
+
+variable "server_type" {
+  description = "Hetzner server type"
+  type        = string
+  default     = "cx23"
+}
+
+variable "location" {
+  description = "Hetzner datacenter location"
+  type        = string
+  default     = "nbg1"
+}
+
+variable "image" {
+  description = "Base OS image"
+  type        = string
+  default     = "rocky-10"
+}
+
+variable "ssh_public_keys" {
+  description = "SSH public keys for admin access to the node"
+  type        = list(string)
+}
+
+variable "k3s_version" {
+  description = "Pinned k3s version (immutable infra principle)"
+  type        = string
+  default     = "v1.36.1+k3s1"
+}
+
+variable "allowed_ssh_ips" {
+  description = "CIDRs allowed to reach SSH. Restrict to your IP."
+  type        = list(string)
+  default     = [
+      "0.0.0.0/0",
+      "::/0"
+    ]
+}
+
+variable "k3s_token" {
+  description = "Shared secret for k3s cluster join. Used by future nodes to join the cluster."
+  type        = string
+  sensitive   = true
+}
