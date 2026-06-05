@@ -1,3 +1,7 @@
+locals {
+  node_fqdn = "${var.dns_name}.${var.dns_zone_name}"
+}
+
 resource "hcloud_ssh_key" "admin" {
   count      = length(var.ssh_public_keys)
   name       = "${var.name}-admin-${count.index}"
@@ -70,7 +74,7 @@ resource "hcloud_server" "node" {
   public_net {
     ipv4_enabled = true
     ipv4         = hcloud_primary_ip.node_ipv4.id
-    ipv6_enabled = false
+    ipv6_enabled = true
   }
 
   user_data = templatefile("${path.module}/cloud-init.yaml.tftpl", {
@@ -78,7 +82,7 @@ resource "hcloud_server" "node" {
     environment     = var.environment
     k3s_version     = var.k3s_version
     k3s_token       = var.k3s_token
-    public_ip       = hcloud_primary_ip.node_ipv4.ip_address
+    node_fqdn   = local.node_fqdn
     ssh_public_keys = var.ssh_public_keys
   })
 
@@ -87,4 +91,24 @@ resource "hcloud_server" "node" {
     env     = var.environment
     role    = "k3s-server"
   }
+}
+
+resource "cloudflare_record" "node_a" {
+  zone_id = var.dns_zone_id
+  name    = var.dns_name
+  type    = "A"
+  content = hcloud_server.node.ipv4_address
+  ttl     = 3600
+  proxied = false
+  comment = "Managed by rootenv/infra/terraform — ${var.environment}"
+}
+
+resource "cloudflare_record" "node_aaaa" {
+  zone_id = var.dns_zone_id
+  name    = var.dns_name
+  type    = "AAAA"
+  content = hcloud_server.node.ipv6_address
+  ttl     = 3600
+  proxied = false
+  comment = "Managed by rootenv/infra/terraform — ${var.environment}"
 }

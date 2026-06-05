@@ -3,6 +3,16 @@ variable "name" {
   type        = string
 }
 
+variable "dns_zone_name" {
+  description = "DNS zone name, used to build FQDN (e.g. example.com)"
+  type        = string
+}
+
+variable "dns_name" {
+  description = "DNS record name relative to dns_zone_name (e.g. 'node-01.srv' becomes 'node-01.srv.example.com')"
+  type        = string
+}
+
 variable "environment" {
   description = "Environment name (sandbox/prod)"
   type        = string
@@ -50,4 +60,9 @@ variable "k3s_token" {
   description = "Shared secret for k3s cluster join. Used by future nodes to join the cluster."
   type        = string
   sensitive   = true
+}
+
+variable "dns_zone_id" {
+  description = "Cloudflare Zone ID for the infrastructure DNS zone (e.g. srv.example.com)"
+  type        = string
 }

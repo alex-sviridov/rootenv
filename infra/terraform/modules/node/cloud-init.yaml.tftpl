@@ -45,7 +45,7 @@ write_files:
       write-kubeconfig-mode: "0644"
       token: "${k3s_token}"
       tls-san:
-        - ${public_ip}
+        - ${node_fqdn}
         - ${node_name}
       kubelet-arg:
         - "system-reserved=cpu=200m,memory=256Mi"
