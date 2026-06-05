@@ -54,7 +54,7 @@ jobs:
             type=sha,prefix=sha-,format=short
       - uses: docker/build-push-action@v6
         with:
-          context: services/frontend
+          context: services/backend
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
