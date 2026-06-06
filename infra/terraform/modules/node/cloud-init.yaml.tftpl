@@ -1,0 +1,185 @@
+#cloud-config
+# rootenv k3s node bootstrap for Rocky Linux 
+
+hostname: ${node_name}
+preserve_hostname: false
+fqdn: ${node_name}
+
+# ---------------------------------------------------------------------------
+# User creation
+# ---------------------------------------------------------------------------
+users:
+  - name: admin
+    groups: [wheel]
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+%{ for key in ssh_public_keys ~}
+      - ${key}
+%{ endfor ~}
+
+# ---------------------------------------------------------------------------
+# Package management
+# ---------------------------------------------------------------------------
+package_update: true
+package_upgrade: true
+
+packages:
+  - epel-release
+  - container-selinux
+  - fail2ban
+  - dnf-automatic
+  - policycoreutils-python-utils
+  - jq
+  - tar
+
+# ---------------------------------------------------------------------------
+# Configuration files
+# ---------------------------------------------------------------------------
+write_files:
+  # ---- k3s server config (token is sensitive, mode 0600) ----
+  - path: /etc/rancher/k3s/config.yaml
+    permissions: '0600'
+    owner: root:root
+    content: |
+      write-kubeconfig-mode: "0644"
+      token: "${k3s_token}"
+      tls-san:
+        - ${node_fqdn}
+        - ${node_name}
+      kubelet-arg:
+        - "system-reserved=cpu=200m,memory=256Mi"
+        - "eviction-hard=memory.available<100Mi,nodefs.available<5%"
+      node-label:
+        - "provisioned-by=cloud-init"
+        - "environment=${environment}"
+      secrets-encryption: true
+      disable:
+        - traefik
+
+  # ---- SSH hardening ----
+  - path: /etc/ssh/sshd_config.d/99-rootenv-hardening.conf
+    permissions: '0600'
+    owner: root:root
+    content: |
+      # Authentication
+      PasswordAuthentication no
+      PermitEmptyPasswords no
+      ChallengeResponseAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin prohibit-password
+      MaxAuthTries 3
+      LoginGraceTime 30
+
+      # Surface reduction
+      AllowTcpForwarding no
+      X11Forwarding no
+      AllowAgentForwarding no
+      PermitUserEnvironment no
+
+      # Modern crypto only
+      KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org
+      Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com
+      MACs hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com
+
+      # Session
+      ClientAliveInterval 300
+      ClientAliveCountMax 2
+
+      # Whitelist users
+      AllowUsers admin
+
+  # ---- fail2ban: protect SSH ----
+  - path: /etc/fail2ban/jail.local
+    permissions: '0644'
+    owner: root:root
+    content: |
+      [DEFAULT]
+      bantime  = 1h
+      findtime = 10m
+      maxretry = 5
+      backend  = systemd
+
+      [sshd]
+      enabled = true
+
+  # ---- dnf-automatic: security updates only ----
+  - path: /etc/dnf/automatic.conf
+    permissions: '0644'
+    owner: root:root
+    content: |
+      [commands]
+      upgrade_type = security
+      random_sleep = 360
+      network_online_timeout = 60
+      download_updates = yes
+      apply_updates = yes
+      reboot = never
+
+      [emitters]
+      emit_via = stdio
+
+  # ---- k3s install script (separate file for debuggability) ----
+  - path: /usr/local/sbin/install-k3s.sh
+    permissions: '0700'
+    owner: root:root
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+
+      readonly K3S_VERSION="${k3s_version}"
+      readonly LOG_TAG="rootenv-bootstrap"
+
+      log() { logger -t "$LOG_TAG" "$1"; echo "[$LOG_TAG] $1"; }
+
+      log "installing k3s $K3S_VERSION"
+      curl -sfL https://get.k3s.io | \
+        INSTALL_K3S_VERSION="$K3S_VERSION" \
+        INSTALL_K3S_SELINUX_WARN=true \
+        sh -
+
+      log "waiting for k3s to become ready"
+      for i in {1..60}; do
+        if k3s kubectl get nodes 2>/dev/null | grep -q ' Ready '; then
+          log "k3s ready after $((i*5))s"
+          break
+        fi
+        sleep 5
+      done
+
+      if ! k3s kubectl get nodes 2>/dev/null | grep -q ' Ready '; then
+        log "ERROR: k3s did not become ready within 5 minutes"
+        exit 1
+      fi
+
+      log "bootstrap complete"
+
+# ---------------------------------------------------------------------------
+# Boot-time commands
+# ---------------------------------------------------------------------------
+# runcmd: runs once on first boot, after packages and write_files
+runcmd:
+  # Disable firewalld — it conflicts with k3s/CNI iptables/nftables rules.
+  # External protection is provided by Hetzner Cloud Firewall.
+  - systemctl disable firewalld --now || true
+  - systemctl mask firewalld || true
+
+  # Apply SSH hardening
+  - sshd -t && systemctl restart sshd
+
+  # Enable fail2ban
+  - systemctl enable fail2ban --now
+
+  # Enable automatic security updates
+  - systemctl enable --now dnf-automatic.timer
+
+  # Install k3s (script is logged to /var/log/messages via logger)
+  - /usr/local/sbin/install-k3s.sh
+
+  # Mark bootstrap done — useful sentinel for Terraform's fetch_kubeconfig
+  - touch /var/lib/rootenv-bootstrap-complete
+
+# ---------------------------------------------------------------------------
+# Final notification
+# ---------------------------------------------------------------------------
+final_message: "rootenv k3s node '${node_name}' ready after $UPTIME seconds"
