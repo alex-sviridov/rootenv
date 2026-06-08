@@ -1,11 +1,11 @@
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: relay-config
+  namespace: rootenv-infra
 data:
   RELAY_BACKEND_URL: http://backend-svc:8090
   RELAY_ALLOWED_ORIGINS: "*"
   RELAY_IDLE_TIMEOUT: 30m
   PORT: "8080"
   LOG_LEVEL: debug
-kind: ConfigMap
-metadata:
-  name: relay-config
-  namespace: rootenv-infra

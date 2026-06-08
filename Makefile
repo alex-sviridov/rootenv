@@ -11,10 +11,13 @@ dev-cluster:
 dev:
 	skaffold dev --cleanup=false
 
-prod-deploy:
-	kubectl apply -f deploy/k8s/00-namespace-infra.yaml
-	kubectl apply -f deploy/config/contmgr.prod.yaml
-	kubectl apply -f deploy/k8s/
+sandbox-platform-deploy:
+	helm repo add traefik https://traefik.github.io/charts
+	helm repo update
+	helm install traefik traefik/traefik --namespace traefik-system --create-namespace
+
+sandbox-deploy:
+	kubectl apply -k deploy/sandbox/
 
 dbusers-init:
 	python3 ./scripts/dbusers-init.py
