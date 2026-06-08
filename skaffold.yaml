@@ -51,4 +51,4 @@ deploy:
   kubeContext: k3d-rootenv
 manifests:
   rawYaml:
-  - deploy/k8s/*.yaml
+  - deploy/base/*.yaml
