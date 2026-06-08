@@ -30,6 +30,7 @@ def api(token, method, path, body=None):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Content-Type", "application/json")
+    req.add_header("User-Agent", "labs-sync/1.0")
     if token:
         req.add_header("Authorization", token)
     try:
@@ -39,11 +40,15 @@ def api(token, method, path, body=None):
     except urllib.error.HTTPError as e:
         body = e.read()
         return e.code, json.loads(body) if body else {}
+    except urllib.error.URLError as e:
+        raise SystemExit(f"Error: could not reach PocketBase at {url}: {e.reason}")
+    except OSError as e:
+        raise SystemExit(f"Error: could not reach PocketBase at {url}: {e}")
 
 
 def check_available():
     pb_url = os.environ["POCKETBASE_URL"].rstrip("/")
-    req = urllib.request.Request(pb_url, method="HEAD")
+    req = urllib.request.Request(pb_url, method="HEAD", headers={"User-Agent": "labs-sync/1.0"})
     try:
         urllib.request.urlopen(req, timeout=5)
     except urllib.error.HTTPError:

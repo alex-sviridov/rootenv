@@ -21,7 +21,7 @@ import urllib.request
 
 
 NAMESPACE = "rootenv-infra"
-BACKEND_SVC = "http://localhost:8080"
+DEFAULT_BACKEND_URL = "http://localhost:8080/api/"
 
 SVC_ACCOUNTS = [
     {"secret": "contmgr-secrets", "email_key": "CONTMGR_BACKEND_USERNAME", "password_key": "CONTMGR_BACKEND_PASSWORD", "role": "contmgr"},
@@ -43,10 +43,10 @@ def get_secret(name, key, namespace):
     return base64.b64decode(raw).decode()
 
 
-def api(method, path, token=None, body=None):
-    url = f"{BACKEND_SVC}/api/{path}"
+def api(backend_svc, method, path, token=None, body=None):
+    url = f"{backend_svc}/{path}"
     data = json.dumps(body).encode() if body else None
-    headers = {"Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json", "User-Agent": "dbusers-init/1.0"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
@@ -55,10 +55,13 @@ def api(method, path, token=None, body=None):
             return json.load(resp)
     except urllib.error.HTTPError as e:
         return json.loads(e.read())
+    except urllib.error.URLError as e:
+        print(f"ERROR: could not reach PocketBase at {url}: {e.reason}", file=sys.stderr)
+        sys.exit(1)
 
 
-def get_admin_token(email, password):
-    resp = api("POST", "collections/_superusers/auth-with-password",
+def get_admin_token(backend_svc, email, password):
+    resp = api(backend_svc, "POST", "collections/_superusers/auth-with-password",
                body={"identity": email, "password": password})
     token = resp.get("token")
     if not token:
@@ -67,17 +70,18 @@ def get_admin_token(email, password):
     return token
 
 
-def create_user(email, password, token, role=None):
-    resp = api("POST", "collections/users/records", token=token, body={
+def create_user(backend_svc, email, password, token, role=None):
+    resp = api(backend_svc, "POST", "collections/users/records", token=token, body={
         "email": email,
         "password": password,
         "passwordConfirm": password,
         "svc_role": role,
         "emailVisibility": True,
     })
+    email_error = resp.get("data", {}).get("email", {}).get("code")
     if resp.get("id"):
         print(f"  created {email}")
-    elif resp.get("code") == 400 and "already" in str(resp).lower():
+    elif resp.get("status") == 400 and email_error == "validation_not_unique":
         print(f"  {email} already exists, skipping")
     else:
         print(f"  WARNING: unexpected response for {email}: {resp}")
@@ -114,10 +118,7 @@ def main():
 
     admin_email = env.get("POCKETBASE_ADMIN_EMAIL")
     admin_password = env.get("POCKETBASE_ADMIN_PASSWORD")
-    backend_url = env.get("POCKETBASE_URL", "http://localhost:8080/api/").rstrip("/")
-    # POCKETBASE_URL includes /api/ — strip it; api() adds /api/ itself
-    global BACKEND_SVC
-    BACKEND_SVC = backend_url.removesuffix("/api")
+    backend_svc = env.get("POCKETBASE_URL", DEFAULT_BACKEND_URL).rstrip("/")
 
     if not admin_email or not admin_password:
         print(f"ERROR: POCKETBASE_ADMIN_EMAIL / POCKETBASE_ADMIN_PASSWORD missing in {args.env_file}",
@@ -133,7 +134,7 @@ def main():
 
     # Step 2: get admin token
     print(f"[2/3] Authenticating as superuser...")
-    token = get_admin_token(admin_email, admin_password)
+    token = get_admin_token(backend_svc, admin_email, admin_password)
     print(f"  ok")
 
     # Step 3: create service accounts
@@ -141,7 +142,7 @@ def main():
     for svc in SVC_ACCOUNTS:
         email = get_secret(svc["secret"], svc["email_key"], args.namespace)
         password = get_secret(svc["secret"], svc["password_key"], args.namespace)
-        create_user(email, password, token, role=svc.get("role"))
+        create_user(backend_svc, email, password, token, role=svc.get("role"))
 
     print("\nDone.")
 

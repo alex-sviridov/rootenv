@@ -986,7 +986,7 @@ environment:
   duration: 90
   assets:
     - name: workstation
-      image: rootenv-ubuntu-sshd
+      image: ubuntu-sshd
       platform: container
       cpu: 200m
       memory: 256MB
@@ -1015,7 +1015,7 @@ environment:
         chmod 600 /home/lab/.ssh/id_ed25519
         chmod 644 /home/lab/.ssh/id_ed25519.pub
     - name: ca-host
-      image: rootenv-ubuntu-sshd
+      image: ubuntu-sshd
       platform: container
       cpu: 100m
       memory: 128MB
@@ -1028,7 +1028,7 @@ environment:
         mkdir -p /etc/ssh-ca
         chown lab:lab /etc/ssh-ca
     - name: bastion
-      image: rootenv-ubuntu-sshd
+      image: ubuntu-sshd
       platform: container
       cpu: 200m
       memory: 128MB
@@ -1058,7 +1058,7 @@ environment:
         sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
         kill -HUP 1
     - name: app-1
-      image: rootenv-ubuntu-sshd
+      image: ubuntu-sshd
       platform: container
       cpu: 200m
       memory: 128MB
