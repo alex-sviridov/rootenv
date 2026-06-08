@@ -21,8 +21,9 @@ users:
 # ---------------------------------------------------------------------------
 # Package management
 # ---------------------------------------------------------------------------
+# Full upgrade is left to dnf-automatic (security-only, scheduled) — running
+# it here blocks runcmd/k3s install for 15-30+ minutes on a fresh image.
 package_update: true
-package_upgrade: true
 
 packages:
   - epel-release
@@ -132,11 +133,28 @@ write_files:
 
       log() { logger -t "$LOG_TAG" "$1"; echo "[$LOG_TAG] $1"; }
 
-      log "installing k3s $K3S_VERSION"
-      curl -sfL https://get.k3s.io | \
-        INSTALL_K3S_VERSION="$K3S_VERSION" \
-        INSTALL_K3S_SELINUX_WARN=true \
-        sh -
+      for attempt in 1 2 3; do
+        log "installing k3s $K3S_VERSION (attempt $attempt/3)"
+        if curl -sfL https://get.k3s.io | \
+            INSTALL_K3S_VERSION="$K3S_VERSION" \
+            INSTALL_K3S_SELINUX_WARN=true \
+            sh -; then
+          break
+        fi
+        if [ "$attempt" -eq 3 ]; then
+          log "ERROR: k3s install failed after 3 attempts"
+          exit 1
+        fi
+        log "install attempt $attempt failed, retrying in 15s"
+        sleep 15
+      done
+
+      # The k3s installer can swallow its own download errors and exit 0;
+      # verify the binary actually landed before trusting the install.
+      if ! command -v k3s >/dev/null 2>&1; then
+        log "ERROR: k3s binary not found after install — installer reported success but did not install k3s"
+        exit 1
+      fi
 
       log "waiting for k3s to become ready"
       for i in {1..60}; do
@@ -152,6 +170,7 @@ write_files:
         exit 1
       fi
 
+      touch /var/lib/rootenv-bootstrap-complete
       log "bootstrap complete"
 
 # ---------------------------------------------------------------------------
@@ -173,11 +192,10 @@ runcmd:
   # Enable automatic security updates
   - systemctl enable --now dnf-automatic.timer
 
-  # Install k3s (script is logged to /var/log/messages via logger)
+  # Install k3s (script is logged to /var/log/messages via logger).
+  # The script itself writes /var/lib/rootenv-bootstrap-complete on success
+  # only — so the sentinel can't appear after a failed install.
   - /usr/local/sbin/install-k3s.sh
-
-  # Mark bootstrap done — useful sentinel for Terraform's fetch_kubeconfig
-  - touch /var/lib/rootenv-bootstrap-complete
 
 # ---------------------------------------------------------------------------
 # Final notification

@@ -82,7 +82,7 @@ resource "hcloud_server" "node" {
     environment     = var.environment
     k3s_version     = var.k3s_version
     k3s_token       = var.k3s_token
-    node_fqdn   = local.node_fqdn
+    node_fqdn       = local.node_fqdn
     ssh_public_keys = var.ssh_public_keys
   })
 
@@ -90,6 +90,19 @@ resource "hcloud_server" "node" {
     project = "rootenv"
     env     = var.environment
     role    = "k3s-server"
+  }
+}
+
+# Recreating the server changes its SSH host key; prune the stale entry so
+# clients connecting with default known_hosts checking don't get blocked.
+resource "null_resource" "prune_known_hosts" {
+  triggers = {
+    server_id = hcloud_server.node.id
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["bash", "-c"]
+    command     = "ssh-keygen -f \"$HOME/.ssh/known_hosts\" -R \"${local.node_fqdn}\" 2>/dev/null || true"
   }
 }
 

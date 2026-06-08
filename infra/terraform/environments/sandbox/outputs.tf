@@ -20,7 +20,7 @@ output "service_fqdn" {
 
 output "next_steps" {
   description = "What to do after apply"
-  value = <<-EOT
+  value       = <<-EOT
     
     Environment ready.
     
