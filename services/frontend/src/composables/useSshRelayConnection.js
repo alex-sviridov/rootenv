@@ -100,14 +100,14 @@ export function useSshRelayConnection(serverId, secret) {
     terminal.writeln('Checking relay…')
 
     try {
-      const res = await fetch('/relay/healthz')
+      const res = await fetch('/relay/ssh/healthz')
       if (!res.ok) {
         const body = await res.text()
         terminal.writeln(`\r\nRelay unavailable (HTTP ${res.status}): ${body || 'no details'}`)
         return
       }
     } catch {
-      terminal.writeln('\r\nRelay unavailable: could not reach /relay/healthz')
+      terminal.writeln('\r\nRelay unavailable: could not reach /relay/ssh/healthz')
       return
     }
 

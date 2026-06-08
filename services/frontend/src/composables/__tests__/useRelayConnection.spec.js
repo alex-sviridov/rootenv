@@ -109,7 +109,7 @@ describe('health check throws (network error)', () => {
     const { result, unmount } = withSetup(() => useRelayConnection('server1'))
     await flushPromises()
 
-    expect(result.terminal.buffer.some(msg => msg.includes('/relay/healthz'))).toBe(true)
+    expect(result.terminal.buffer.some(msg => msg.includes('/relay/ssh/healthz'))).toBe(true)
     expect(MockWebSocket.lastInstance).toBeNull()
     unmount()
   })
