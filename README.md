@@ -47,11 +47,57 @@ graph LR
 
 ## Quickstart
 
+### Remove
+
+Prerequisites: `opentofy`, `kubectl`.
+
+```bash
+# Make secrets
+cp scripts/.env.example scripts/.env
+vi scripts/.env
+
+cp infra/terraform/environments/sandbox/terraform.tfvars.example infra/terraform/environments/sandbox/terraform.tfvars
+vi infra/terraform/environments/sandbox/terraform.tfvars
+
+kubectl create secret generic contmgr-secrets -n rootenv-infra --from-literal CONTMGR_BACKEND_USERNAME=contmgr@example.local --from-literal CONTMGR_BACKEND_PASSWORD=password123 --dry-run=client -o yaml > deploy/base/05-contmgr-secrets.yaml
+kubectl create secret generic relay-secrets -n rootenv-infra --from-literal RELAY_BACKEND_USERNAME=relay@example.local --from-literal RELAY_BACKEND_PASSWORD=password123 --dry-run=client -o yaml > deploy/base/05-relay-secrets.yaml
+
+# Bootstrap k3s cluster
+
+cd infra/terraform/environments/sandbox
+tofu init
+tofu apply
+
+# Use the provisioned kubeconfig
+
+export KUBECONFIG=/home/alex/.kube/rootenv-sandbox
+
+# Install platform components
+
+make sandbox-platform-deploy
+
+# Deploy app
+
+make sandbox-deploy
+
+# Bootstrap users
+
+make dbusers-init
+
+# Upload lab definitions
+
+make labs-sync
+
+```
+
+### Locally
+
 Prerequisites: Docker, [k3d](https://k3d.io), [Skaffold](https://skaffold.dev), `kubectl`, `make`.
 
 ```bash
 # Make secrets
 cp scripts/.env.example scripts/.env
+vi scripts/.env
 kubectl create secret generic contmgr-secrets -n rootenv-infra --from-literal CONTMGR_BACKEND_USERNAME=contmgr@example.local --from-literal CONTMGR_BACKEND_PASSWORD=password123 --dry-run=client -o yaml > deploy/base/05-contmgr-secrets.yaml
 kubectl create secret generic relay-secrets -n rootenv-infra --from-literal RELAY_BACKEND_USERNAME=relay@example.local --from-literal RELAY_BACKEND_PASSWORD=password123 --dry-run=client -o yaml > deploy/base/05-relay-secrets.yaml
 

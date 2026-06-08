@@ -12,12 +12,10 @@ dev:
 	skaffold dev --cleanup=false
 
 sandbox-platform-deploy:
-	helm repo add traefik https://traefik.github.io/charts
-	helm repo update
-	helm install traefik traefik/traefik --namespace traefik-system --create-namespace
+	/bin/bash deploy/platform/install.sh
 
 sandbox-deploy:
-	kubectl apply -k deploy/sandbox/
+	kubectl apply -k deploy/overlays/sandbox/
 
 dbusers-init:
 	python3 ./scripts/dbusers-init.py
