@@ -97,15 +97,18 @@ Prerequisites: Docker, [k3d](https://k3d.io), [Skaffold](https://skaffold.dev), 
 ```bash
 # Make secrets
 cp scripts/.env.example scripts/.env
-vi scripts/.env
+vi scripts/.env 
 kubectl create secret generic contmgr-secrets -n rootenv-infra --from-literal CONTMGR_BACKEND_USERNAME=contmgr@example.local --from-literal CONTMGR_BACKEND_PASSWORD=password123 --dry-run=client -o yaml > deploy/base/05-contmgr-secrets.yaml
 kubectl create secret generic relay-secrets -n rootenv-infra --from-literal RELAY_BACKEND_USERNAME=relay@example.local --from-literal RELAY_BACKEND_PASSWORD=password123 --dry-run=client -o yaml > deploy/base/05-relay-secrets.yaml
 
 # Create cluster, apply manifests
 make dev-cluster
 
+# Start the skaffold for auto applying manifest changes and rebuilding containers
+make dev
+
 # Seed the database: create superuser and service accounts
-make dbusers-init
+make dev-dbusers-init
 
 # Build lab images
 

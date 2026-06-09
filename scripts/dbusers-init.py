@@ -14,6 +14,8 @@ Steps:
 import argparse
 import base64
 import json
+import os
+import ssl
 import subprocess
 import sys
 import urllib.error
@@ -50,8 +52,9 @@ def api(backend_svc, method, path, token=None, body=None):
     if token:
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    ssl_ctx = ssl._create_unverified_context() if os.environ.get("SSL_NO_VERIFY", "").lower() == "true" else None
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, context=ssl_ctx) as resp:
             return json.load(resp)
     except urllib.error.HTTPError as e:
         return json.loads(e.read())
@@ -116,9 +119,9 @@ def main():
         print(f"ERROR: {args.env_file} not found", file=sys.stderr)
         sys.exit(1)
 
-    admin_email = env.get("POCKETBASE_ADMIN_EMAIL")
-    admin_password = env.get("POCKETBASE_ADMIN_PASSWORD")
-    backend_svc = env.get("POCKETBASE_URL", DEFAULT_BACKEND_URL).rstrip("/")
+    admin_email = os.environ.get("POCKETBASE_ADMIN_EMAIL") or env.get("POCKETBASE_ADMIN_EMAIL")
+    admin_password = os.environ.get("POCKETBASE_ADMIN_PASSWORD") or env.get("POCKETBASE_ADMIN_PASSWORD")
+    backend_svc = (os.environ.get("POCKETBASE_URL") or env.get("POCKETBASE_URL", DEFAULT_BACKEND_URL)).rstrip("/")
 
     if not admin_email or not admin_password:
         print(f"ERROR: POCKETBASE_ADMIN_EMAIL / POCKETBASE_ADMIN_PASSWORD missing in {args.env_file}",

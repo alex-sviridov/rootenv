@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import re
+import ssl
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -33,8 +34,9 @@ def api(token, method, path, body=None):
     req.add_header("User-Agent", "labs-sync/1.0")
     if token:
         req.add_header("Authorization", token)
+    ssl_ctx = ssl._create_unverified_context() if os.environ.get("SSL_NO_VERIFY", "").lower() == "true" else None
     try:
-        with urllib.request.urlopen(req) as r:
+        with urllib.request.urlopen(req, context=ssl_ctx) as r:
             body = r.read()
             return r.status, json.loads(body) if body else {}
     except urllib.error.HTTPError as e:
@@ -49,8 +51,9 @@ def api(token, method, path, body=None):
 def check_available():
     pb_url = os.environ["POCKETBASE_URL"].rstrip("/")
     req = urllib.request.Request(pb_url, method="HEAD", headers={"User-Agent": "labs-sync/1.0"})
+    ssl_ctx = ssl._create_unverified_context() if os.environ.get("SSL_NO_VERIFY", "").lower() == "true" else None
     try:
-        urllib.request.urlopen(req, timeout=5)
+        urllib.request.urlopen(req, timeout=5, context=ssl_ctx)
     except urllib.error.HTTPError:
         pass  # any HTTP response means PocketBase is up
     except urllib.error.URLError as e:
