@@ -14,12 +14,8 @@ variable "dns_name" {
 }
 
 variable "target_ipv4" {
-  description = "List of IPv4 addresses the record points to. Use one IP for single-node, multiple for round-robin, or one LB IP for HA."
-  type        = list(string)
-  validation {
-    condition     = length(var.target_ipv4) > 0
-    error_message = "At least one target IP must be provided."
-  }
+  description = "IPv4 address the record points to."
+  type        = string
 }
 
 variable "proxied" {

@@ -50,5 +50,6 @@ deploy:
   kubectl: {}
   kubeContext: k3d-rootenv
 manifests:
-  rawYaml:
-  - deploy/k8s/*.yaml
+  kustomize:
+    paths:
+    - deploy/overlays/dev

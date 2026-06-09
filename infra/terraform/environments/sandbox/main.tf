@@ -15,13 +15,13 @@ locals {
 module "k3s" {
   source          = "../../modules/node"
   name            = "node1"
-  dns_name            = "node1.infra"
+  dns_name        = "node1.infra"
   environment     = var.environment
   ssh_public_keys = var.ssh_public_keys
   allowed_ssh_ips = var.allowed_ssh_ips
   k3s_token       = random_password.k3s_token.result
-  dns_zone_id   = var.dns_zone_id
-  dns_zone_name = var.dns_zone_name
+  dns_zone_id     = var.dns_zone_id
+  dns_zone_name   = var.dns_zone_name
 }
 
 # Fetch kubeconfig; Cannot do it without SSH
@@ -41,7 +41,14 @@ resource "null_resource" "fetch_kubeconfig" {
       HOST="admin@${module.k3s.fqdn}"
 
       echo "waiting for k3s bootstrap to complete..."
-      until ssh $SSH_OPTS "$HOST" 'test -f /var/lib/rootenv-bootstrap-complete' 2>/dev/null; do
+      for i in $(seq 1 60); do
+        if ssh $SSH_OPTS "$HOST" 'test -f /var/lib/rootenv-bootstrap-complete' 2>/dev/null; then
+          break
+        fi
+        if [ "$i" -eq 60 ]; then
+          echo "ERROR: bootstrap did not complete within 5 minutes — check /var/log/messages on the node" >&2
+          exit 1
+        fi
         sleep 5
       done
 
@@ -60,10 +67,10 @@ resource "null_resource" "fetch_kubeconfig" {
 module "service_dns" {
   source = "../../modules/service-dns"
 
-  dns_zone_id     = var.dns_zone_id
-  dns_zone_name   = var.dns_zone_name
-  dns_name        = var.service_dns_name         
-  target_ipv4 = [module.k3s.ipv4_address]    
-  proxied     = true
-  environment = var.environment
+  dns_zone_id   = var.dns_zone_id
+  dns_zone_name = var.dns_zone_name
+  dns_name      = var.service_dns_name
+  target_ipv4   = module.k3s.ipv4_address
+  proxied       = true
+  environment   = var.environment
 }

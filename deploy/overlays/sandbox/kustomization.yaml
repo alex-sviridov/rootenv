@@ -1,0 +1,42 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources: 
+  - ../../base/
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: contmgr-config
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: contmgr-config
+      data:
+        CONTMGR_IMAGE_REGISTRY: "ghcr.io/alex-sviridov/rootenv/lab"
+
+  - target:
+      kind: ConfigMap
+      name: frontend-config
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: frontend-config
+      data:
+        VITE_API_URL: "https://rootenv.sviridov.lu/api/"
+
+images:
+  - name: rootenv-frontend
+    newName: ghcr.io/alex-sviridov/rootenv/frontend
+    newTag: sha-28a70ec 
+  - name: rootenv-backend
+    newName: ghcr.io/alex-sviridov/rootenv/backend
+    newTag: sha-2032b77 
+  - name: rootenv-relay-ssh
+    newName: ghcr.io/alex-sviridov/rootenv/relay-ssh
+    newTag: sha-1e9caef
+  - name: rootenv-contmgr 
+    newName: ghcr.io/alex-sviridov/rootenv/contmgr 
+    newTag: sha-1e9caef

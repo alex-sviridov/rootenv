@@ -1,0 +1,36 @@
+name: Feature
+description: New feature or enhancement proposal
+labels: ["type/feature"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - frontend
+        - backend
+        - contmgr
+        - relay-ssh
+        - infra\deploy
+        - lab 
+        - not-sure
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Current state
+      description: What is the current state of things? Describe the problem or limitation that you want to address with this feature.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: Describe your proposed solution or feature in detail. Explain how it would work and how it addresses the problem you described above.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
