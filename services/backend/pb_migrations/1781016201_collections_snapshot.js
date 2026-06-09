@@ -7,6 +7,7 @@ migrate((app) => {
       "fields": [
         {
           "autogeneratePattern": "[a-z0-9]{15}",
+          "help": "",
           "hidden": false,
           "id": "text3208210256",
           "max": 15,
@@ -21,6 +22,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text455797646",
           "max": 0,
@@ -35,6 +37,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text127846527",
           "max": 0,
@@ -49,6 +52,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text1582905952",
           "max": 0,
@@ -99,6 +103,7 @@ migrate((app) => {
       "fields": [
         {
           "autogeneratePattern": "[a-z0-9]{15}",
+          "help": "",
           "hidden": false,
           "id": "text3208210256",
           "max": 15,
@@ -113,6 +118,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text455797646",
           "max": 0,
@@ -127,6 +133,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text127846527",
           "max": 0,
@@ -141,6 +148,7 @@ migrate((app) => {
         },
         {
           "cost": 8,
+          "help": "",
           "hidden": true,
           "id": "password901924565",
           "max": 0,
@@ -154,6 +162,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": true,
           "id": "text3866985172",
           "max": 0,
@@ -204,6 +213,7 @@ migrate((app) => {
       "fields": [
         {
           "autogeneratePattern": "[a-z0-9]{15}",
+          "help": "",
           "hidden": false,
           "id": "text3208210256",
           "max": 15,
@@ -218,6 +228,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text455797646",
           "max": 0,
@@ -232,6 +243,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text127846527",
           "max": 0,
@@ -246,6 +258,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text2462348188",
           "max": 0,
@@ -260,6 +273,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text1044722854",
           "max": 0,
@@ -311,6 +325,7 @@ migrate((app) => {
       "fields": [
         {
           "autogeneratePattern": "[a-z0-9]{15}",
+          "help": "",
           "hidden": false,
           "id": "text3208210256",
           "max": 15,
@@ -325,6 +340,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text455797646",
           "max": 0,
@@ -339,6 +355,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text127846527",
           "max": 0,
@@ -353,6 +370,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text4228609354",
           "max": 0,
@@ -421,6 +439,7 @@ migrate((app) => {
       "fields": [
         {
           "autogeneratePattern": "[a-z0-9]{15}",
+          "help": "",
           "hidden": false,
           "id": "text3208210256",
           "max": 15,
@@ -435,6 +454,7 @@ migrate((app) => {
         },
         {
           "cost": 0,
+          "help": "",
           "hidden": true,
           "id": "password901924565",
           "max": 0,
@@ -448,6 +468,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "[a-zA-Z0-9]{50}",
+          "help": "",
           "hidden": true,
           "id": "text2504183744",
           "max": 60,
@@ -462,6 +483,7 @@ migrate((app) => {
         },
         {
           "exceptDomains": null,
+          "help": "",
           "hidden": false,
           "id": "email3885137012",
           "name": "email",
@@ -472,6 +494,7 @@ migrate((app) => {
           "type": "email"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "bool1547992806",
           "name": "emailVisibility",
@@ -481,6 +504,7 @@ migrate((app) => {
           "type": "bool"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "bool256245529",
           "name": "verified",
@@ -593,6 +617,7 @@ migrate((app) => {
       "fields": [
         {
           "autogeneratePattern": "[a-z0-9]{15}",
+          "help": "",
           "hidden": false,
           "id": "text3208210256",
           "max": 15,
@@ -607,6 +632,7 @@ migrate((app) => {
         },
         {
           "cost": 0,
+          "help": "",
           "hidden": true,
           "id": "password901924565",
           "max": 0,
@@ -620,6 +646,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "[a-zA-Z0-9]{50}",
+          "help": "",
           "hidden": true,
           "id": "text2504183744",
           "max": 60,
@@ -634,6 +661,7 @@ migrate((app) => {
         },
         {
           "exceptDomains": null,
+          "help": "",
           "hidden": false,
           "id": "email3885137012",
           "name": "email",
@@ -644,6 +672,7 @@ migrate((app) => {
           "type": "email"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "bool1547992806",
           "name": "emailVisibility",
@@ -653,6 +682,7 @@ migrate((app) => {
           "type": "bool"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "bool256245529",
           "name": "verified",
@@ -663,6 +693,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text1579384326",
           "max": 255,
@@ -676,6 +707,7 @@ migrate((app) => {
           "type": "text"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "file376926767",
           "maxSelect": 1,
@@ -697,6 +729,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text2320227475",
           "max": 0,
@@ -795,6 +828,7 @@ migrate((app) => {
       "fields": [
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text3208210256",
           "max": 0,
@@ -808,6 +842,7 @@ migrate((app) => {
           "type": "text"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "select2363381545",
           "maxSelect": 1,
@@ -823,6 +858,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text724990059",
           "max": 0,
@@ -837,6 +873,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text1843675174",
           "max": 0,
@@ -850,6 +887,7 @@ migrate((app) => {
           "type": "text"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "json4274335913",
           "maxSize": 0,
@@ -860,6 +898,7 @@ migrate((app) => {
           "type": "json"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "json1176952354",
           "maxSize": 0,
@@ -872,6 +911,7 @@ migrate((app) => {
         {
           "cascadeDelete": false,
           "collectionId": "pbc_2691397795",
+          "help": "",
           "hidden": false,
           "id": "relation1032740943",
           "maxSelect": 1,
@@ -918,6 +958,7 @@ migrate((app) => {
       "fields": [
         {
           "autogeneratePattern": "[a-z0-9]{15}",
+          "help": "",
           "hidden": false,
           "id": "text3208210256",
           "max": 15,
@@ -933,6 +974,7 @@ migrate((app) => {
         {
           "cascadeDelete": false,
           "collectionId": "_pb_users_auth_",
+          "help": "",
           "hidden": false,
           "id": "relation2375276105",
           "maxSelect": 1,
@@ -946,6 +988,7 @@ migrate((app) => {
         {
           "cascadeDelete": false,
           "collectionId": "pbc_2691397795",
+          "help": "",
           "hidden": false,
           "id": "relation1641460164",
           "maxSelect": 1,
@@ -958,6 +1001,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text1337948829",
           "max": 0,
@@ -991,6 +1035,7 @@ migrate((app) => {
           "type": "autodate"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "select_current_state",
           "maxSelect": 1,
@@ -1008,6 +1053,7 @@ migrate((app) => {
           ]
         },
         {
+          "help": "",
           "hidden": false,
           "id": "select_desired_state",
           "maxSelect": 1,
@@ -1020,6 +1066,18 @@ migrate((app) => {
             "provisioned",
             "decommissioned"
           ]
+        },
+        {
+          "help": "",
+          "hidden": false,
+          "id": "date261981154",
+          "max": "",
+          "min": "",
+          "name": "expires_at",
+          "presentable": false,
+          "required": false,
+          "system": false,
+          "type": "date"
         }
       ],
       "id": "pbc_4287217533",
@@ -1037,6 +1095,7 @@ migrate((app) => {
       "fields": [
         {
           "autogeneratePattern": "[a-z0-9]{15}",
+          "help": "",
           "hidden": false,
           "id": "text3208210256",
           "max": 15,
@@ -1052,6 +1111,7 @@ migrate((app) => {
         {
           "cascadeDelete": false,
           "collectionId": "pbc_4287217533",
+          "help": "",
           "hidden": false,
           "id": "relation418120294",
           "maxSelect": 1,
@@ -1065,6 +1125,7 @@ migrate((app) => {
         {
           "cascadeDelete": false,
           "collectionId": "_pb_users_auth_",
+          "help": "",
           "hidden": false,
           "id": "relation2375276105",
           "maxSelect": 1,
@@ -1077,6 +1138,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text1579384326",
           "max": 0,
@@ -1090,6 +1152,7 @@ migrate((app) => {
           "type": "text"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "select2744374011",
           "maxSelect": 1,
@@ -1107,6 +1170,7 @@ migrate((app) => {
           ]
         },
         {
+          "help": "",
           "hidden": false,
           "id": "select2063623452",
           "maxSelect": 1,
@@ -1142,6 +1206,7 @@ migrate((app) => {
           "type": "autodate"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "date617435213",
           "max": "",
@@ -1153,6 +1218,7 @@ migrate((app) => {
           "type": "date"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "json1688994316",
           "maxSize": 0,
@@ -1178,6 +1244,7 @@ migrate((app) => {
       "fields": [
         {
           "autogeneratePattern": "[a-z0-9]{15}",
+          "help": "",
           "hidden": false,
           "id": "text3208210256",
           "max": 15,
@@ -1193,6 +1260,7 @@ migrate((app) => {
         {
           "cascadeDelete": false,
           "collectionId": "pbc_3738798621",
+          "help": "",
           "hidden": false,
           "id": "relation1517147638",
           "maxSelect": 1,
@@ -1204,6 +1272,7 @@ migrate((app) => {
           "type": "relation"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "select2395663060",
           "maxSelect": 1,
@@ -1220,6 +1289,7 @@ migrate((app) => {
           ]
         },
         {
+          "help": "",
           "hidden": false,
           "id": "select2063623452",
           "maxSelect": 1,
@@ -1271,6 +1341,7 @@ migrate((app) => {
       "fields": [
         {
           "autogeneratePattern": "[a-z0-9]{15}",
+          "help": "",
           "hidden": false,
           "id": "text3208210256",
           "max": 15,
@@ -1286,6 +1357,7 @@ migrate((app) => {
         {
           "cascadeDelete": true,
           "collectionId": "pbc_3738798621",
+          "help": "",
           "hidden": false,
           "id": "relation_keys_asset",
           "maxSelect": 1,
@@ -1308,6 +1380,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "[A-Za-z0-9]{32}",
+          "help": "",
           "hidden": false,
           "id": "text1597481275",
           "max": 32,
@@ -1322,6 +1395,7 @@ migrate((app) => {
         },
         {
           "autogeneratePattern": "",
+          "help": "",
           "hidden": false,
           "id": "text717151497",
           "max": 0,
@@ -1350,6 +1424,7 @@ migrate((app) => {
       "fields": [
         {
           "autogeneratePattern": "[a-z0-9]{15}",
+          "help": "",
           "hidden": false,
           "id": "text3208210256",
           "max": 15,
@@ -1365,6 +1440,7 @@ migrate((app) => {
         {
           "cascadeDelete": true,
           "collectionId": "pbc_3738798621",
+          "help": "",
           "hidden": false,
           "id": "relation45046364",
           "maxSelect": 1,
@@ -1376,6 +1452,7 @@ migrate((app) => {
           "type": "relation"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "json704082790",
           "maxSize": 0,
@@ -1386,6 +1463,7 @@ migrate((app) => {
           "type": "json"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "json2783094231",
           "maxSize": 0,
@@ -1396,6 +1474,7 @@ migrate((app) => {
           "type": "json"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "select961728715",
           "maxSelect": 1,
@@ -1424,183 +1503,8 @@ migrate((app) => {
       "deleteRule": null,
       "fields": [
         {
-          "autogeneratePattern": "",
-          "hidden": false,
-          "id": "text3208210256",
-          "max": 0,
-          "min": 0,
-          "name": "id",
-          "pattern": "^[a-z0-9]+$",
-          "presentable": false,
-          "primaryKey": true,
-          "required": true,
-          "system": true,
-          "type": "text"
-        },
-        {
-          "autogeneratePattern": "",
-          "hidden": false,
-          "id": "_clone_5yJ4",
-          "max": 0,
-          "min": 0,
-          "name": "title",
-          "pattern": "",
-          "presentable": false,
-          "primaryKey": false,
-          "required": false,
-          "system": false,
-          "type": "text"
-        },
-        {
-          "autogeneratePattern": "",
-          "hidden": false,
-          "id": "_clone_mk8Z",
-          "max": 0,
-          "min": 0,
-          "name": "description",
-          "pattern": "",
-          "presentable": false,
-          "primaryKey": false,
-          "required": false,
-          "system": false,
-          "type": "text"
-        },
-        {
-          "hidden": false,
-          "id": "_clone_cIhd",
-          "maxSize": 0,
-          "name": "content",
-          "presentable": false,
-          "required": false,
-          "system": false,
-          "type": "json"
-        },
-        {
-          "cascadeDelete": false,
-          "collectionId": "pbc_2691397795",
-          "hidden": false,
-          "id": "_clone_RX96",
-          "maxSelect": 1,
-          "minSelect": 0,
-          "name": "parent",
-          "presentable": false,
-          "required": false,
-          "system": false,
-          "type": "relation"
-        },
-        {
-          "hidden": false,
-          "id": "_clone_5juN",
-          "maxSelect": 1,
-          "name": "type",
-          "presentable": false,
-          "required": false,
-          "system": false,
-          "type": "select",
-          "values": [
-            "folder",
-            "lab"
-          ]
-        }
-      ],
-      "id": "pbc_2994682339",
-      "indexes": [],
-      "listRule": "",
-      "name": "labs_userview",
-      "system": false,
-      "type": "view",
-      "updateRule": null,
-      "viewQuery": "SELECT id, title, description, content, parent, type\nFROM labs",
-      "viewRule": ""
-    },
-    {
-      "createRule": null,
-      "deleteRule": null,
-      "fields": [
-        {
-          "autogeneratePattern": "",
-          "hidden": false,
-          "id": "text3208210256",
-          "max": 0,
-          "min": 0,
-          "name": "id",
-          "pattern": "^[a-z0-9]+$",
-          "presentable": false,
-          "primaryKey": true,
-          "required": true,
-          "system": true,
-          "type": "text"
-        },
-        {
-          "cascadeDelete": true,
-          "collectionId": "pbc_3738798621",
-          "hidden": false,
-          "id": "_clone_5ZxE",
-          "maxSelect": 1,
-          "minSelect": 0,
-          "name": "asset",
-          "presentable": false,
-          "required": true,
-          "system": false,
-          "type": "relation"
-        },
-        {
-          "cascadeDelete": false,
-          "collectionId": "pbc_4287217533",
-          "hidden": false,
-          "id": "_clone_1qAS",
-          "maxSelect": 1,
-          "minSelect": 0,
-          "name": "attempt",
-          "presentable": false,
-          "required": false,
-          "system": false,
-          "type": "relation"
-        },
-        {
-          "cascadeDelete": false,
-          "collectionId": "_pb_users_auth_",
-          "hidden": false,
-          "id": "_clone_6TsY",
-          "maxSelect": 1,
-          "minSelect": 0,
-          "name": "user",
-          "presentable": false,
-          "required": false,
-          "system": false,
-          "type": "relation"
-        },
-        {
-          "autogeneratePattern": "[A-Za-z0-9]{32}",
-          "hidden": false,
-          "id": "_clone_AVJz",
-          "max": 32,
-          "min": 32,
-          "name": "secret",
-          "pattern": "^[A-Za-z0-9]{32}$",
-          "presentable": false,
-          "primaryKey": false,
-          "required": true,
-          "system": false,
-          "type": "text"
-        }
-      ],
-      "id": "pbc_1105020747",
-      "indexes": [],
-      "listRule": "@request.auth.id = user.id",
-      "name": "keys_userview",
-      "system": false,
-      "type": "view",
-      "updateRule": null,
-      "viewQuery": "SELECT k.id, k.asset, ast.attempt, a.user, k.secret FROM keys k JOIN assets ast ON k.asset = ast.id JOIN attempts a ON ast.attempt = a.id WHERE a.current_state != 'decommissioned'",
-      "viewRule": "@request.auth.id = user.id"
-    },
-    {
-      "createRule": null,
-      "deleteRule": null,
-      "fields": [
-        {
           "autogeneratePattern": "[a-z0-9]{15}",
+          "help": "",
           "hidden": false,
           "id": "text3208210256",
           "max": 15,
@@ -1616,6 +1520,7 @@ migrate((app) => {
         {
           "cascadeDelete": true,
           "collectionId": "pbc_4287217533",
+          "help": "",
           "hidden": false,
           "id": "relation_ac_attempt",
           "maxSelect": 1,
@@ -1627,6 +1532,7 @@ migrate((app) => {
           "type": "relation"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "json_ac_environment",
           "maxSize": 0,
@@ -1637,6 +1543,7 @@ migrate((app) => {
           "type": "json"
         },
         {
+          "help": "",
           "hidden": false,
           "id": "date_ac_finished",
           "max": "",
@@ -1676,6 +1583,193 @@ migrate((app) => {
       "type": "base",
       "updateRule": "@request.auth.svc_role = 'relay' || @request.auth.svc_role = 'contmgr'",
       "viewRule": "@request.auth.svc_role = 'relay' || @request.auth.svc_role = 'contmgr'"
+    },
+    {
+      "createRule": null,
+      "deleteRule": null,
+      "fields": [
+        {
+          "autogeneratePattern": "",
+          "help": "",
+          "hidden": false,
+          "id": "text3208210256",
+          "max": 0,
+          "min": 0,
+          "name": "id",
+          "pattern": "^[a-z0-9]+$",
+          "presentable": false,
+          "primaryKey": true,
+          "required": true,
+          "system": true,
+          "type": "text"
+        },
+        {
+          "autogeneratePattern": "",
+          "help": "",
+          "hidden": false,
+          "id": "_clone_NgL6",
+          "max": 0,
+          "min": 0,
+          "name": "title",
+          "pattern": "",
+          "presentable": false,
+          "primaryKey": false,
+          "required": false,
+          "system": false,
+          "type": "text"
+        },
+        {
+          "autogeneratePattern": "",
+          "help": "",
+          "hidden": false,
+          "id": "_clone_blSC",
+          "max": 0,
+          "min": 0,
+          "name": "description",
+          "pattern": "",
+          "presentable": false,
+          "primaryKey": false,
+          "required": false,
+          "system": false,
+          "type": "text"
+        },
+        {
+          "help": "",
+          "hidden": false,
+          "id": "_clone_xNBa",
+          "maxSize": 0,
+          "name": "content",
+          "presentable": false,
+          "required": false,
+          "system": false,
+          "type": "json"
+        },
+        {
+          "cascadeDelete": false,
+          "collectionId": "pbc_2691397795",
+          "help": "",
+          "hidden": false,
+          "id": "_clone_dI8g",
+          "maxSelect": 1,
+          "minSelect": 0,
+          "name": "parent",
+          "presentable": false,
+          "required": false,
+          "system": false,
+          "type": "relation"
+        },
+        {
+          "help": "",
+          "hidden": false,
+          "id": "_clone_1mYH",
+          "maxSelect": 1,
+          "name": "type",
+          "presentable": false,
+          "required": false,
+          "system": false,
+          "type": "select",
+          "values": [
+            "folder",
+            "lab"
+          ]
+        }
+      ],
+      "id": "pbc_2994682339",
+      "indexes": [],
+      "listRule": "",
+      "name": "labs_userview",
+      "system": false,
+      "type": "view",
+      "updateRule": null,
+      "viewQuery": "SELECT id, title, description, content, parent, type\nFROM labs",
+      "viewRule": ""
+    },
+    {
+      "createRule": null,
+      "deleteRule": null,
+      "fields": [
+        {
+          "autogeneratePattern": "",
+          "help": "",
+          "hidden": false,
+          "id": "text3208210256",
+          "max": 0,
+          "min": 0,
+          "name": "id",
+          "pattern": "^[a-z0-9]+$",
+          "presentable": false,
+          "primaryKey": true,
+          "required": true,
+          "system": true,
+          "type": "text"
+        },
+        {
+          "cascadeDelete": true,
+          "collectionId": "pbc_3738798621",
+          "help": "",
+          "hidden": false,
+          "id": "_clone_4cMq",
+          "maxSelect": 1,
+          "minSelect": 0,
+          "name": "asset",
+          "presentable": false,
+          "required": true,
+          "system": false,
+          "type": "relation"
+        },
+        {
+          "cascadeDelete": false,
+          "collectionId": "pbc_4287217533",
+          "help": "",
+          "hidden": false,
+          "id": "_clone_JeRR",
+          "maxSelect": 1,
+          "minSelect": 0,
+          "name": "attempt",
+          "presentable": false,
+          "required": false,
+          "system": false,
+          "type": "relation"
+        },
+        {
+          "cascadeDelete": false,
+          "collectionId": "_pb_users_auth_",
+          "help": "",
+          "hidden": false,
+          "id": "_clone_A47V",
+          "maxSelect": 1,
+          "minSelect": 0,
+          "name": "user",
+          "presentable": false,
+          "required": false,
+          "system": false,
+          "type": "relation"
+        },
+        {
+          "autogeneratePattern": "[A-Za-z0-9]{32}",
+          "help": "",
+          "hidden": false,
+          "id": "_clone_ay8S",
+          "max": 32,
+          "min": 32,
+          "name": "secret",
+          "pattern": "^[A-Za-z0-9]{32}$",
+          "presentable": false,
+          "primaryKey": false,
+          "required": true,
+          "system": false,
+          "type": "text"
+        }
+      ],
+      "id": "pbc_1105020747",
+      "indexes": [],
+      "listRule": "@request.auth.id = user.id",
+      "name": "keys_userview",
+      "system": false,
+      "type": "view",
+      "updateRule": null,
+      "viewQuery": "SELECT k.id, k.asset, ast.attempt, a.user, k.secret FROM keys k JOIN assets ast ON k.asset = ast.id JOIN attempts a ON ast.attempt = a.id WHERE a.current_state != 'decommissioned'",
+      "viewRule": "@request.auth.id = user.id"
     }
   ];
 

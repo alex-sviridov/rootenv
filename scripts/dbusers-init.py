@@ -119,6 +119,9 @@ def main():
         print(f"ERROR: {args.env_file} not found", file=sys.stderr)
         sys.exit(1)
 
+    if (os.environ.get("SSL_NO_VERIFY") or env.get("SSL_NO_VERIFY", "")).lower() == "true":
+        os.environ["SSL_NO_VERIFY"] = "true"
+
     admin_email = os.environ.get("POCKETBASE_ADMIN_EMAIL") or env.get("POCKETBASE_ADMIN_EMAIL")
     admin_password = os.environ.get("POCKETBASE_ADMIN_PASSWORD") or env.get("POCKETBASE_ADMIN_PASSWORD")
     backend_svc = (os.environ.get("POCKETBASE_URL") or env.get("POCKETBASE_URL", DEFAULT_BACKEND_URL)).rstrip("/")

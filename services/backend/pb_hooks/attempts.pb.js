@@ -68,12 +68,12 @@ onRecordAfterCreateSuccess((e) => {
             const labRecords = $app.findRecordsByFilter("labs", "id = {:id}", "", 1, 0, { id: labId })
             if (labRecords.length > 0) {
                 const labEnvironment = labRecords[0].get("environment")
+                environment = JSON.parse(labRecords[0].getString("environment"))
                 const attemptConfigsCol = $app.findCollectionByNameOrId("attempt_configs")
                 const cfg = new Record(attemptConfigsCol)
                 cfg.set("attempt", attempt.id)
                 cfg.set("environment", labEnvironment)
                 $app.save(cfg)
-                environment = JSON.parse(labEnvironment)
             }
         } catch (err) {
             console.log(`[attempt:${attempt.id}] error creating attempt_configs: ${err}`)
@@ -86,14 +86,18 @@ onRecordAfterCreateSuccess((e) => {
         return
     }
 
-    const duration = environment.duration || 60
+    const duration = parseInt(environment.duration, 10) || 60
+    const expiresAt = new Date(Date.now() + duration * 60 * 1000).toISOString()
+    attempt.set("expires_at", expiresAt)
+    $app.save(attempt)
+
     const assetCollection = $app.findCollectionByNameOrId("assets")
     const assetConfigCollection = $app.findCollectionByNameOrId("assets_configs")
     const keysCollection = $app.findCollectionByNameOrId("keys")
 
     if (environment.assets) {
         environment.assets.forEach((assetDef) => {
-            console.log(`[attempt:${attempt.id}] creating asset: ${assetDef.name} for user ${attempt.get("user")} with duration ${duration} minutes`)
+            console.log(`[attempt:${attempt.id}] creating asset: ${assetDef.name}`)
             const asset = new Record(assetCollection)
             asset.set("attempt", attempt.id)
             asset.set("name", assetDef.name)
@@ -101,7 +105,7 @@ onRecordAfterCreateSuccess((e) => {
             asset.set("state", "pending")
             asset.set("user", attempt.get("user"))
             asset.set("status", "stopped")
-            asset.set("expires_at", new Date(Date.now() + duration * 60 * 1000).toISOString())
+            asset.set("expires_at", expiresAt)
             $app.save(asset)
 
             const cfg = new Record(assetConfigCollection)
