@@ -11,8 +11,8 @@ RUN apk add --no-cache unzip ca-certificates && \
 
 WORKDIR /app
 
-COPY ./pb_migrations ./pb_migrations
-COPY ./pb_hooks ./pb_hooks
+COPY --chown=backend:backend ./pb_migrations ./pb_migrations
+COPY --chown=backend:backend ./pb_hooks ./pb_hooks
 
 EXPOSE 8090
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

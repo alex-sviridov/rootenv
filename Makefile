@@ -9,7 +9,7 @@ dev-cluster:
 	kubectl apply -k deploy/overlays/dev/
 
 dev:
-	skaffold dev --cleanup=false
+	skaffold dev --cleanup=false --trigger=polling
 
 sandbox-platform-deploy:
 	/bin/bash deploy/platform/install.sh
