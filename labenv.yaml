@@ -1,0 +1,19 @@
+apiVersion: lab.rootenv.io/v1alpha1
+kind: LabEnvironment
+metadata:
+  name: test1
+spec:
+  ownerId: usr_alex
+  ownerName: Alex Sviridov
+  labId: ssh-certs
+  ttl: 3
+  assets:
+    - name: workstation
+      image: ubuntu
+      cpu: 200m
+      memory: 256Mi
+      disk: 2Gi
+    - name: target
+      image: ubuntu
+      cpu: 100m
+      memory: 128Mi
