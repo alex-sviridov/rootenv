@@ -57,10 +57,8 @@ type Asset struct {
 	// Disk is the ephemeral-storage limit for this asset (protects the host from disk exhaustion), e.g. "2Gi".
 	// +kubebuilder:default="1Gi"
 	Disk string `json:"disk,omitempty"`
-	// SSHUser is the username to use for SSH-relay access to this asset (only applicable for ssh-relay protocol).
-	SSHUser string `json:"sshUser,omitempty"`
 	// Protocols is a list of protocols that should be enabled for this asset, e.g. ["ssh", "http"].
-	// +kubebuilder:validation:Enum=ssh;http
+	// +kubebuilder:validation:items:Enum=exec;http
 	Protocols []string `json:"protocols,omitempty"`
 	// Setup is an optional script that should be executed to set up the asset after it is provisioned.
 	Setup string `json:"setup,omitempty"`

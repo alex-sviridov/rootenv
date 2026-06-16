@@ -113,16 +113,16 @@ environment:
       platform: container
       image: ubuntu-sshd
       ssh_user: lab
-      memory: 128MB
-      disk: 5GB
-      relay_protocols:
-        - ssh
+      memory: 128Mi
+      disk: 5Gi
+      protocols:
+        - exec
     - name: server-1
       cpu: 200m 
       platform: container
       image: ubuntu-sshd
       ssh_user: lab
-      memory: 128MB
-      disk: 5GB
-      relay_protocols:
-        - ssh
+      memory: 128Mi
+      disk: 5Gi
+      protocols:
+        - exec

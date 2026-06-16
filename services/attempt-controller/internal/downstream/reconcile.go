@@ -79,7 +79,6 @@ func ReconcileAttempt(ctx context.Context, dyn dynamic.Interface, a pocketbase.A
 			log.Printf("attempt %s: failed to delete LabEnvironment: %v", a.ID, err)
 			return
 		}
-		log.Printf("attempt %s: LabEnvironment deleted", a.ID)
 		return
 	}
 

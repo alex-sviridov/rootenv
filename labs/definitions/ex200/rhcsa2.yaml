@@ -100,11 +100,11 @@ environment:
   duration: 60
   assets:
     - name: server-0
-      image: ubuntu-sshd
+      image: ubuntu
       platform: container
       ssh_user: lab
       cpu: 100m
-      memory: 128MB
-      disk: 5GB
-      relay_protocols:
-        - ssh
+      memory: 128Mi
+      disk: 5Gi
+      protocols:
+        - exec
