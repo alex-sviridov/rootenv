@@ -31,15 +31,15 @@ type Attempt struct {
 	LabID              string
 	DesiredState       string
 	DecommissionReason string
-	Environment        environmentSpec
+	Environment        EnvironmentSpec
 }
 
-type environmentSpec struct {
+type EnvironmentSpec struct {
 	Duration int     `json:"duration"`
-	Assets   []asset `json:"assets"`
+	Assets   []Asset `json:"assets"`
 }
 
-type asset struct {
+type Asset struct {
 	Name           string   `json:"name"`
 	Image          string   `json:"image"`
 	CPU            string   `json:"cpu"`
@@ -63,18 +63,18 @@ func NewReconciler(dyn dynamic.Interface) *Reconciler {
 // LabEnvironmentSpec/Asset in services/labenv-operator/api/v1alpha1/labenvironment_types.go.
 func (r *Reconciler) toLabEnvironment(a Attempt) *unstructured.Unstructured {
 	assets := make([]any, 0, len(a.Environment.Assets))
-	for _, asset := range a.Environment.Assets {
-		protocols := asset.RelayProtocols
+	for _, assetItem := range a.Environment.Assets {
+		protocols := assetItem.RelayProtocols
 		if protocols == nil {
 			protocols = []string{}
 		}
 		assets = append(assets, map[string]any{
-			"name":      asset.Name,
-			"image":     asset.Image,
-			"cpu":       asset.CPU,
-			"memory":    asset.Memory,
-			"disk":      asset.Disk,
-			"setup":     asset.Setup,
+			"name":      assetItem.Name,
+			"image":     assetItem.Image,
+			"cpu":       assetItem.CPU,
+			"memory":    assetItem.Memory,
+			"disk":      assetItem.Disk,
+			"setup":     assetItem.Setup,
 			"protocols": protocols,
 		})
 	}

@@ -229,7 +229,7 @@ func TestListActiveAttemptsIncludesLabEnvironment(t *testing.T) {
 	if len(attempts) != 1 {
 		t.Fatalf("len(attempts) = %d", len(attempts))
 	}
-	if string(attempts[0].Expand.Lab.Environment) == "" {
-		t.Errorf("environment = %q", attempts[0].Expand.Lab.Environment)
+	if attempts[0].Environment.Duration != 30 {
+		t.Errorf("environment duration = %v, want 30", attempts[0].Environment.Duration)
 	}
 }

@@ -54,9 +54,9 @@ func TestToLabEnvironmentIncludesAssetSetup(t *testing.T) {
 		UserID:   "u1",
 		UserName: "alice",
 		LabID:    "rhcsa-lab1",
-		Environment: environmentSpec{
+		Environment: EnvironmentSpec{
 			Duration: 60,
-			Assets: []asset{
+			Assets: []Asset{
 				{
 					Name:           "server-0",
 					Image:          "ubuntu",
@@ -126,9 +126,9 @@ func TestResyncAttemptsAppliesActiveAttempts(t *testing.T) {
 				UserID:       "u1",
 				LabID:        "rhcsa-lab1",
 				DesiredState: "provisioned",
-				Environment: environmentSpec{
+				Environment: EnvironmentSpec{
 					Duration: 30,
-					Assets:   []asset{{Name: "server-0"}},
+					Assets:   []Asset{{Name: "server-0"}},
 				},
 			},
 		},

@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/downstream"
 )
 
 var ErrNotFound = errors.New("record not found")
@@ -41,6 +44,26 @@ type AttemptRecord struct {
 			Environment json.RawMessage `json:"environment"`
 		} `json:"lab"`
 	} `json:"expand"`
+}
+
+// ToAttempt converts the PocketBase JSON record into the controller's domain
+// type. Environment JSON is parsed here; if parsing fails the returned error
+// describes a malformed or missing environment field.
+func (r AttemptRecord) ToAttempt() (downstream.Attempt, error) {
+	var env downstream.EnvironmentSpec
+	if len(r.Expand.Lab.Environment) > 0 {
+		if err := json.Unmarshal(r.Expand.Lab.Environment, &env); err != nil {
+			return downstream.Attempt{}, fmt.Errorf("attempt %s: parse environment: %w", r.ID, err)
+		}
+	}
+	return downstream.Attempt{
+		ID:           r.ID,
+		UserID:       r.UserId,
+		UserName:     r.UserName,
+		LabID:        r.Lab,
+		DesiredState: r.DesiredState,
+		Environment:  env,
+	}, nil
 }
 
 func NewClient(baseURL, email, password string, tlsVerify bool) (*Client, error) {
@@ -134,7 +157,7 @@ func (c *Client) doGet(ctx context.Context, path string) (*http.Response, error)
 	return c.httpClient.Do(req)
 }
 
-func (c *Client) ListActiveAttempts(ctx context.Context) ([]AttemptRecord, error) {
+func (c *Client) ListActiveAttempts(ctx context.Context) ([]downstream.Attempt, error) {
 	var result struct {
 		Items []AttemptRecord `json:"items"`
 	}
@@ -143,7 +166,16 @@ func (c *Client) ListActiveAttempts(ctx context.Context) ([]AttemptRecord, error
 	if err := c.get(ctx, "/api/collections/attempts/records?filter="+filter+"&expand="+expand, &result); err != nil {
 		return nil, err
 	}
-	return result.Items, nil
+	attempts := make([]downstream.Attempt, 0, len(result.Items))
+	for _, rec := range result.Items {
+		a, err := rec.ToAttempt()
+		if err != nil {
+			log.Printf("resync: skipping attempt %s: %v", rec.ID, err)
+			continue
+		}
+		attempts = append(attempts, a)
+	}
+	return attempts, nil
 }
 
 // GetAttempt fetches a single attempt record with its lab expanded.
