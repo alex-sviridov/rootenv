@@ -148,7 +148,7 @@ func readSSEEvent(scanner *bufio.Scanner) (event string, data []byte, ok bool) {
 		case strings.HasPrefix(line, "event:"):
 			event = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
 		case strings.HasPrefix(line, "data:"):
-			dataLines = append(dataLines, strings.TrimPrefix(line, "data:"))
+			dataLines = append(dataLines, strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " "))
 		}
 	}
 	if sawAny && (event != "" || len(dataLines) > 0) {

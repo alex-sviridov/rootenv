@@ -1,15 +1,33 @@
 package pocketbase
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestReadSSEEventTrimsDataLeadingSpace(t *testing.T) {
+	input := "event:attempts/a1\ndata: {\"action\":\"update\"}\n\n"
+	scanner := bufio.NewScanner(strings.NewReader(input))
+	event, data, ok := readSSEEvent(scanner)
+	if !ok {
+		t.Fatal("ok = false")
+	}
+	if event != "attempts/a1" {
+		t.Errorf("event = %q", event)
+	}
+	want := `{"action":"update"}`
+	if string(data) != want {
+		t.Errorf("data = %q, want %q", string(data), want)
+	}
+}
 
 func TestSubscribeAttempts(t *testing.T) {
 	mux := http.NewServeMux()
