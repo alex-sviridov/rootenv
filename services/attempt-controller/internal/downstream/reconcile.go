@@ -2,7 +2,6 @@ package downstream
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -11,10 +10,29 @@ import (
 	"k8s.io/client-go/dynamic"
 
 	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/k8s"
-	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/pocketbase"
 )
 
 const DesiredStateDecommissioned = "decommissioned"
+
+// PocketBaseClient is the subset of the PocketBase HTTP client that the
+// Reconciler needs. Keeping it narrow here means upstream sync can add its own
+// interface without touching this one.
+type PocketBaseClient interface {
+	ListActiveAttempts(ctx context.Context) ([]Attempt, error)
+}
+
+// Attempt is the controller's internal domain type. It is populated by the
+// pocketbase package (which maps AttemptRecord → Attempt) and carries
+// controller-set fields (DecommissionReason) without json tags.
+type Attempt struct {
+	ID                 string
+	UserID             string
+	UserName           string
+	LabID              string
+	DesiredState       string
+	DecommissionReason string
+	Environment        environmentSpec
+}
 
 type environmentSpec struct {
 	Duration int     `json:"duration"`
@@ -31,13 +49,21 @@ type asset struct {
 	RelayProtocols []string `json:"protocols"`
 }
 
-// toLabEnvironment translates an attempt and its parsed environment into a
-// LabEnvironment custom resource (lab.rootenv.io/v1alpha1). Field names below
-// must be kept in sync with LabEnvironmentSpec/Asset in
-// services/labenv-operator/api/v1alpha1/labenvironment_types.go.
-func toLabEnvironment(a pocketbase.AttemptRecord, env environmentSpec) *unstructured.Unstructured {
-	assets := make([]any, 0, len(env.Assets))
-	for _, asset := range env.Assets {
+// Reconciler applies attempt state to Kubernetes LabEnvironment resources.
+type Reconciler struct {
+	dyn dynamic.Interface
+}
+
+func NewReconciler(dyn dynamic.Interface) *Reconciler {
+	return &Reconciler{dyn: dyn}
+}
+
+// toLabEnvironment translates an Attempt into a LabEnvironment custom resource
+// (lab.rootenv.io/v1alpha1). Field names must be kept in sync with
+// LabEnvironmentSpec/Asset in services/labenv-operator/api/v1alpha1/labenvironment_types.go.
+func (r *Reconciler) toLabEnvironment(a Attempt) *unstructured.Unstructured {
+	assets := make([]any, 0, len(a.Environment.Assets))
+	for _, asset := range a.Environment.Assets {
 		protocols := asset.RelayProtocols
 		if protocols == nil {
 			protocols = []string{}
@@ -52,7 +78,6 @@ func toLabEnvironment(a pocketbase.AttemptRecord, env environmentSpec) *unstruct
 			"protocols": protocols,
 		})
 	}
-
 	return &unstructured.Unstructured{
 		Object: map[string]any{
 			"apiVersion": "lab.rootenv.io/v1alpha1",
@@ -61,35 +86,28 @@ func toLabEnvironment(a pocketbase.AttemptRecord, env environmentSpec) *unstruct
 				"name": a.ID,
 			},
 			"spec": map[string]any{
-				"ownerId":   a.UserId,
+				"ownerId":   a.UserID,
 				"ownerName": a.UserName,
-				"labId":     a.Lab,
-				"ttl":       env.Duration,
+				"labId":     a.LabID,
+				"ttl":       a.Environment.Duration,
 				"assets":    assets,
 			},
 		},
 	}
 }
 
-func ReconcileAttempt(ctx context.Context, dyn dynamic.Interface, a pocketbase.AttemptRecord) {
+func (r *Reconciler) ReconcileAttempt(ctx context.Context, a Attempt) {
 	if a.DesiredState == DesiredStateDecommissioned {
 		log.Printf("attempt %s: decommission requested (reason: %s), deleting LabEnvironment", a.ID, a.DecommissionReason)
-		err := dyn.Resource(k8s.LabEnvironmentGVR).Delete(ctx, a.ID, metav1.DeleteOptions{})
+		err := r.dyn.Resource(k8s.LabEnvironmentGVR).Delete(ctx, a.ID, metav1.DeleteOptions{})
 		if err != nil && !apierrors.IsNotFound(err) {
 			log.Printf("attempt %s: failed to delete LabEnvironment: %v", a.ID, err)
-			return
 		}
 		return
 	}
 
-	var env environmentSpec
-	if err := json.Unmarshal(a.Expand.Lab.Environment, &env); err != nil {
-		log.Printf("attempt %s: failed to parse environment: %v", a.ID, err)
-		return
-	}
-
-	obj := toLabEnvironment(a, env)
-	_, err := dyn.Resource(k8s.LabEnvironmentGVR).Apply(ctx, a.ID, obj, metav1.ApplyOptions{
+	obj := r.toLabEnvironment(a)
+	_, err := r.dyn.Resource(k8s.LabEnvironmentGVR).Apply(ctx, a.ID, obj, metav1.ApplyOptions{
 		FieldManager: "attempt-controller",
 		Force:        true,
 	})
@@ -100,17 +118,13 @@ func ReconcileAttempt(ctx context.Context, dyn dynamic.Interface, a pocketbase.A
 	log.Printf("attempt %s: applied LabEnvironment", a.ID)
 }
 
-// resyncAttempts fetches all active attempts (current_state != desired_state)
-// and reconciles each one. It is called at startup, after every successful
-// (re)connection of the realtime subscription, and on a periodic timer, so
-// that the controller self-heals from missed events or failed reconciles.
-func ResyncAttempts(ctx context.Context, pb *pocketbase.Client, dyn dynamic.Interface) {
-	attempts, err := pb.ListActiveAttempts()
+func (r *Reconciler) ResyncAttempts(ctx context.Context, pb PocketBaseClient) {
+	attempts, err := pb.ListActiveAttempts(ctx)
 	if err != nil {
 		log.Printf("resync: list attempts failed: %v", err)
 		return
 	}
 	for _, a := range attempts {
-		ReconcileAttempt(ctx, dyn, a)
+		r.ReconcileAttempt(ctx, a)
 	}
 }

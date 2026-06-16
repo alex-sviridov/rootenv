@@ -2,9 +2,6 @@ package downstream
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,13 +12,10 @@ import (
 	clienttesting "k8s.io/client-go/testing"
 
 	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/k8s"
-	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/pocketbase"
 )
 
 // applyAsCreateOrUpdate makes the fake dynamic client's Server-Side Apply
-// behave like a real apiserver for tests: create the object if it doesn't
-// exist yet, otherwise overwrite it. The fake ObjectTracker doesn't implement
-// apply-patch merge semantics on its own.
+// behave like a real apiserver: create if absent, overwrite if present.
 func applyAsCreateOrUpdate(dyn *fake.FakeDynamicClient) {
 	dyn.PrependReactor("patch", "*", func(action clienttesting.Action) (bool, runtime.Object, error) {
 		patchAction := action.(clienttesting.PatchAction)
@@ -33,7 +27,6 @@ func applyAsCreateOrUpdate(dyn *fake.FakeDynamicClient) {
 			return true, nil, err
 		}
 		obj.SetName(patchAction.GetName())
-
 		gvr := patchAction.GetResource()
 		if _, err := dyn.Tracker().Get(gvr, patchAction.GetNamespace(), patchAction.GetName()); err != nil {
 			if err := dyn.Tracker().Create(gvr, obj, patchAction.GetNamespace()); err != nil {
@@ -48,24 +41,36 @@ func applyAsCreateOrUpdate(dyn *fake.FakeDynamicClient) {
 	})
 }
 
+func newReconcilerWithFake() (*Reconciler, *fake.FakeDynamicClient) {
+	scheme := runtime.NewScheme()
+	dyn := fake.NewSimpleDynamicClient(scheme)
+	return NewReconciler(dyn), dyn
+}
+
 func TestToLabEnvironmentIncludesAssetSetup(t *testing.T) {
-	a := pocketbase.AttemptRecord{ID: "a1", UserId: "u1", UserName: "alice", Lab: "rhcsa-lab1"}
-	env := environmentSpec{
-		Duration: 60,
-		Assets: []asset{
-			{
-				Name:           "server-0",
-				Image:          "ubuntu",
-				CPU:            "200m",
-				Memory:         "256Mi",
-				Disk:           "1Gi",
-				Setup:          "echo hello",
-				RelayProtocols: []string{"exec"},
+	r, _ := newReconcilerWithFake()
+	a := Attempt{
+		ID:       "a1",
+		UserID:   "u1",
+		UserName: "alice",
+		LabID:    "rhcsa-lab1",
+		Environment: environmentSpec{
+			Duration: 60,
+			Assets: []asset{
+				{
+					Name:           "server-0",
+					Image:          "ubuntu",
+					CPU:            "200m",
+					Memory:         "256Mi",
+					Disk:           "1Gi",
+					Setup:          "echo hello",
+					RelayProtocols: []string{"exec"},
+				},
 			},
 		},
 	}
 
-	obj := toLabEnvironment(a, env)
+	obj := r.toLabEnvironment(a)
 
 	spec := obj.Object["spec"].(map[string]any)
 	assets := spec["assets"].([]any)
@@ -79,8 +84,7 @@ func TestToLabEnvironmentIncludesAssetSetup(t *testing.T) {
 }
 
 func TestReconcileAttemptDecommissionedDeletesLabEnvironment(t *testing.T) {
-	scheme := runtime.NewScheme()
-	dyn := fake.NewSimpleDynamicClient(scheme)
+	r, dyn := newReconcilerWithFake()
 
 	existing := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "lab.rootenv.io/v1alpha1",
@@ -91,7 +95,7 @@ func TestReconcileAttemptDecommissionedDeletesLabEnvironment(t *testing.T) {
 		t.Fatalf("Tracker().Create: %v", err)
 	}
 
-	ReconcileAttempt(context.Background(), dyn, pocketbase.AttemptRecord{
+	r.ReconcileAttempt(context.Background(), Attempt{
 		ID:           "a1",
 		DesiredState: DesiredStateDecommissioned,
 	})
@@ -102,45 +106,35 @@ func TestReconcileAttemptDecommissionedDeletesLabEnvironment(t *testing.T) {
 	}
 }
 
+// stubPBClient is a minimal PocketBaseClient implementation for tests.
+type stubPBClient struct {
+	attempts []Attempt
+}
+
+func (s *stubPBClient) ListActiveAttempts(_ context.Context) ([]Attempt, error) {
+	return s.attempts, nil
+}
+
 func TestResyncAttemptsAppliesActiveAttempts(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/collections/users/auth-with-password", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"token": "tok123"})
-	})
-	mux.HandleFunc("/api/collections/attempts/records", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"items": []map[string]any{
-				{
-					"id":            "a1",
-					"user":          "u1",
-					"lab":           "rhcsa-lab1",
-					"current_state": "new",
-					"desired_state": "provisioned",
-					"expand": map[string]any{
-						"lab": map[string]any{
-							"environment": map[string]any{
-								"duration": 30,
-								"assets":   []map[string]any{{"name": "server-0"}},
-							},
-						},
-					},
-				},
-			},
-		})
-	})
-	ts := httptest.NewServer(mux)
-	defer ts.Close()
-
-	pb, err := pocketbase.NewClient(ts.URL, "svc@x.local", "pass", true)
-	if err != nil {
-		t.Fatalf("newPBClient: %v", err)
-	}
-
-	scheme := runtime.NewScheme()
-	dyn := fake.NewSimpleDynamicClient(scheme)
+	r, dyn := newReconcilerWithFake()
 	applyAsCreateOrUpdate(dyn)
 
-	ResyncAttempts(context.Background(), pb, dyn)
+	pb := &stubPBClient{
+		attempts: []Attempt{
+			{
+				ID:           "a1",
+				UserID:       "u1",
+				LabID:        "rhcsa-lab1",
+				DesiredState: "provisioned",
+				Environment: environmentSpec{
+					Duration: 30,
+					Assets:   []asset{{Name: "server-0"}},
+				},
+			},
+		},
+	}
+
+	r.ResyncAttempts(context.Background(), pb)
 
 	obj, err := dyn.Resource(k8s.LabEnvironmentGVR).Get(context.Background(), "a1", metav1.GetOptions{})
 	if err != nil {
