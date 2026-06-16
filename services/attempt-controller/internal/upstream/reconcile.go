@@ -46,14 +46,16 @@ func (r *Reconciler) ReconcileLabEnv(ctx context.Context, obj *unstructured.Unst
 
 	patch := map[string]any{
 		"current_state": phaseToState(phase),
-		"assets":        r.buildAssets(status),
+		"assets":        buildAssets(status),
 	}
 
 	if !r.expiresAtWritten[id] {
 		expiresAt, _, _ := unstructured.NestedString(obj.Object, "status", "expiresAt")
 		if expiresAt != "" {
 			t, err := time.Parse(time.RFC3339, expiresAt)
-			if err == nil {
+			if err != nil {
+				log.Printf("upstream: attempt %s: invalid expiresAt %q: %v", id, expiresAt, err)
+			} else {
 				// PocketBase date format: "2006-01-02 15:04:05.000Z"
 				patch["expires_at"] = t.UTC().Format("2006-01-02 15:04:05.000Z")
 			}
@@ -112,7 +114,7 @@ func assetPhaseToState(phase string) string {
 }
 
 // buildAssets converts status.assets into the JSON value for attempts.assets.
-func (r *Reconciler) buildAssets(status map[string]any) []map[string]any {
+func buildAssets(status map[string]any) []map[string]any {
 	raw, _ := status["assets"].([]any)
 	result := make([]map[string]any, 0, len(raw))
 	for _, item := range raw {
