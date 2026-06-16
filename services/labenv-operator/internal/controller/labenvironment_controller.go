@@ -2,9 +2,11 @@ package controller
 
 import (
 	"context"
-	"os"
-
 	"fmt"
+	"os"
+	"strings"
+	"time"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -13,7 +15,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -23,8 +27,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"strings"
-	"time"
 
 	labv1alpha1 "github.com/alex-sviridov/rootenv/services/labenv-operator/api/v1alpha1"
 )
@@ -110,6 +112,9 @@ func (r *LabEnvironmentReconciler) reconcileCreate(ctx context.Context, env *lab
 	}
 	if err := r.ensureRelayService(ctx, nsName); err != nil {
 		return ctrl.Result{}, fmt.Errorf("ensureRelayService: %w", err)
+	}
+	if err := r.ensureIngressRoute(ctx, env, nsName); err != nil {
+		return ctrl.Result{}, fmt.Errorf("ensureIngressRoute: %w", err)
 	}
 	// get asset status
 	notReadyMsg := []string{}
@@ -232,6 +237,9 @@ func (r *LabEnvironmentReconciler) reconcileDelete(ctx context.Context, env *lab
 	err := r.Get(ctx, client.ObjectKey{Name: nsName}, &ns)
 
 	if apierrors.IsNotFound(err) {
+		if err := r.deleteIngressRoute(ctx, env.Name); err != nil {
+			return ctrl.Result{}, fmt.Errorf("deleteIngressRoute: %w", err)
+		}
 		controllerutil.RemoveFinalizer(env, finalizerName)
 		if err := r.Update(ctx, env); err != nil {
 			return ctrl.Result{}, err
@@ -673,6 +681,157 @@ func (r *LabEnvironmentReconciler) ensureRelayService(ctx context.Context, nsNam
 		return nil
 	})
 	return err
+}
+
+const traefikInfraNamespace = "rootenv-infra"
+
+var traefikGVK = map[string]schema.GroupVersionKind{
+	"Middleware": {
+		Group:   "traefik.io",
+		Version: "v1alpha1",
+		Kind:    "Middleware",
+	},
+	"IngressRoute": {
+		Group:   "traefik.io",
+		Version: "v1alpha1",
+		Kind:    "IngressRoute",
+	},
+}
+
+func (r *LabEnvironmentReconciler) ensureIngressRoute(ctx context.Context, env *labv1alpha1.LabEnvironment, nsName string) error {
+	attemptID := env.Name
+
+	// Middleware 1: inject X-Attempt-Id header
+	mwHeaders := &unstructured.Unstructured{}
+	mwHeaders.SetGroupVersionKind(traefikGVK["Middleware"])
+	mwHeaders.SetName("relay-exec-headers-" + attemptID)
+	mwHeaders.SetNamespace(traefikInfraNamespace)
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, mwHeaders, func() error {
+		mwHeaders.Object["spec"] = map[string]interface{}{
+			"headers": map[string]interface{}{
+				"customRequestHeaders": map[string]interface{}{
+					"X-Attempt-Id": attemptID,
+				},
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("ensure Middleware headers: %w", err)
+	}
+
+	// Middleware 2: ForwardAuth
+	mwAuth := &unstructured.Unstructured{}
+	mwAuth.SetGroupVersionKind(traefikGVK["Middleware"])
+	mwAuth.SetName("relay-exec-auth-" + attemptID)
+	mwAuth.SetNamespace(traefikInfraNamespace)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, mwAuth, func() error {
+		mwAuth.Object["spec"] = map[string]interface{}{
+			"forwardAuth": map[string]interface{}{
+				"address": "http://ingress-authenticator-svc.rootenv-infra.svc/auth",
+				"authRequestHeaders": []interface{}{
+					"Authorization",
+					"X-Attempt-Id",
+				},
+				"authResponseHeaders": []interface{}{
+					"X-User-Id",
+					"X-Attempt-Id",
+				},
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("ensure Middleware auth: %w", err)
+	}
+
+	// Middleware 3: stripPrefix
+	mwStrip := &unstructured.Unstructured{}
+	mwStrip.SetGroupVersionKind(traefikGVK["Middleware"])
+	mwStrip.SetName("relay-exec-strip-" + attemptID)
+	mwStrip.SetNamespace(traefikInfraNamespace)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, mwStrip, func() error {
+		mwStrip.Object["spec"] = map[string]interface{}{
+			"stripPrefix": map[string]interface{}{
+				"prefixes": []interface{}{
+					"/relay/" + attemptID + "/exec",
+				},
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("ensure Middleware strip: %w", err)
+	}
+
+	// IngressRoute
+	ir := &unstructured.Unstructured{}
+	ir.SetGroupVersionKind(traefikGVK["IngressRoute"])
+	ir.SetName("relay-exec-" + attemptID)
+	ir.SetNamespace(traefikInfraNamespace)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, ir, func() error {
+		labels := ir.GetLabels()
+		if labels == nil {
+			labels = map[string]string{}
+		}
+		labels["rootenv.io/attempt-id"] = attemptID
+		ir.SetLabels(labels)
+		ir.Object["spec"] = map[string]interface{}{
+			"entryPoints": []interface{}{"websecure"},
+			"routes": []interface{}{
+				map[string]interface{}{
+					"match": "PathPrefix(`/relay/" + attemptID + "/exec/`)",
+					"kind":  "Rule",
+					"middlewares": []interface{}{
+						map[string]interface{}{
+							"name":      "relay-exec-headers-" + attemptID,
+							"namespace": traefikInfraNamespace,
+						},
+						map[string]interface{}{
+							"name":      "relay-exec-auth-" + attemptID,
+							"namespace": traefikInfraNamespace,
+						},
+						map[string]interface{}{
+							"name":      "relay-exec-strip-" + attemptID,
+							"namespace": traefikInfraNamespace,
+						},
+					},
+					"services": []interface{}{
+						map[string]interface{}{
+							"name":      "relay-exec-svc",
+							"namespace": nsName,
+							"port":      int64(8080),
+						},
+					},
+				},
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("ensure IngressRoute: %w", err)
+	}
+
+	return nil
+}
+
+func (r *LabEnvironmentReconciler) deleteIngressRoute(ctx context.Context, attemptID string) error {
+	toDelete := []struct{ kind, name string }{
+		{"Middleware", "relay-exec-headers-" + attemptID},
+		{"Middleware", "relay-exec-auth-" + attemptID},
+		{"Middleware", "relay-exec-strip-" + attemptID},
+		{"IngressRoute", "relay-exec-" + attemptID},
+	}
+	for _, td := range toDelete {
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(traefikGVK[td.kind])
+		obj.SetName(td.name)
+		obj.SetNamespace(traefikInfraNamespace)
+		if err := r.Client.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("delete %s %s: %w", td.kind, td.name, err)
+		}
+	}
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
