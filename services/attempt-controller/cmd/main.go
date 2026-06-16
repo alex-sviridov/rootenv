@@ -47,8 +47,9 @@ func main() {
 			if errors.Is(err, pocketbase.ErrNotFound) {
 				log.Printf("attempt %s: not found in PocketBase, removing LabEnvironment", rec.ID)
 				downstream.ReconcileAttempt(ctx, dyn, pocketbase.AttemptRecord{
-					ID:           rec.ID,
-					DesiredState: downstream.DesiredStateDecommissioned,
+					ID:                 rec.ID,
+					DesiredState:       downstream.DesiredStateDecommissioned,
+					DecommissionReason: "attempt-not-found-in-pocketbase",
 				})
 				return
 			}
@@ -57,6 +58,9 @@ func main() {
 				return
 			}
 			rec = full
+		}
+		if rec.DesiredState == downstream.DesiredStateDecommissioned && rec.DecommissionReason == "" {
+			rec.DecommissionReason = "desired-state-decommissioned"
 		}
 		downstream.ReconcileAttempt(ctx, dyn, rec)
 	}, func(ctx context.Context) {

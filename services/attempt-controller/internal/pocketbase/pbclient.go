@@ -25,15 +25,16 @@ type Client struct {
 }
 
 type AttemptRecord struct {
-	ID           string `json:"id"`
-	UserId       string `json:"user"`
-	UserName     string `json:"userName"`
-	Lab          string `json:"lab"`
-	LabName      string `json:"lab_name"`
-	CurrentState string `json:"current_state"`
-	DesiredState string `json:"desired_state"`
-	ExpiresAt    string `json:"expires_at"`
-	Expand       struct {
+	ID                 string `json:"id"`
+	UserId             string `json:"user"`
+	UserName           string `json:"userName"`
+	Lab                string `json:"lab"`
+	LabName            string `json:"lab_name"`
+	CurrentState       string `json:"current_state"`
+	DesiredState       string `json:"desired_state"`
+	ExpiresAt          string `json:"expires_at"`
+	DecommissionReason string `json:"-"` // not from PocketBase; set by the controller
+	Expand             struct {
 		Lab struct {
 			Environment json.RawMessage `json:"environment"`
 		} `json:"lab"`
