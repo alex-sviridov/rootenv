@@ -233,3 +233,64 @@ func TestListActiveAttemptsIncludesLabEnvironment(t *testing.T) {
 		t.Errorf("environment duration = %v, want 30", attempts[0].Environment.Duration)
 	}
 }
+
+func TestPatchAttemptSuccess(t *testing.T) {
+	var gotBody map[string]any
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/collections/users/auth-with-password", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"token": "tok1"})
+	})
+	mux.HandleFunc("/api/collections/attempts/records/a1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			t.Errorf("method = %s, want PATCH", r.Method)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "a1"})
+	})
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	c, err := NewClient(ts.URL, "svc@x.local", "pass", true)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	if err := c.PatchAttempt(context.Background(), "a1", map[string]any{"current_state": "provisioned"}); err != nil {
+		t.Fatalf("PatchAttempt: %v", err)
+	}
+	if gotBody["current_state"] != "provisioned" {
+		t.Errorf("body current_state = %v", gotBody["current_state"])
+	}
+}
+
+func TestPatchAttemptReauthsOn401(t *testing.T) {
+	var authCalls int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/collections/users/auth-with-password", func(w http.ResponseWriter, r *http.Request) {
+		authCalls++
+		_ = json.NewEncoder(w).Encode(map[string]any{"token": fmt.Sprintf("tok%d", authCalls)})
+	})
+	mux.HandleFunc("/api/collections/attempts/records/a1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "tok2" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "a1"})
+	})
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	c, err := NewClient(ts.URL, "svc@x.local", "pass", true)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	if err := c.PatchAttempt(context.Background(), "a1", map[string]any{"current_state": "provisioned"}); err != nil {
+		t.Fatalf("PatchAttempt: %v", err)
+	}
+	if authCalls != 2 {
+		t.Errorf("authCalls = %d, want 2", authCalls)
+	}
+}

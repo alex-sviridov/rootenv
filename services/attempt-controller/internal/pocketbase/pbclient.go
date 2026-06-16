@@ -1,6 +1,7 @@
 package pocketbase
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -188,4 +189,42 @@ func (c *Client) GetAttempt(ctx context.Context, id string) (AttemptRecord, erro
 		return AttemptRecord{}, err
 	}
 	return rec, nil
+}
+
+// PatchAttempt sends a PATCH request to update fields on the given attempt record.
+// Only the keys present in patch are sent; omit a key to leave that field unchanged.
+func (c *Client) PatchAttempt(ctx context.Context, id string, patch map[string]any) error {
+	resp, err := c.doPatch(ctx, "/api/collections/attempts/records/"+id, patch)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		_ = resp.Body.Close()
+		if err := c.reauth(); err != nil {
+			return fmt.Errorf("PATCH attempt %s: reauth: %w", id, err)
+		}
+		resp, err = c.doPatch(ctx, "/api/collections/attempts/records/"+id, patch)
+		if err != nil {
+			return err
+		}
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("PATCH attempt %s: status %d", id, resp.StatusCode)
+	}
+	return nil
+}
+
+func (c *Client) doPatch(ctx context.Context, path string, body any) (*http.Response, error) {
+	b, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.baseURL+path, bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", c.currentToken())
+	return c.httpClient.Do(req)
 }
