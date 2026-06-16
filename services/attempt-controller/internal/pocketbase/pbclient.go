@@ -194,7 +194,8 @@ func (c *Client) GetAttempt(ctx context.Context, id string) (AttemptRecord, erro
 // PatchAttempt sends a PATCH request to update fields on the given attempt record.
 // Only the keys present in patch are sent; omit a key to leave that field unchanged.
 func (c *Client) PatchAttempt(ctx context.Context, id string, patch map[string]any) error {
-	resp, err := c.doPatch(ctx, "/api/collections/attempts/records/"+id, patch)
+	path := "/api/collections/attempts/records/" + id
+	resp, err := c.doPatch(ctx, path, patch)
 	if err != nil {
 		return err
 	}
@@ -203,7 +204,7 @@ func (c *Client) PatchAttempt(ctx context.Context, id string, patch map[string]a
 		if err := c.reauth(); err != nil {
 			return fmt.Errorf("PATCH attempt %s: reauth: %w", id, err)
 		}
-		resp, err = c.doPatch(ctx, "/api/collections/attempts/records/"+id, patch)
+		resp, err = c.doPatch(ctx, path, patch)
 		if err != nil {
 			return err
 		}

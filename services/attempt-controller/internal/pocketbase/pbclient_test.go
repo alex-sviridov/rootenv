@@ -244,6 +244,9 @@ func TestPatchAttemptSuccess(t *testing.T) {
 		if r.Method != http.MethodPatch {
 			t.Errorf("method = %s, want PATCH", r.Method)
 		}
+		if r.Header.Get("Authorization") == "" {
+			t.Error("Authorization header missing")
+		}
 		_ = json.NewDecoder(r.Body).Decode(&gotBody)
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": "a1"})
@@ -266,12 +269,14 @@ func TestPatchAttemptSuccess(t *testing.T) {
 
 func TestPatchAttemptReauthsOn401(t *testing.T) {
 	var authCalls int
+	var patchCalls int
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/collections/users/auth-with-password", func(w http.ResponseWriter, r *http.Request) {
 		authCalls++
 		_ = json.NewEncoder(w).Encode(map[string]any{"token": fmt.Sprintf("tok%d", authCalls)})
 	})
 	mux.HandleFunc("/api/collections/attempts/records/a1", func(w http.ResponseWriter, r *http.Request) {
+		patchCalls++
 		if r.Header.Get("Authorization") != "tok2" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -292,5 +297,8 @@ func TestPatchAttemptReauthsOn401(t *testing.T) {
 	}
 	if authCalls != 2 {
 		t.Errorf("authCalls = %d, want 2", authCalls)
+	}
+	if patchCalls != 2 {
+		t.Errorf("patchCalls = %d, want 2", patchCalls)
 	}
 }
