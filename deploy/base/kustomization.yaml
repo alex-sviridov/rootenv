@@ -11,3 +11,5 @@ resources:
   - 32-frontend-svc.yaml
   - 40-backend-ingress.yaml
   - 49-frontend-ingress.yaml
+  - 23-ingress-authenticator-deploy.yaml
+  - 24-operator-traefik-rbac.yaml
