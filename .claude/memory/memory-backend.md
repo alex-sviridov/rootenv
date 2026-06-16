@@ -43,6 +43,8 @@ One record per lab run per user. Users can read directly (no view needed).
 | lab_name | text | copied from labs.title at provision |
 | current_state | select | `new` → `provisioning` → `provisioned` → `decommissioning` → `decommissioned`; set by hooks based on assets |
 | desired_state | select | `provisioned` \| `decommissioned`; set by user (or cron for expiry); contmgr reconciles toward this |
+| expires_at | date | set by upstream reconciler when LabEnvironment.Status.ExpiresAt first appears; written once |
+| assets | json | array of `{name, state, status, protocols}` written by upstream reconciler from LabEnvironment.Status.Assets |
 
 Rules:
 - `createRule`: `@request.auth.id = user.id`
@@ -124,6 +126,7 @@ State transitions automated in `pb_hooks/`:
 - `attempts.pb.js` — before-create: validates active attempt constraint (via `attempts.current_state`), sets initial states, creates `attempt_configs` record; after-create: reads environment from `attempt_configs`, fans out assets
 - `assets.pb.js` — after-update: recomputes `attempt.current_state` from all asset states; cron sets `attempt.desired_state=decommissioned` for attempts with expired assets
 - `commands.pb.js` — stub; decommission no longer flows through commands
+- `attempts` upstream sync — `attempt-controller` upstream reconciler watches `LabEnvironment` status and PATCHes `current_state`, `expires_at` (once), and `assets` on the attempt record; the service account `svc_role=attempt-controller` bypasses the hook's field-protection guard
 
 ## Contmgr Reconciler
 Contmgr polls `attempts WHERE desired_state='decommissioned' AND current_state!='decommissioned'` and decommissions their active assets directly (no commands queue). `current_state` is always set by hooks, never by contmgr.
