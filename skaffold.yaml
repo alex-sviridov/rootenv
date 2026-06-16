@@ -30,6 +30,26 @@ build:
             dest: '/app'
           - src: 'index.html'
             dest: '/app'
+    - image: ingress-authenticator
+      context: services/ingress-authenticator
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - src: '.'
+            dest: '/app'
+    - image: relay-exec
+      context: services/relay
+      docker:
+        dockerfile: ./exec/Dockerfile
+      sync:
+        manual:
+          - src: '.'
+            dest: '/app'
+    - image: labenv-operator
+      context: services/labenv-operator
+      docker:
+        dockerfile: Dockerfile
 deploy:
   kubectl: {}
   kubeContext: k3d-rootenv

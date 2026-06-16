@@ -7,9 +7,10 @@ resources:
   - 10-backend-pvc.yaml
   - 20-backend-deploy.yaml
   - 22-frontend-deploy.yaml
+  - 23-ingress-authenticator-deploy.yaml
+  - 25-labenv-operator-crd.yaml
+  - 25-labenv-operator.yaml
   - 30-backend-svc.yaml
   - 32-frontend-svc.yaml
   - 40-backend-ingress.yaml
   - 49-frontend-ingress.yaml
-  - 23-ingress-authenticator-deploy.yaml
-  - 24-operator-traefik-rbac.yaml
