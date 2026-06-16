@@ -139,7 +139,7 @@ func TestReconcileLabEnvSkipsDuplicateResourceVersion(t *testing.T) {
 	})
 
 	r.ReconcileLabEnv(context.Background(), obj)
-	w.id = ""   // reset
+	w.id = "" // reset
 	w.patch = nil
 
 	r.ReconcileLabEnv(context.Background(), obj) // same resourceVersion

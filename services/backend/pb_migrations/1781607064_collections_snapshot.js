@@ -950,7 +950,7 @@ migrate((app) => {
       "system": false,
       "type": "base",
       "updateRule": null,
-      "viewRule": "@request.auth.svc_role = 'contmgr'"
+      "viewRule": "@request.auth.svc_role = 'attempt-controller'"
     },
     {
       "createRule": "@request.auth.id = user.id",
@@ -1138,7 +1138,7 @@ migrate((app) => {
           "autogeneratePattern": "",
           "help": "",
           "hidden": false,
-          "id": "_clone_RqnZ",
+          "id": "_clone_V0hC",
           "max": 0,
           "min": 0,
           "name": "title",
@@ -1153,7 +1153,7 @@ migrate((app) => {
           "autogeneratePattern": "",
           "help": "",
           "hidden": false,
-          "id": "_clone_1Dnd",
+          "id": "_clone_3Sio",
           "max": 0,
           "min": 0,
           "name": "description",
@@ -1167,7 +1167,7 @@ migrate((app) => {
         {
           "help": "",
           "hidden": false,
-          "id": "_clone_HKET",
+          "id": "_clone_SXy1",
           "maxSize": 0,
           "name": "content",
           "presentable": false,
@@ -1180,7 +1180,7 @@ migrate((app) => {
           "collectionId": "pbc_2691397795",
           "help": "",
           "hidden": false,
-          "id": "_clone_jNEo",
+          "id": "_clone_xCzn",
           "maxSelect": 1,
           "minSelect": 0,
           "name": "parent",
@@ -1192,7 +1192,7 @@ migrate((app) => {
         {
           "help": "",
           "hidden": false,
-          "id": "_clone_QGOc",
+          "id": "_clone_bpHL",
           "maxSelect": 1,
           "name": "type",
           "presentable": false,
