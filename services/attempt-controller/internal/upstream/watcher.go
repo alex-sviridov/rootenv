@@ -23,10 +23,10 @@ const resyncPeriod = 5 * time.Minute
 func (r *Reconciler) Run(ctx context.Context, dyn dynamic.Interface) {
 	lw := &cache.ListWatch{
 		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
-			return dyn.Resource(k8s.LabEnvironmentGVR).List(ctx, opts)
+			return dyn.Resource(k8s.LabEnvironmentGVR).List(context.Background(), opts)
 		},
 		WatchFunc: func(opts metav1.ListOptions) (watch.Interface, error) {
-			return dyn.Resource(k8s.LabEnvironmentGVR).Watch(ctx, opts)
+			return dyn.Resource(k8s.LabEnvironmentGVR).Watch(context.Background(), opts)
 		},
 	}
 
