@@ -5,8 +5,10 @@ import (
 	"os"
 
 	"fmt"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -93,6 +95,21 @@ func (r *LabEnvironmentReconciler) reconcileCreate(ctx context.Context, env *lab
 	}
 	if err := r.ensureLimitRange(ctx, nsName); err != nil {
 		return ctrl.Result{}, err
+	}
+	if err := r.ensureRelayServiceAccount(ctx, nsName); err != nil {
+		return ctrl.Result{}, fmt.Errorf("ensureRelayServiceAccount: %w", err)
+	}
+	if err := r.ensureRelayRole(ctx, nsName); err != nil {
+		return ctrl.Result{}, fmt.Errorf("ensureRelayRole: %w", err)
+	}
+	if err := r.ensureRelayRoleBinding(ctx, nsName); err != nil {
+		return ctrl.Result{}, fmt.Errorf("ensureRelayRoleBinding: %w", err)
+	}
+	if err := r.ensureRelayDeployment(ctx, env, nsName); err != nil {
+		return ctrl.Result{}, fmt.Errorf("ensureRelayDeployment: %w", err)
+	}
+	if err := r.ensureRelayService(ctx, nsName); err != nil {
+		return ctrl.Result{}, fmt.Errorf("ensureRelayService: %w", err)
 	}
 	// get asset status
 	notReadyMsg := []string{}
@@ -527,6 +544,117 @@ func (r *LabEnvironmentReconciler) ensureHeadlessService(ctx context.Context, en
 	}
 	log.Info("created headless service", "namespace", nsName, "asset", assetName)
 	return nil
+}
+
+func (r *LabEnvironmentReconciler) ensureRelayServiceAccount(ctx context.Context, nsName string) error {
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "relay-exec-sa",
+			Namespace: nsName,
+		},
+	}
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, sa, func() error { return nil })
+	return err
+}
+
+func (r *LabEnvironmentReconciler) ensureRelayRole(ctx context.Context, nsName string) error {
+	role := &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{Name: "relay-exec-role", Namespace: nsName},
+		Rules: []rbacv1.PolicyRule{
+			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list"}},
+			{APIGroups: []string{""}, Resources: []string{"pods/exec"}, Verbs: []string{"create"}},
+		},
+	}
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, role, func() error {
+		role.Rules = []rbacv1.PolicyRule{
+			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list"}},
+			{APIGroups: []string{""}, Resources: []string{"pods/exec"}, Verbs: []string{"create"}},
+		}
+		return nil
+	})
+	return err
+}
+
+func (r *LabEnvironmentReconciler) ensureRelayRoleBinding(ctx context.Context, nsName string) error {
+	rb := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "relay-exec-rb", Namespace: nsName},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     "relay-exec-role",
+		},
+		Subjects: []rbacv1.Subject{
+			{Kind: "ServiceAccount", Name: "relay-exec-sa", Namespace: nsName},
+		},
+	}
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, rb, func() error {
+		rb.RoleRef = rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     "relay-exec-role",
+		}
+		rb.Subjects = []rbacv1.Subject{
+			{Kind: "ServiceAccount", Name: "relay-exec-sa", Namespace: nsName},
+		}
+		return nil
+	})
+	return err
+}
+
+func (r *LabEnvironmentReconciler) ensureRelayDeployment(ctx context.Context, env *labv1alpha1.LabEnvironment, nsName string) error {
+	image := os.Getenv("LABENV_RELAY_EXEC_IMAGE")
+	if image == "" {
+		return fmt.Errorf("LABENV_RELAY_EXEC_IMAGE env var not set")
+	}
+	labels := map[string]string{"app": "relay-exec"}
+	replicas := int32(1)
+	dep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "relay-exec", Namespace: nsName},
+	}
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, dep, func() error {
+		dep.Spec = appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec: corev1.PodSpec{
+					ServiceAccountName: "relay-exec-sa",
+					Containers: []corev1.Container{{
+						Name:  "relay-exec",
+						Image: image,
+						Ports: []corev1.ContainerPort{{ContainerPort: 8080}},
+						Env: []corev1.EnvVar{
+							{Name: "RELAY_MY_ATTEMPT_ID", Value: env.Name},
+							{Name: "RELAY_MY_OWNER_ID", Value: env.Spec.OwnerId},
+							{Name: "RELAY_MY_NAMESPACE", Value: nsName},
+							{Name: "RELAY_PORT", Value: "8080"},
+						},
+					}},
+				},
+			},
+		}
+		return nil
+	})
+	return err
+}
+
+func (r *LabEnvironmentReconciler) ensureRelayService(ctx context.Context, nsName string) error {
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "relay-exec-svc", Namespace: nsName},
+	}
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
+		svc.Spec = corev1.ServiceSpec{
+			Selector: map[string]string{"app": "relay-exec"},
+			Ports: []corev1.ServicePort{{
+				Port:       8080,
+				TargetPort: intstr.FromInt(8080),
+				Protocol:   corev1.ProtocolTCP,
+			}},
+			Type: corev1.ServiceTypeClusterIP,
+		}
+		return nil
+	})
+	return err
 }
 
 // SetupWithManager sets up the controller with the Manager.
