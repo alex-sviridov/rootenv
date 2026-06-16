@@ -1,7 +1,9 @@
 package pocketbase
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -100,7 +102,7 @@ func TestGetReauthsOn401(t *testing.T) {
 		t.Fatalf("token = %q, want tok1", c.token)
 	}
 
-	rec, err := c.GetAttempt("a1")
+	rec, err := c.GetAttempt(context.Background(), "a1")
 	if err != nil {
 		t.Fatalf("GetAttempt: %v", err)
 	}
@@ -150,7 +152,7 @@ func TestListActiveAttempts(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	attempts, err := c.ListActiveAttempts()
+	attempts, err := c.ListActiveAttempts(context.Background())
 	if err != nil {
 		t.Fatalf("ListActiveAttempts: %v", err)
 	}
@@ -178,8 +180,8 @@ func TestGetAttemptReturnsErrNotFoundOn404(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	_, err = c.GetAttempt("missing")
-	if err != ErrNotFound {
+	_, err = c.GetAttempt(context.Background(), "missing")
+	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("err = %v, want ErrNotFound", err)
 	}
 }
@@ -220,7 +222,7 @@ func TestListActiveAttemptsIncludesLabEnvironment(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	attempts, err := c.ListActiveAttempts()
+	attempts, err := c.ListActiveAttempts(context.Background())
 	if err != nil {
 		t.Fatalf("ListActiveAttempts: %v", err)
 	}

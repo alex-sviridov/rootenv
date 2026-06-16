@@ -1,8 +1,10 @@
 package pocketbase
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,7 +13,7 @@ import (
 	"time"
 )
 
-var ErrNotFound = fmt.Errorf("record not found")
+var ErrNotFound = errors.New("record not found")
 
 type Client struct {
 	baseURL      string
@@ -98,8 +100,8 @@ func (c *Client) currentToken() string {
 	return c.token
 }
 
-func (c *Client) get(path string, out any) error {
-	resp, err := c.doGet(path)
+func (c *Client) get(ctx context.Context, path string, out any) error {
+	resp, err := c.doGet(ctx, path)
 	if err != nil {
 		return err
 	}
@@ -108,7 +110,7 @@ func (c *Client) get(path string, out any) error {
 		if err := c.reauth(); err != nil {
 			return fmt.Errorf("GET %s: reauth: %w", path, err)
 		}
-		resp, err = c.doGet(path)
+		resp, err = c.doGet(ctx, path)
 		if err != nil {
 			return err
 		}
@@ -123,8 +125,8 @@ func (c *Client) get(path string, out any) error {
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-func (c *Client) doGet(path string) (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodGet, c.baseURL+path, nil)
+func (c *Client) doGet(ctx context.Context, path string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -132,13 +134,13 @@ func (c *Client) doGet(path string) (*http.Response, error) {
 	return c.httpClient.Do(req)
 }
 
-func (c *Client) ListActiveAttempts() ([]AttemptRecord, error) {
+func (c *Client) ListActiveAttempts(ctx context.Context) ([]AttemptRecord, error) {
 	var result struct {
 		Items []AttemptRecord `json:"items"`
 	}
 	filter := url.QueryEscape("(current_state!=desired_state)")
 	expand := url.QueryEscape("lab")
-	if err := c.get("/api/collections/attempts/records?filter="+filter+"&expand="+expand, &result); err != nil {
+	if err := c.get(ctx, "/api/collections/attempts/records?filter="+filter+"&expand="+expand, &result); err != nil {
 		return nil, err
 	}
 	return result.Items, nil
@@ -147,10 +149,10 @@ func (c *Client) ListActiveAttempts() ([]AttemptRecord, error) {
 // GetAttempt fetches a single attempt record with its lab expanded.
 // Realtime subscription events don't carry expanded relations, so callers
 // that need attempt.expand.lab.environment must re-fetch via this method.
-func (c *Client) GetAttempt(id string) (AttemptRecord, error) {
+func (c *Client) GetAttempt(ctx context.Context, id string) (AttemptRecord, error) {
 	var rec AttemptRecord
 	expand := url.QueryEscape("lab")
-	if err := c.get("/api/collections/attempts/records/"+id+"?expand="+expand, &rec); err != nil {
+	if err := c.get(ctx, "/api/collections/attempts/records/"+id+"?expand="+expand, &rec); err != nil {
 		return AttemptRecord{}, err
 	}
 	return rec, nil
