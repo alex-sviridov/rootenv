@@ -44,7 +44,7 @@ type LabEnvironmentReconciler struct {
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups="",resources=resourcequotas,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups="",resources=limitranges,verbs=get;list;watch;create;delete
-// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;delete
 
 func (r *LabEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -302,40 +302,49 @@ func (r *LabEnvironmentReconciler) ensureNamespace(ctx context.Context, env *lab
 }
 
 func (r *LabEnvironmentReconciler) ensureNetworkPolicy(ctx context.Context, nsName string) error {
-	var existing networkingv1.NetworkPolicy
-	err := r.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "network-policy"}, &existing)
-	if err == nil {
-		return nil
-	}
-	if !apierrors.IsNotFound(err) {
-		return err
-	}
-
-	tcp := corev1.ProtocolTCP
-	dnsPort := intstr.FromInt32(53)
-	udp := corev1.ProtocolUDP
-
-	np := networkingv1.NetworkPolicy{
+	np := &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "network-policy",
 			Namespace: nsName,
 		},
-		Spec: networkingv1.NetworkPolicySpec{
+	}
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, np, func() error {
+		tcp := corev1.ProtocolTCP
+		dnsPort := intstr.FromInt32(53)
+		udp := corev1.ProtocolUDP
+
+		np.Spec = networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{}, // all pods in the namespace
 			PolicyTypes: []networkingv1.PolicyType{
 				networkingv1.PolicyTypeIngress,
 				networkingv1.PolicyTypeEgress,
 			},
-			// allow incoming from the same namespace (for inter-pod communication)
-			Ingress: []networkingv1.NetworkPolicyIngressRule{{
-				From: []networkingv1.NetworkPolicyPeer{{
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"kubernetes.io/metadata.name": nsName,
+			Ingress: []networkingv1.NetworkPolicyIngressRule{
+				// allow incoming from the same namespace (for inter-pod communication)
+				{
+					From: []networkingv1.NetworkPolicyPeer{{
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"kubernetes.io/metadata.name": nsName,
+							},
 						},
-					},
-				}},
-			}},
+					}},
+				},
+				// allow incoming from Traefik (kube-system) to relay-exec on port 8080
+				{
+					From: []networkingv1.NetworkPolicyPeer{{
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"kubernetes.io/metadata.name": "kube-system",
+							},
+						},
+					}},
+					Ports: []networkingv1.NetworkPolicyPort{{
+						Protocol: protocolPtr(corev1.ProtocolTCP),
+						Port:     portPtr(8080),
+					}},
+				},
+			},
 			Egress: []networkingv1.NetworkPolicyEgressRule{
 				// allow outgoing to the same namespace (for inter-pod communication)
 				{
@@ -364,14 +373,23 @@ func (r *LabEnvironmentReconciler) ensureNetworkPolicy(ctx context.Context, nsNa
 						},
 					}},
 				},
+				// allow relay-exec pods to reach kube-apiserver on port 6443 (for kubectl exec)
+				// empty To means: allow to all destinations on this port
+				{
+					Ports: []networkingv1.NetworkPolicyPort{{
+						Protocol: protocolPtr(corev1.ProtocolTCP),
+						Port:     portPtr(6443),
+					}},
+				},
 			},
-		},
-	}
-	if err := r.Create(ctx, &np); err != nil {
-		return client.IgnoreAlreadyExists(err)
-	}
-	return nil
+		}
+		return nil
+	})
+	return err
 }
+
+func protocolPtr(p corev1.Protocol) *corev1.Protocol { return &p }
+func portPtr(p int32) *intstr.IntOrString            { v := intstr.FromInt32(p); return &v }
 
 // ensureResourceQuota caps total resource usage in the namespace, protecting the cluster from a broken lab definition.
 func (r *LabEnvironmentReconciler) ensureResourceQuota(ctx context.Context, nsName string) error {
