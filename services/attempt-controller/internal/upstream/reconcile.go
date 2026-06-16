@@ -93,7 +93,8 @@ func phaseToState(phase string) string {
 	case "Ready":
 		return "provisioned"
 	case "Terminating":
-		return "decommissioning"
+		// optimistic removal - mark as decommissioned when stil terminating
+		return "decommissioned"
 	default: // Pending, Degraded, or anything unexpected
 		return "provisioning"
 	}
@@ -107,10 +108,19 @@ func assetPhaseToState(phase string) string {
 	case "Pending":
 		return "provisioning"
 	case "Terminating":
-		return "decommissioning"
+		// optimistic removal - mark as decommissioned when stil terminating
+		return "decommissioned"
 	default:
 		return "pending"
 	}
+}
+
+// assetPhaseToStatus maps AssetStatus.Phase to the assets.status select value.
+func assetPhaseToStatus(phase string) string {
+	if phase == "Running" {
+		return "poweredon"
+	}
+	return "poweredoff"
 }
 
 // buildAssets converts status.assets into the JSON value for attempts.assets.
@@ -137,7 +147,7 @@ func buildAssets(status map[string]any) []map[string]any {
 		result = append(result, map[string]any{
 			"name":      name,
 			"state":     assetPhaseToState(phase),
-			"status":    "poweredon",
+			"status":    assetPhaseToStatus(phase),
 			"protocols": protocols,
 		})
 	}

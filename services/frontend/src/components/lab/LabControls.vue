@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router'
 import { ArrowPathIcon } from '@heroicons/vue/24/outline'
 import { ExclamationTriangleIcon } from '@/config/labStates'
 import { useAttemptsStore } from '@/stores/attempts'
-import { useServersStore } from '@/stores/servers'
 import { useLabTimer } from '@/composables/useLabTimer'
 import LabSessionHeader from '@/components/lab/LabSessionHeader.vue'
 import ServerRow from '@/components/lab/ServerRow.vue'
@@ -17,7 +16,6 @@ const emit = defineEmits(['open-tab'])
 
 const router = useRouter()
 const attempts = useAttemptsStore()
-const serversStore = useServersStore()
 
 const attemptState = computed(() => attempts.lastAttempt?.current_state ?? null)
 
@@ -59,7 +57,7 @@ async function refresh() {
     <LabSessionHeader
       :state="attemptState"
       :expires-in="expiresIn"
-      :loading="attempts.loading || serversStore.loading"
+      :loading="attempts.loading"
       @refresh="refresh"
     />
 
@@ -78,19 +76,13 @@ async function refresh() {
       </div>
 
       <!-- Active servers list -->
-      <div v-if="runningAttempt" class="space-y-2">
-        <div v-if="serversStore.servers.length" class="space-y-1 pb-1">
-          <ServerRow
-            v-for="server in serversStore.servers"
-            :key="server.id"
-            :server="server"
-            @open-tab="emit('open-tab', $event)"
-          />
-        </div>
-        <div v-else-if="serversStore.loading" class="flex items-center gap-2 text-xs text-slate-500">
-          <ArrowPathIcon class="w-3.5 h-3.5 animate-spin" />
-          Loading servers…
-        </div>
+      <div v-if="runningAttempt && attempts.servers.length" class="space-y-1 pb-1">
+        <ServerRow
+          v-for="server in attempts.servers"
+          :key="server.name"
+          :server="server"
+          @open-tab="emit('open-tab', $event)"
+        />
       </div>
 
       <div v-if="attempts.error" class="text-xs text-red-400 px-1">{{ attempts.error }}</div>

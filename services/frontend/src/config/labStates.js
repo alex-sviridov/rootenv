@@ -17,14 +17,13 @@ export const attemptConfig = {
 }
 
 export const serverStateConfig = {
-  pending:         { icon: ClockIcon,       iconCls: 'text-slate-500',  label: 'Pending',      labelCls: 'text-slate-500'  },
-  provisioning:    { icon: ArrowPathIcon,   iconCls: 'text-yellow-400', label: 'Provisioning', labelCls: 'text-yellow-400', spin: true },
-  provisioned:     { icon: CheckCircleIcon, iconCls: 'text-green-400',  label: 'Ready',        labelCls: 'text-green-400'  },
-  decommissioning: { icon: ArrowPathIcon,   iconCls: 'text-orange-400', label: 'Stopping',     labelCls: 'text-orange-400', spin: true },
+  pending:         { icon: ClockIcon,       iconCls: 'text-slate-500',  label: 'Pending',     labelCls: 'text-slate-500',  spin: false },
+  provisioning:    { icon: ArrowPathIcon,   iconCls: 'text-yellow-400', label: 'Starting',    labelCls: 'text-yellow-400', spin: true  },
+  provisioned:     { icon: CheckCircleIcon, iconCls: 'text-green-400',  label: 'Running',     labelCls: 'text-green-400',  spin: false },
+  decommissioning: { icon: ArrowPathIcon,   iconCls: 'text-orange-400', label: 'Terminating', labelCls: 'text-orange-400', spin: true  },
 }
 
 export const serverStatusConfig = {
-  running:  { icon: BoltIcon,      iconCls: 'text-green-400',  label: 'On',      labelCls: 'text-green-400'  },
-  stopped:  { icon: BoltSlashIcon, iconCls: 'text-slate-500',  label: 'Off',     labelCls: 'text-slate-500'  },
-  booting:  { icon: ArrowPathIcon, iconCls: 'text-yellow-400', label: 'Booting', labelCls: 'text-yellow-400', spin: true },
+  poweredon:  { icon: BoltIcon,      iconCls: 'text-green-400', label: 'On',  labelCls: 'text-green-400' },
+  poweredoff: { icon: BoltSlashIcon, iconCls: 'text-slate-500', label: 'Off', labelCls: 'text-slate-500' },
 }

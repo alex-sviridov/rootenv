@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { fetchLastAttempt, fetchAttempts, createAttempt, fetchActiveAttempt, decommissionAttempt, subscribeToAttempt } from '@/api/attempts'
 
 export const useAttemptsStore = defineStore('attempts', () => {
@@ -9,6 +9,8 @@ export const useAttemptsStore = defineStore('attempts', () => {
   const loading = ref(false)
   const historyLoading = ref(false)
   const error = ref(null)
+
+  const servers = computed(() => lastAttempt.value?.assets ?? [])
 
   let _unsubscribe = null
 
@@ -79,7 +81,7 @@ export const useAttemptsStore = defineStore('attempts', () => {
   }
 
   return {
-    lastAttempt, activeAttempt, history, loading, historyLoading, error,
+    lastAttempt, activeAttempt, servers, history, loading, historyLoading, error,
     loadLastAttempt, loadActiveAttempt, loadHistory, addAttempt, removeAttempt,
     startWatching, stopWatching,
   }

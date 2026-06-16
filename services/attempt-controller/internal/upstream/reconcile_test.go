@@ -34,7 +34,7 @@ func TestPhaseMapping(t *testing.T) {
 		{"Pending", "provisioning"},
 		{"Degraded", "provisioning"},
 		{"Ready", "provisioned"},
-		{"Terminating", "decommissioning"},
+		{"Terminating", "decommissioned"},
 	}
 	for _, tc := range cases {
 		if got := phaseToState(tc.phase); got != tc.want {
@@ -51,7 +51,7 @@ func TestAssetPhaseMapping(t *testing.T) {
 		{"Running", "provisioned"},
 		{"Succeeded", "provisioned"},
 		{"Pending", "provisioning"},
-		{"Terminating", "decommissioning"},
+		{"Terminating", "decommissioned"},
 		{"Unknown", "pending"},
 		{"", "pending"},
 	}
@@ -59,6 +59,58 @@ func TestAssetPhaseMapping(t *testing.T) {
 		if got := assetPhaseToState(tc.phase); got != tc.want {
 			t.Errorf("assetPhaseToState(%q) = %q, want %q", tc.phase, got, tc.want)
 		}
+	}
+}
+
+func TestAssetPhaseStatusMapping(t *testing.T) {
+	cases := []struct {
+		phase string
+		want  string
+	}{
+		{"Running", "poweredon"},
+		{"Pending", "poweredoff"},
+		{"Succeeded", "poweredoff"},
+		{"Terminating", "poweredoff"},
+		{"", "poweredoff"},
+	}
+	for _, tc := range cases {
+		if got := assetPhaseToStatus(tc.phase); got != tc.want {
+			t.Errorf("assetPhaseToStatus(%q) = %q, want %q", tc.phase, got, tc.want)
+		}
+	}
+}
+
+func TestReconcileLabEnvAssetNotRunning(t *testing.T) {
+	w := &stubWriter{}
+	r := NewReconciler(w)
+
+	obj := mustUnstructured(map[string]any{
+		"metadata": map[string]any{"name": "abc123", "resourceVersion": "1"},
+		"status": map[string]any{
+			"phase": "Ready",
+			"assets": []any{
+				map[string]any{
+					"name":      "workstation",
+					"phase":     "Pending",
+					"protocols": []any{"ssh"},
+				},
+			},
+		},
+	})
+
+	r.ReconcileLabEnv(context.Background(), obj)
+
+	var assets []map[string]any
+	b, _ := json.Marshal(w.patch["assets"])
+	_ = json.Unmarshal(b, &assets)
+	if len(assets) != 1 {
+		t.Fatalf("len(assets) = %d", len(assets))
+	}
+	if assets[0]["state"] != "provisioning" {
+		t.Errorf("assets[0].state = %v, want provisioning", assets[0]["state"])
+	}
+	if assets[0]["status"] != "poweredoff" {
+		t.Errorf("assets[0].status = %v, want poweredoff", assets[0]["status"])
 	}
 }
 

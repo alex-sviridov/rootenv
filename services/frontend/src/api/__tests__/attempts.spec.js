@@ -5,22 +5,25 @@ const {
   mockGetList,
   mockCreate,
   mockUpdate,
+  mockSubscribe,
   mockCollection,
 } = vi.hoisted(() => {
   const mockGetFirstListItem = vi.fn()
   const mockGetList = vi.fn()
   const mockCreate = vi.fn()
   const mockUpdate = vi.fn()
+  const mockSubscribe = vi.fn()
   const mockCollection = vi.fn(() => ({
     getFirstListItem: mockGetFirstListItem,
     getList: mockGetList,
     create: mockCreate,
     update: mockUpdate,
+    subscribe: mockSubscribe,
   }))
-  return { mockGetFirstListItem, mockGetList, mockCreate, mockUpdate, mockCollection }
+  return { mockGetFirstListItem, mockGetList, mockCreate, mockUpdate, mockSubscribe, mockCollection }
 })
 
-vi.mock('@/lib/pb', () => ({ pb: { collection: mockCollection, authStore: { record: { id: 'user-1' }, token: 'tok' } } }))
+vi.mock('@/lib/pb', () => ({ pb: { collection: mockCollection, authStore: { record: { id: 'user-1' } } } }))
 
 import {
   fetchLastAttempt,
@@ -28,13 +31,13 @@ import {
   createAttempt,
   fetchActiveAttempt,
   decommissionAttempt,
-  fetchAssetSecret,
+  subscribeToAttempt,
 } from '../attempts'
 
 beforeEach(() => vi.clearAllMocks())
 
 describe('fetchLastAttempt', () => {
-  it('queries attempts collection with correct lab filter', async () => {
+  it('queries attempts collection filtered by labId, sorted by -updated', async () => {
     const attempt = { id: 'a1', current_state: 'provisioned', lab: 'lab-1' }
     mockGetFirstListItem.mockResolvedValue(attempt)
 
@@ -43,6 +46,12 @@ describe('fetchLastAttempt', () => {
     expect(mockCollection).toHaveBeenCalledWith('attempts')
     expect(mockGetFirstListItem).toHaveBeenCalledWith('lab = "lab-1"', { sort: '-updated', requestKey: 'last-attempt-lab-1' })
     expect(result).toEqual(attempt)
+  })
+
+  it('uses a per-lab requestKey to allow concurrent lab queries', async () => {
+    mockGetFirstListItem.mockResolvedValue({})
+    await fetchLastAttempt('lab-2')
+    expect(mockGetFirstListItem).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ requestKey: 'last-attempt-lab-2' }))
   })
 
   it('propagates errors', async () => {
@@ -67,6 +76,12 @@ describe('fetchAttempts', () => {
     expect(result).toEqual(page)
   })
 
+  it('includes page number in requestKey to allow concurrent page fetches', async () => {
+    mockGetList.mockResolvedValue({ items: [], page: 3, totalPages: 5 })
+    await fetchAttempts('lab-1', 3, 10)
+    expect(mockGetList).toHaveBeenCalledWith(3, 10, expect.objectContaining({ requestKey: 'attempts-list-lab-1-3' }))
+  })
+
   it('propagates errors', async () => {
     mockGetList.mockRejectedValue(new Error('not found'))
     await expect(fetchAttempts('lab-1', 1, 10)).rejects.toThrow('not found')
@@ -74,7 +89,7 @@ describe('fetchAttempts', () => {
 })
 
 describe('createAttempt', () => {
-  it('creates a record in attempts collection with lab id, lab_name, and user', async () => {
+  it('creates a record with lab id, lab_name, and authenticated user id', async () => {
     const created = { id: 'a1', lab: 'lab-1', lab_name: 'My Lab', current_state: 'new' }
     mockCreate.mockResolvedValue(created)
 
@@ -92,7 +107,7 @@ describe('createAttempt', () => {
 })
 
 describe('decommissionAttempt', () => {
-  it('patches the attempt with desired_state=decommissioned', async () => {
+  it('patches desired_state=decommissioned on the given attempt', async () => {
     mockUpdate.mockResolvedValue({})
 
     await decommissionAttempt('attempt-1')
@@ -107,26 +122,9 @@ describe('decommissionAttempt', () => {
   })
 })
 
-describe('fetchAssetSecret', () => {
-  it('queries keys_userview by asset and returns the secret field', async () => {
-    mockGetFirstListItem.mockResolvedValue({ id: 'k1', secret: 's3cr3t', asset: 'srv1' })
-
-    const result = await fetchAssetSecret('srv1')
-
-    expect(mockCollection).toHaveBeenCalledWith('keys_userview')
-    expect(mockGetFirstListItem).toHaveBeenCalledWith('asset = "srv1"', { requestKey: 'asset-secret-srv1' })
-    expect(result).toBe('s3cr3t')
-  })
-
-  it('propagates errors', async () => {
-    mockGetFirstListItem.mockRejectedValue(new Error('not found'))
-    await expect(fetchAssetSecret('srv1')).rejects.toThrow('not found')
-  })
-})
-
 describe('fetchActiveAttempt', () => {
-  it('queries attempts collection for any non-decommissioned attempt', async () => {
-    const attempt = { id: 'a1', current_state: 'provisioned', lab: 'lab-1', lab_name: 'My Lab' }
+  it('queries for any attempt that is not decommissioned', async () => {
+    const attempt = { id: 'a1', current_state: 'provisioned', lab: 'lab-1' }
     mockGetFirstListItem.mockResolvedValue(attempt)
 
     const result = await fetchActiveAttempt()
@@ -136,17 +134,43 @@ describe('fetchActiveAttempt', () => {
     expect(result).toEqual(attempt)
   })
 
-  it('returns null on 404', async () => {
-    const notFound = Object.assign(new Error('Not found'), { status: 404 })
-    mockGetFirstListItem.mockRejectedValue(notFound)
-
-    const result = await fetchActiveAttempt()
-
-    expect(result).toBeNull()
+  it('returns null on 404 (no active attempt exists)', async () => {
+    mockGetFirstListItem.mockRejectedValue(Object.assign(new Error('Not found'), { status: 404 }))
+    expect(await fetchActiveAttempt()).toBeNull()
   })
 
   it('propagates non-404 errors', async () => {
     mockGetFirstListItem.mockRejectedValue(new Error('network error'))
     await expect(fetchActiveAttempt()).rejects.toThrow('network error')
+  })
+})
+
+describe('subscribeToAttempt', () => {
+  it('subscribes to the specific attempt record and returns unsubscribe fn', async () => {
+    const unsubFn = vi.fn()
+    mockSubscribe.mockResolvedValue(unsubFn)
+
+    const result = await subscribeToAttempt('attempt-1', vi.fn())
+
+    expect(mockCollection).toHaveBeenCalledWith('attempts')
+    expect(mockSubscribe).toHaveBeenCalledWith('attempt-1', expect.any(Function))
+    expect(result).toBe(unsubFn)
+  })
+
+  it('forwards realtime events to the callback', async () => {
+    let capturedHandler
+    mockSubscribe.mockImplementation(async (_topic, fn) => { capturedHandler = fn; return vi.fn() })
+    const callback = vi.fn()
+
+    await subscribeToAttempt('attempt-1', callback)
+    const event = { action: 'update', record: { id: 'attempt-1', current_state: 'provisioned' } }
+    capturedHandler(event)
+
+    expect(callback).toHaveBeenCalledWith(event)
+  })
+
+  it('propagates subscribe errors', async () => {
+    mockSubscribe.mockRejectedValue(new Error('subscribe failed'))
+    await expect(subscribeToAttempt('attempt-1', vi.fn())).rejects.toThrow('subscribe failed')
   })
 })

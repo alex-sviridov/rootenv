@@ -3,9 +3,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useBreadcrumbsStore } from '@/stores/breadcrumbs'
 import { useLabsStore } from '@/stores/labs'
 import { useAttemptsStore } from '@/stores/attempts'
-import { useServersStore } from '@/stores/servers'
 import { fetchLab } from '@/api/labs'
-import { fetchAssetSecret } from '@/api/attempts'
 import { useTerminalTabs } from '@/composables/useTerminalTabs'
 
 export function useLabSession() {
@@ -14,12 +12,10 @@ export function useLabSession() {
   const breadcrumbs = useBreadcrumbsStore()
   const labsStore = useLabsStore()
   const attemptsStore = useAttemptsStore()
-  const serversStore = useServersStore()
 
   const lab = ref(null)
   const selectedTask = ref(0)
   const error = ref(null)
-  const secrets = ref({})
 
   const { tabs, activeTabId, limitError, openTab, selectTab, closeTab, moveTab, resetTabs } = useTerminalTabs()
 
@@ -27,26 +23,12 @@ export function useLabSession() {
 
   watch(() => attemptsStore.lastAttempt?.id, async (id) => {
     await attemptsStore.stopWatching()
-    await serversStore.stopWatching()
-    secrets.value = {}
     resetTabs()
     const attempt = attemptsStore.lastAttempt
     if (id && attempt?.current_state !== 'decommissioned') {
       await attemptsStore.startWatching(id)
-      await serversStore.startWatching(id)
-      await serversStore.loadServers(id)
     }
   })
-
-  watch(() => serversStore.servers, (servers) => {
-    for (const server of servers) {
-      if (server.state === 'provisioned' && !secrets.value[server.id]) {
-        fetchAssetSecret(server.id)
-          .then(s => { secrets.value = { ...secrets.value, [server.id]: s } })
-          .catch(() => {})
-      }
-    }
-  }, { deep: true })
 
   async function initLab(slug) {
     lab.value = null
@@ -66,7 +48,6 @@ export function useLabSession() {
       ].filter(Boolean))
 
       await attemptsStore.stopWatching()
-      await serversStore.stopWatching()
       await Promise.all([
         attemptsStore.loadLastAttempt(lab.value.id),
         attemptsStore.loadActiveAttempt(),
@@ -81,12 +62,11 @@ export function useLabSession() {
   onMounted(() => initLab(route.params.slug))
 
   onUnmounted(async () => {
-    await serversStore.stopWatching()
     await attemptsStore.stopWatching()
   })
 
   return {
-    lab, selectedTask, currentTask, error, secrets,
+    lab, selectedTask, currentTask, error,
     tabs, activeTabId, limitError, openTab, selectTab, closeTab, moveTab,
   }
 }
