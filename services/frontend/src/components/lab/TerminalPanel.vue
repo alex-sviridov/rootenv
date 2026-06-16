@@ -1,14 +1,21 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useSshRelayConnection } from '@/composables/useSshRelayConnection'
+import { useExecRelayConnection } from '@/composables/useExecRelayConnection'
 
 const props = defineProps({
+  protocol: { type: String, required: true },
   serverId: { type: String, required: true },
-  secret: { type: String, required: true },
+  // ssh only
+  secret: { type: String, default: '' },
+  // exec only
+  attemptId: { type: String, default: '' },
 })
 
 const termEl = ref(null)
-const { terminal, fitAddon } = useSshRelayConnection(props.serverId, props.secret)
+const { terminal, fitAddon } = props.protocol === 'exec'
+  ? useExecRelayConnection(props.attemptId, props.serverId)
+  : useSshRelayConnection(props.serverId, props.secret)
 const showAltWHint = ref(false)
 let resizeObserver = null
 let terminalFocused = false

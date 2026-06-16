@@ -2,6 +2,7 @@
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/vue/24/outline'
 import { useUserStore } from '@/stores/user'
+import { useAttemptsStore } from '@/stores/attempts'
 import { useLabSession } from '@/composables/useLabSession'
 import LabNavigation from '@/components/lab/LabNavigation.vue'
 import LabControls from '@/components/lab/LabControls.vue'
@@ -9,9 +10,12 @@ import LabContent from '@/components/lab/LabContent.vue'
 import LabConsole from '@/components/lab/LabConsole.vue'
 
 const {
-  lab, selectedTask, currentTask, error, secrets,
+  lab, selectedTask, currentTask, error,
   tabs, activeTabId, limitError, openTab, selectTab, closeTab, moveTab,
 } = useLabSession()
+
+const attemptsStore = useAttemptsStore()
+const attemptId = computed(() => attemptsStore.lastAttempt?.id ?? '')
 
 const userStore = useUserStore()
 
@@ -177,7 +181,7 @@ onUnmounted(() => {
         :tabs="tabs"
         :active-tab-id="activeTabId"
         :limit-error="limitError"
-        :secrets="secrets"
+        :attempt-id="attemptId"
         @select-tab="selectTab"
         @close-tab="closeTab"
         @move-tab="moveTab($event.from, $event.to)"

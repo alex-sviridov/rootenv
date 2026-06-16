@@ -2,12 +2,13 @@
 import { ref } from 'vue'
 import TerminalPanel from '@/components/lab/TerminalPanel.vue'
 
-const tabComponents = { ssh: TerminalPanel }
+const tabComponents = { ssh: TerminalPanel, exec: TerminalPanel }
 
 defineProps({
   tabs: { type: Array, required: true },
   activeTabId: { type: String, default: null },
   limitError: { type: String, default: null },
+  attemptId: { type: String, default: '' },
   secrets: { type: Object, default: () => ({}) },
 })
 
@@ -77,10 +78,12 @@ function onDragEnd() {
         <template v-for="tab in tabs" :key="tab.id">
           <component
             :is="tabComponents[tab.type]"
-            v-if="tabComponents[tab.type] && secrets[tab.serverId]"
+            v-if="tabComponents[tab.type] && (tab.type === 'exec' || secrets[tab.serverId])"
             v-show="tab.id === activeTabId"
+            :protocol="tab.type"
             :server-id="tab.serverId"
-            :secret="secrets[tab.serverId]"
+            :secret="secrets[tab.serverId] ?? ''"
+            :attempt-id="attemptId"
           />
         </template>
       </template>
