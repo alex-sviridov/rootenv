@@ -14,6 +14,7 @@ import (
 	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/downstream"
 	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/k8s"
 	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/pocketbase"
+	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/upstream"
 )
 
 const (
@@ -84,6 +85,9 @@ func main() {
 		}
 		rec.ResyncAttempts(ctx, pb)
 	}, subscriptionReconnectBackoff)
+
+	upRec := upstream.NewReconciler(pb)
+	go upRec.Run(ctx, dyn)
 
 	ticker := time.NewTicker(fullResyncInterval)
 	defer ticker.Stop()
