@@ -39,6 +39,7 @@ func main() {
 		log.Fatal("k8s client failed:", err)
 	}
 
+	firstConnect := true
 	go pb.RunAttemptSubscription(ctx, func(action string, rec pocketbase.AttemptRecord) {
 		// Realtime events don't carry expanded relations; re-fetch with
 		// expand=lab unless we're only deleting (which doesn't need it).
@@ -64,6 +65,14 @@ func main() {
 		}
 		downstream.ReconcileAttempt(ctx, dyn, rec)
 	}, func(ctx context.Context) {
+		// Skip the first onConnect resync: PocketBase replays current state via
+		// SSE events immediately after subscribing, so a resync here would
+		// reconcile every attempt twice. On reconnects the replay may miss events
+		// that arrived while disconnected, so the resync is still needed then.
+		if firstConnect {
+			firstConnect = false
+			return
+		}
 		downstream.ResyncAttempts(ctx, pb, dyn)
 	}, subscriptionReconnectBackoff)
 
