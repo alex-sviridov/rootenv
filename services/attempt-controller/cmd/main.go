@@ -3,15 +3,17 @@ package main
 import (
 	"context"
 	"errors"
+	"log"
+	"os"
+	"os/signal"
+	"sync/atomic"
+	"syscall"
+	"time"
+
 	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/config"
 	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/downstream"
 	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/k8s"
 	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/pocketbase"
-	"log"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 )
 
 const (
@@ -39,41 +41,48 @@ func main() {
 		log.Fatal("k8s client failed:", err)
 	}
 
-	firstConnect := true
-	go pb.RunAttemptSubscription(ctx, func(action string, rec pocketbase.AttemptRecord) {
-		// Realtime events don't carry expanded relations; re-fetch with
-		// expand=lab unless we're only deleting (which doesn't need it).
-		if rec.DesiredState != downstream.DesiredStateDecommissioned {
-			full, err := pb.GetAttempt(rec.ID)
+	rec := downstream.NewReconciler(dyn)
+
+	var firstConnect atomic.Bool
+	firstConnect.Store(true)
+
+	go pb.RunAttemptSubscription(ctx, func(action string, pbRec pocketbase.AttemptRecord) {
+		if pbRec.DesiredState != downstream.DesiredStateDecommissioned {
+			full, err := pb.GetAttempt(ctx, pbRec.ID)
 			if errors.Is(err, pocketbase.ErrNotFound) {
-				log.Printf("attempt %s: not found in PocketBase, removing LabEnvironment", rec.ID)
-				downstream.ReconcileAttempt(ctx, dyn, pocketbase.AttemptRecord{
-					ID:                 rec.ID,
+				log.Printf("attempt %s: not found in PocketBase, removing LabEnvironment", pbRec.ID)
+				rec.ReconcileAttempt(ctx, downstream.Attempt{
+					ID:                 pbRec.ID,
 					DesiredState:       downstream.DesiredStateDecommissioned,
 					DecommissionReason: "attempt-not-found-in-pocketbase",
 				})
 				return
 			}
 			if err != nil {
-				log.Printf("attempt %s: failed to fetch attempt: %v", rec.ID, err)
+				log.Printf("attempt %s: failed to fetch attempt: %v", pbRec.ID, err)
 				return
 			}
-			rec = full
+			pbRec = full
 		}
-		if rec.DesiredState == downstream.DesiredStateDecommissioned && rec.DecommissionReason == "" {
-			rec.DecommissionReason = "desired-state-decommissioned"
+
+		a, err := pbRec.ToAttempt()
+		if err != nil {
+			log.Printf("attempt %s: %v", pbRec.ID, err)
+			return
 		}
-		downstream.ReconcileAttempt(ctx, dyn, rec)
+		if a.DesiredState == downstream.DesiredStateDecommissioned && a.DecommissionReason == "" {
+			a.DecommissionReason = "desired-state-decommissioned"
+		}
+		rec.ReconcileAttempt(ctx, a)
 	}, func(ctx context.Context) {
 		// Skip the first onConnect resync: PocketBase replays current state via
 		// SSE events immediately after subscribing, so a resync here would
 		// reconcile every attempt twice. On reconnects the replay may miss events
 		// that arrived while disconnected, so the resync is still needed then.
-		if firstConnect {
-			firstConnect = false
+		if firstConnect.Swap(false) {
 			return
 		}
-		downstream.ResyncAttempts(ctx, pb, dyn)
+		rec.ResyncAttempts(ctx, pb)
 	}, subscriptionReconnectBackoff)
 
 	ticker := time.NewTicker(fullResyncInterval)
@@ -83,7 +92,7 @@ func main() {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			downstream.ResyncAttempts(ctx, pb, dyn)
+			rec.ResyncAttempts(ctx, pb)
 		}
 	}
 }
