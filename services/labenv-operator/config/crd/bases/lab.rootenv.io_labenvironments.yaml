@@ -149,6 +149,10 @@ spec:
                       type: string
                     phase:
                       type: string
+                    protocols:
+                      items:
+                        type: string
+                      type: array
                     ready:
                       type: boolean
                     reason:

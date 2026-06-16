@@ -105,11 +105,12 @@ type LabEnvironmentStatus struct {
 }
 
 type AssetStatus struct {
-	Name    string `json:"name"`
-	Phase   string `json:"phase"`
-	Reason  string `json:"reason,omitempty"`
-	Ready   bool   `json:"ready"`
-	Address string `json:"address,omitempty"`
+	Name      string   `json:"name"`
+	Phase     string   `json:"phase"`
+	Reason    string   `json:"reason,omitempty"`
+	Ready     bool     `json:"ready"`
+	Address   string   `json:"address,omitempty"`
+	Protocols []string `json:"protocols,omitempty"`
 }
 
 // +kubebuilder:object:root=true

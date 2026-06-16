@@ -118,11 +118,12 @@ func (r *LabEnvironmentReconciler) reconcileCreate(ctx context.Context, env *lab
 		ready := isPodReady(&pod)
 		// add asset to status
 		env.Status.Assets = append(env.Status.Assets, labv1alpha1.AssetStatus{
-			Name:    asset.Name,
-			Phase:   phase,
-			Reason:  reason,
-			Ready:   ready,
-			Address: asset.Name + "." + nsName + ".svc.cluster.local",
+			Name:      asset.Name,
+			Phase:     phase,
+			Reason:    reason,
+			Ready:     ready,
+			Protocols: asset.Protocols,
+			Address:   asset.Name + "." + nsName + ".svc.cluster.local",
 		})
 
 		if !ready {
