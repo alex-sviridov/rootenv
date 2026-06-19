@@ -1,28 +1,19 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { useSshRelayConnection } from '@/composables/useSshRelayConnection'
 import { useExecRelayConnection } from '@/composables/useExecRelayConnection'
 
 const props = defineProps({
-  protocol: { type: String, required: true },
-  serverId: { type: String, required: true },
-  // ssh only
-  secret: { type: String, default: '' },
-  // exec only
-  attemptId: { type: String, default: '' },
+  assetName: { type: String, required: true },
+  attemptId: { type: String, required: true },
 })
 
 const termEl = ref(null)
-const { terminal, fitAddon } = props.protocol === 'exec'
-  ? useExecRelayConnection(props.attemptId, props.serverId)
-  : useSshRelayConnection(props.serverId, props.secret)
+const { terminal, fitAddon } = useExecRelayConnection(props.attemptId, props.assetName)
 const showAltWHint = ref(false)
 let resizeObserver = null
 let terminalFocused = false
 let altWHintTimer = null
 
-// Ctrl+key → terminal escape sequence. Keys the browser would otherwise swallow.
-// Ctrl+W is uncatchable (browser closes tab); use Alt+W instead — shown in beforeunload message.
 const CTRL_KEY_MAP = {
   t: '\x14', r: '\x12', n: '\x0e',
   a: '\x01', e: '\x05', k: '\x0b', u: '\x15',
@@ -33,7 +24,6 @@ const CTRL_KEY_MAP = {
 function onDocumentKeydown(e) {
   if (!terminalFocused) return
 
-  // Alt+W → send Ctrl+W sequence (\x17) to terminal
   if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'w') {
     e.preventDefault()
     e.stopPropagation()
@@ -53,7 +43,6 @@ function onBeforeUnload(e) {
   if (!terminalFocused) return
   e.preventDefault()
   e.returnValue = ''
-  // If the user clicks "Stay", the timeout fires and we show the in-page hint.
   altWHintTimer = setTimeout(() => {
     showAltWHint.value = true
     altWHintTimer = setTimeout(() => { showAltWHint.value = false }, 5000)
@@ -79,7 +68,6 @@ onMounted(() => {
   terminal.textarea?.addEventListener('focus', () => { terminalFocused = true })
   terminal.textarea?.addEventListener('blur', () => { terminalFocused = false })
 
-  // Copy on select
   terminal.onSelectionChange(() => {
     const sel = terminal.getSelection()
     if (sel) navigator.clipboard.writeText(sel).catch(() => {})

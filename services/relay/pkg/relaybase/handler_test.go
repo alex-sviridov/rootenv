@@ -146,3 +146,61 @@ func TestHandler_auth_timeout(t *testing.T) {
 		t.Error("Backend.Serve should not have been called on timeout")
 	}
 }
+
+func TestHandler_skip_auth_calls_backend(t *testing.T) {
+	fb := &fakeBackend{}
+	h := &relaybase.Handler{
+		Backend:     fb,
+		Limiter:     relaybase.NewConnLimiter(10),
+		SkipAuth:    true,
+		AuthTimeout: 2 * time.Second,
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// No X-Attempt-Id or X-User-Id headers injected
+		h.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+
+	conn := dialWS(t, srv)
+	defer conn.CloseNow()
+
+	if err := conn.Write(context.Background(), websocket.MessageText, []byte("tok")); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	if !fb.wasCalled() {
+		t.Error("Backend.Serve was not called with SkipAuth=true")
+	}
+	fb.mu.Lock()
+	if fb.userID != "anonymous" {
+		t.Errorf("userID: got %q, want %q", fb.userID, "anonymous")
+	}
+	fb.mu.Unlock()
+}
+
+func TestHandler_skip_auth_ignores_wrong_attempt_id(t *testing.T) {
+	fb := &fakeBackend{}
+	h := &relaybase.Handler{
+		Backend:     fb,
+		Limiter:     relaybase.NewConnLimiter(10),
+		AttemptID:   "atm_123",
+		SkipAuth:    true,
+		AuthTimeout: 2 * time.Second,
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Set("X-Attempt-Id", "atm_WRONG")
+		h.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+
+	conn := dialWS(t, srv)
+	defer conn.CloseNow()
+	_ = conn.Write(context.Background(), websocket.MessageText, []byte("tok"))
+	time.Sleep(100 * time.Millisecond)
+	if !fb.wasCalled() {
+		t.Error("Backend.Serve should still be called when SkipAuth=true")
+	}
+}

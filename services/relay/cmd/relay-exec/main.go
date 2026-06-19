@@ -19,14 +19,16 @@ import (
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
+	skipAuth := os.Getenv("RELAY_SKIP_AUTH") == "true"
+
 	attemptID := os.Getenv("RELAY_MY_ATTEMPT_ID")
-	if attemptID == "" {
-		slog.Error("RELAY_MY_ATTEMPT_ID is required")
+	if attemptID == "" && !skipAuth {
+		slog.Error("RELAY_MY_ATTEMPT_ID is required (set RELAY_SKIP_AUTH=true to skip auth)")
 		os.Exit(1)
 	}
 	ownerID := os.Getenv("RELAY_MY_OWNER_ID")
-	if ownerID == "" {
-		slog.Error("RELAY_MY_OWNER_ID is required")
+	if ownerID == "" && !skipAuth {
+		slog.Error("RELAY_MY_OWNER_ID is required (set RELAY_SKIP_AUTH=true to skip auth)")
 		os.Exit(1)
 	}
 	namespace := os.Getenv("RELAY_MY_NAMESPACE")
@@ -64,6 +66,7 @@ func main() {
 		Limiter:        limiter,
 		AttemptID:      attemptID,
 		OwnerID:        ownerID,
+		SkipAuth:       skipAuth,
 		AllowedOrigins: origins,
 		WG:             &wg,
 	}
@@ -84,7 +87,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	slog.Info("relay-exec starting", "port", port, "attempt_id", attemptID, "namespace", namespace)
+	slog.Info("relay-exec starting", "port", port, "skip_auth", skipAuth, "attempt_id", attemptID, "namespace", namespace)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("server error", "err", err)

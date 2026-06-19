@@ -25,6 +25,7 @@ type Handler struct {
 	Limiter        *ConnLimiter
 	AttemptID      string        // MY_ATTEMPT_ID — set from env at startup
 	OwnerID        string        // MY_OWNER_ID — set from env at startup
+	SkipAuth       bool          // when true, skip X-Attempt-Id and X-User-Id checks
 	AllowedOrigins []string
 	AuthTimeout    time.Duration // how long to wait for first WS message; defaults to 10s
 	WG             *sync.WaitGroup
@@ -69,18 +70,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	attemptID := r.Header.Get("X-Attempt-Id")
-	userID := r.Header.Get("X-User-Id")
+	var userID string
+	if h.SkipAuth {
+		userID = "anonymous"
+	} else {
+		attemptID := r.Header.Get("X-Attempt-Id")
+		userID = r.Header.Get("X-User-Id")
 
-	if attemptID != h.AttemptID {
-		log.Warn("security: X-Attempt-Id mismatch", "got", attemptID, "want", h.AttemptID)
-		_ = conn.Close(websocket.StatusPolicyViolation, "unauthorized")
-		return
-	}
-	if userID == "" {
-		log.Warn("security: missing X-User-Id")
-		_ = conn.Close(websocket.StatusPolicyViolation, "unauthorized")
-		return
+		if attemptID != h.AttemptID {
+			log.Warn("security: X-Attempt-Id mismatch", "got", attemptID, "want", h.AttemptID)
+			_ = conn.Close(websocket.StatusPolicyViolation, "unauthorized")
+			return
+		}
+		if userID == "" {
+			log.Warn("security: missing X-User-Id")
+			_ = conn.Close(websocket.StatusPolicyViolation, "unauthorized")
+			return
+		}
 	}
 
 	if err := h.Limiter.Acquire(userID); err != nil {
@@ -90,7 +96,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer h.Limiter.Release(userID)
 
-	log = log.With("user_id", userID, "attempt_id", attemptID)
+	log = log.With("user_id", userID)
 	log.Info("ws connected", "active_total", h.Limiter.Total())
 
 	if h.WG != nil {

@@ -19,6 +19,8 @@ export function useLabSession() {
 
   const { tabs, activeTabId, limitError, openTab, selectTab, closeTab, moveTab, resetTabs } = useTerminalTabs()
 
+  const attemptId = computed(() => attemptsStore.lastAttempt?.id ?? null)
+
   const currentTask = computed(() => lab.value?.content?.[selectedTask.value] ?? null)
 
   watch(() => attemptsStore.lastAttempt?.id, async (id) => {
@@ -68,5 +70,6 @@ export function useLabSession() {
   return {
     lab, selectedTask, currentTask, error,
     tabs, activeTabId, limitError, openTab, selectTab, closeTab, moveTab,
+    attemptId,
   }
 }

@@ -9,6 +9,7 @@ images:
   - name: rootenv-backend
   - name: labenv-operator
   - name: attempt-controller
+  - name: relay-exec
 
 patches:
   - target:
@@ -19,8 +20,10 @@ patches:
         path: /spec/template/spec/containers/0/env
         value:
           - name: RELAY_IMAGE
-            value: "relay-primitive:aae5a700ea3d1abb56cbe332d0734dd5feeb87505f172698f62965f6813dd550"
+            value: "relay-exec"
           - name: RELAY_INGRESS_CLASS
             value: "traefik"
           - name: RELAY_INGRESS_ANNOTATIONS
             value: "traefik.ingress.kubernetes.io/router.entrypoints=websecure"
+          - name: RELAY_INGRESS_BASE_PATH
+            value: "/relay/exec"

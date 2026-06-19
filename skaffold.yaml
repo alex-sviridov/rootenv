@@ -54,10 +54,10 @@ build:
       context: services/attempt-controller
       docker:
         dockerfile: Dockerfile
-    - image: relay-primitive
+    - image: relay-exec
       context: services/relay
       docker:
-        dockerfile: cmd/relay-primitive/Dockerfile
+        dockerfile: cmd/relay-exec/Dockerfile
 deploy:
   kubectl: {}
   kubeContext: k3d-rootenv

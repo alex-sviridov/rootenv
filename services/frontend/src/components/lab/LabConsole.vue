@@ -1,15 +1,14 @@
 <script setup>
 import { ref } from 'vue'
-import TerminalPanel from '@/components/lab/TerminalPanel.vue'
+import ExecTerminalPanel from '@/components/lab/ExecTerminalPanel.vue'
 
-const tabComponents = { ssh: TerminalPanel, exec: TerminalPanel }
+const tabComponents = { exec: ExecTerminalPanel }
 
 defineProps({
   tabs: { type: Array, required: true },
   activeTabId: { type: String, default: null },
   limitError: { type: String, default: null },
-  attemptId: { type: String, default: '' },
-  secrets: { type: Object, default: () => ({}) },
+  attemptId: { type: String, default: null },
 })
 
 const emit = defineEmits(['select-tab', 'close-tab', 'move-tab'])
@@ -78,11 +77,9 @@ function onDragEnd() {
         <template v-for="tab in tabs" :key="tab.id">
           <component
             :is="tabComponents[tab.type]"
-            v-if="tabComponents[tab.type] && (tab.type === 'exec' || secrets[tab.serverId])"
+            v-if="tabComponents[tab.type]"
             v-show="tab.id === activeTabId"
-            :protocol="tab.type"
-            :server-id="tab.serverId"
-            :secret="secrets[tab.serverId] ?? ''"
+            :asset-name="tab.serverId"
             :attempt-id="attemptId"
           />
         </template>

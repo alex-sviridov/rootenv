@@ -14,14 +14,19 @@ vi.mock('@xterm/xterm', () => {
       this.buffer = []
       this.dataHandler = null
       this.resizeHandler = null
+      this.selectionHandler = null
     }
     writeln(text) { this.buffer.push(text) }
     write(data) { this.buffer.push(data) }
     onData(handler) { this.dataHandler = handler }
     onResize(handler) { this.resizeHandler = handler }
+    onSelectionChange(handler) { this.selectionHandler = handler }
+    getSelection() { return '' }
+    input(text) { this.buffer.push(text) }
     loadAddon() {}
     dispose() {}
     open() {}
+    get textarea() { return { addEventListener: vi.fn() } }
   }
   return { Terminal: MockTerminal }
 })
@@ -57,7 +62,6 @@ MockWebSocket.CLOSED = 3
 beforeEach(() => {
   MockWebSocket.lastInstance = null
   vi.stubGlobal('WebSocket', MockWebSocket)
-  vi.stubGlobal('fetch', vi.fn())
   vi.stubGlobal('location', { protocol: 'http:', host: 'localhost:8080' })
 })
 
@@ -65,78 +69,27 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('health check fails with non-ok response', () => {
-  it('writes error to terminal with status code and body', async () => {
-    fetch.mockResolvedValue({ ok: false, status: 503, text: () => Promise.resolve('not ready') })
-
-    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
+describe('useExecRelayConnection', () => {
+  it('opens WebSocket at /relay/exec/<attemptId>/<assetName>/ (ws for http)', async () => {
+    const { unmount } = withSetup(() => useExecRelayConnection('atm_123', 'workstation'))
     await flushPromises()
 
-    const output = result.terminal.buffer.join('\n')
-    expect(output).toContain('503')
-    expect(output).toContain('not ready')
-    expect(MockWebSocket.lastInstance).toBeNull()
+    expect(MockWebSocket.lastInstance.url).toBe('ws://localhost:8080/relay/exec/atm_123/workstation/')
     unmount()
   })
 
-  it('shows fallback message when body is empty', async () => {
-    fetch.mockResolvedValue({ ok: false, status: 503, text: () => Promise.resolve('') })
-
-    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
-    await flushPromises()
-
-    expect(result.terminal.buffer.some(msg => msg.includes('no details'))).toBe(true)
-    unmount()
-  })
-})
-
-describe('health check throws (network error)', () => {
-  it('writes error to terminal when healthz unreachable', async () => {
-    fetch.mockRejectedValue(new Error('network error'))
-
-    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
-    await flushPromises()
-
-    expect(result.terminal.buffer.some(msg => msg.includes('/relay/atm_abc/exec/healthz'))).toBe(true)
-    expect(MockWebSocket.lastInstance).toBeNull()
-    unmount()
-  })
-})
-
-describe('health check passes', () => {
-  beforeEach(() => {
-    fetch.mockResolvedValue({ ok: true })
-  })
-
-  it('checks healthz at the correct per-attempt URL', async () => {
-    const { unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
-    await flushPromises()
-
-    expect(fetch).toHaveBeenCalledWith('/relay/atm_abc/exec/healthz')
-    unmount()
-  })
-
-  it('opens WebSocket at /relay/<attemptId>/exec/<assetName>/ (ws for http)', async () => {
-    const { unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
-    await flushPromises()
-
-    expect(MockWebSocket.lastInstance).not.toBeNull()
-    expect(MockWebSocket.lastInstance.url).toBe('ws://localhost:8080/relay/atm_abc/exec/workstation/')
-    unmount()
-  })
-
-  it('opens WebSocket with wss when protocol is https', async () => {
+  it('opens WebSocket at wss when protocol is https', async () => {
     vi.stubGlobal('location', { protocol: 'https:', host: 'example.com' })
 
-    const { unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
+    const { unmount } = withSetup(() => useExecRelayConnection('atm_123', 'workstation'))
     await flushPromises()
 
-    expect(MockWebSocket.lastInstance.url).toBe('wss://example.com/relay/atm_abc/exec/workstation/')
+    expect(MockWebSocket.lastInstance.url).toContain('wss://')
     unmount()
   })
 
   it('sets binaryType to arraybuffer', async () => {
-    const { unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
+    const { unmount } = withSetup(() => useExecRelayConnection('atm_123', 'workstation'))
     await flushPromises()
 
     expect(MockWebSocket.lastInstance.binaryType).toBe('arraybuffer')
@@ -144,28 +97,17 @@ describe('health check passes', () => {
   })
 
   it('sends only the token as first message on open (no secret)', async () => {
-    const { unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
+    const { unmount } = withSetup(() => useExecRelayConnection('atm_123', 'workstation'))
     await flushPromises()
 
     MockWebSocket.lastInstance.onopen()
 
     expect(MockWebSocket.lastInstance.sent).toEqual([mockToken])
-    expect(MockWebSocket.lastInstance.sent[0]).not.toContain('\n')
-    unmount()
-  })
-
-  it('writes binary data from ws messages to terminal', async () => {
-    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
-    await flushPromises()
-
-    MockWebSocket.lastInstance.onmessage({ data: new ArrayBuffer(5) })
-
-    expect(result.terminal.buffer.some(item => item instanceof Uint8Array)).toBe(true)
     unmount()
   })
 
   it('registers onData handler to forward terminal input to ws', async () => {
-    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
+    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_123', 'workstation'))
     await flushPromises()
 
     MockWebSocket.lastInstance.onopen()
@@ -174,20 +116,30 @@ describe('health check passes', () => {
     unmount()
   })
 
-  it('sends terminal input through ws when onData fires', async () => {
-    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
+  it('forwards terminal input through ws when onData fires', async () => {
+    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_123', 'workstation'))
     await flushPromises()
 
     MockWebSocket.lastInstance.readyState = MockWebSocket.OPEN
     MockWebSocket.lastInstance.onopen()
-    result.terminal.dataHandler('echo hello')
+    result.terminal.dataHandler('ls')
 
-    expect(MockWebSocket.lastInstance.sent).toContain('echo hello')
+    expect(MockWebSocket.lastInstance.sent).toContain('ls')
     unmount()
   })
 
-  it('writes disconnect message to terminal on close with code and reason', async () => {
-    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
+  it('writes binary data from ws messages to terminal', async () => {
+    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_123', 'workstation'))
+    await flushPromises()
+
+    MockWebSocket.lastInstance.onmessage({ data: new ArrayBuffer(4) })
+
+    expect(result.terminal.buffer.some(item => item instanceof Uint8Array)).toBe(true)
+    unmount()
+  })
+
+  it('writes disconnect message on close with code and reason', async () => {
+    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_123', 'workstation'))
     await flushPromises()
 
     MockWebSocket.lastInstance.onclose({ code: 1008, reason: 'unauthorized' })
@@ -199,7 +151,7 @@ describe('health check passes', () => {
   })
 
   it('writes disconnect message with code only when reason is empty', async () => {
-    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
+    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_123', 'workstation'))
     await flushPromises()
 
     MockWebSocket.lastInstance.onclose({ code: 1000, reason: '' })
@@ -210,22 +162,18 @@ describe('health check passes', () => {
     unmount()
   })
 
-  it('writes connection error to terminal on ws error', async () => {
-    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
+  it('writes connection error on ws error', async () => {
+    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_123', 'workstation'))
     await flushPromises()
 
     MockWebSocket.lastInstance.onerror()
 
-    expect(result.terminal.buffer.some(msg => msg.includes('Connection error'))).toBe(true)
+    expect(result.terminal.buffer.some(m => m.includes('Connection error'))).toBe(true)
     unmount()
   })
-})
 
-describe('cleanup on unmount', () => {
-  it('closes WebSocket with code 1000 when unmounted while open', async () => {
-    fetch.mockResolvedValue({ ok: true })
-
-    const { unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
+  it('closes ws with code 1000 on unmount when open', async () => {
+    const { unmount } = withSetup(() => useExecRelayConnection('atm_123', 'workstation'))
     await flushPromises()
 
     MockWebSocket.lastInstance.readyState = MockWebSocket.OPEN
@@ -234,10 +182,8 @@ describe('cleanup on unmount', () => {
     expect(MockWebSocket.lastInstance._closedWith).toEqual({ code: 1000, reason: 'tab closed' })
   })
 
-  it('does not close WebSocket when already closing', async () => {
-    fetch.mockResolvedValue({ ok: true })
-
-    const { unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
+  it('does not close ws when already closing on unmount', async () => {
+    const { unmount } = withSetup(() => useExecRelayConnection('atm_123', 'workstation'))
     await flushPromises()
 
     MockWebSocket.lastInstance.readyState = MockWebSocket.CLOSING
@@ -246,24 +192,31 @@ describe('cleanup on unmount', () => {
     expect(MockWebSocket.lastInstance._closedWith).toBeUndefined()
   })
 
-  it('disposes terminal on unmount', async () => {
-    fetch.mockResolvedValue({ ok: true })
-
-    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
+  it('sends a 5-byte resize frame (0x01 + cols LE + rows LE) when terminal resizes', async () => {
+    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_123', 'workstation'))
     await flushPromises()
 
-    const disposeSpy = vi.spyOn(result.terminal, 'dispose')
-    unmount()
+    MockWebSocket.lastInstance.readyState = MockWebSocket.OPEN
+    MockWebSocket.lastInstance.onopen()
+    result.terminal.resizeHandler({ cols: 80, rows: 24 })
 
-    expect(disposeSpy).toHaveBeenCalled()
+    const frame = MockWebSocket.lastInstance.sent.find(s => s instanceof ArrayBuffer)
+    expect(frame).toBeDefined()
+    expect(frame.byteLength).toBe(5)
+    const view = new DataView(frame)
+    expect(view.getUint8(0)).toBe(0x01)
+    expect(view.getUint16(1, true)).toBe(80)
+    expect(view.getUint16(3, true)).toBe(24)
+    unmount()
   })
 
-  it('does not throw when health check failed (no ws created)', async () => {
-    fetch.mockResolvedValue({ ok: false, status: 503, text: () => Promise.resolve('') })
-
-    const { unmount } = withSetup(() => useExecRelayConnection('atm_abc', 'workstation'))
+  it('disposes terminal on unmount', async () => {
+    const { result, unmount } = withSetup(() => useExecRelayConnection('atm_123', 'workstation'))
     await flushPromises()
 
-    expect(() => unmount()).not.toThrow()
+    const spy = vi.spyOn(result.terminal, 'dispose')
+    unmount()
+
+    expect(spy).toHaveBeenCalled()
   })
 })

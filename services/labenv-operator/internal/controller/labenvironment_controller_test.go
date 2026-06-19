@@ -112,9 +112,9 @@ var _ = Describe("ensureRelay", func() {
 			os.Unsetenv("RELAY_INGRESS_BASE_PATH")
 			os.Unsetenv("RELAY_INGRESS_ANNOTATIONS")
 		})
-		os.Setenv("RELAY_IMAGE", "relay-primitive:test")
+		os.Setenv("RELAY_IMAGE", "relay-exec:test")
 		os.Setenv("RELAY_INGRESS_CLASS", "traefik")
-		os.Setenv("RELAY_INGRESS_BASE_PATH", "/relay")
+		os.Setenv("RELAY_INGRESS_BASE_PATH", "/relay/exec")
 		os.Setenv("RELAY_INGRESS_ANNOTATIONS", "traefik.ingress.kubernetes.io/router.entrypoints=websecure")
 
 		By("creating the lab namespace")
@@ -154,12 +154,15 @@ var _ = Describe("ensureRelay", func() {
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay"}, &rb)).To(Succeed())
 		Expect(rb.Subjects[0].Name).To(Equal("relay"))
 
-		By("Deployment relay-primitive exists with correct image and env")
+		By("Deployment relay-exec exists with correct image and env")
 		var deploy appsv1.Deployment
-		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay-primitive"}, &deploy)).To(Succeed())
-		Expect(deploy.Spec.Template.Spec.Containers[0].Image).To(Equal("relay-primitive:test"))
-		Expect(deploy.Spec.Template.Spec.Containers[0].Env).To(ContainElement(
-			corev1.EnvVar{Name: "RELAY_NAMESPACE", Value: nsName},
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay-exec"}, &deploy)).To(Succeed())
+		Expect(deploy.Spec.Template.Spec.Containers[0].Image).To(Equal("relay-exec:test"))
+		Expect(deploy.Spec.Template.Spec.Containers[0].Env).To(ContainElements(
+			corev1.EnvVar{Name: "RELAY_MY_NAMESPACE", Value: nsName},
+			corev1.EnvVar{Name: "RELAY_MY_ATTEMPT_ID", Value: envName},
+			corev1.EnvVar{Name: "RELAY_MY_OWNER_ID", Value: "usr-test"},
+			corev1.EnvVar{Name: "RELAY_SKIP_AUTH", Value: "true"},
 		))
 
 		By("Service relay exists")
@@ -170,14 +173,14 @@ var _ = Describe("ensureRelay", func() {
 		By("Ingress relay exists with correct path and annotation")
 		var ing networkingv1.Ingress
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay"}, &ing)).To(Succeed())
-		Expect(ing.Spec.Rules[0].HTTP.Paths[0].Path).To(Equal("/relay/" + envName))
+		Expect(ing.Spec.Rules[0].HTTP.Paths[0].Path).To(Equal("/relay/exec/" + envName))
 		Expect(ing.Annotations).To(HaveKey("traefik.ingress.kubernetes.io/router.entrypoints"))
 		Expect(*ing.Spec.IngressClassName).To(Equal("traefik"))
 
 		By("NetworkPolicy allow-traefik-to-relay exists")
 		var np networkingv1.NetworkPolicy
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "allow-traefik-to-relay"}, &np)).To(Succeed())
-		Expect(np.Spec.PodSelector.MatchLabels).To(HaveKeyWithValue("app", "relay-primitive"))
+		Expect(np.Spec.PodSelector.MatchLabels).To(HaveKeyWithValue("app", "relay-exec"))
 
 		By("ensureRelay is idempotent — second call does not error")
 		Expect(r.ensureRelay(ctx, env, nsName)).To(Succeed())

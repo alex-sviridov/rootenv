@@ -12,6 +12,7 @@ import LabConsole from '@/components/lab/LabConsole.vue'
 const {
   lab, selectedTask, currentTask, error,
   tabs, activeTabId, limitError, openTab, selectTab, closeTab, moveTab,
+  attemptId,
 } = useLabSession()
 
 const attemptsStore = useAttemptsStore()

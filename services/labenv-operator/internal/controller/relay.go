@@ -40,7 +40,7 @@ func loadRelayConfig() (relayConfig, error) {
 
 	basePath := os.Getenv("RELAY_INGRESS_BASE_PATH")
 	if basePath == "" {
-		basePath = "/relay"
+		basePath = "/relay/exec"
 	}
 
 	annotations := map[string]string{}
@@ -77,7 +77,7 @@ func (r *LabEnvironmentReconciler) ensureRelay(ctx context.Context, env *labv1al
 	if err := r.ensureRelayRoleBinding(ctx, nsName); err != nil {
 		return err
 	}
-	if err := r.ensureRelayDeployment(ctx, nsName, cfg); err != nil {
+	if err := r.ensureRelayDeployment(ctx, env, nsName, cfg); err != nil {
 		return err
 	}
 	if err := r.ensureRelayService(ctx, nsName); err != nil {
@@ -170,9 +170,9 @@ func (r *LabEnvironmentReconciler) ensureRelayRoleBinding(ctx context.Context, n
 	return client.IgnoreAlreadyExists(r.Create(ctx, &rb))
 }
 
-func (r *LabEnvironmentReconciler) ensureRelayDeployment(ctx context.Context, nsName string, cfg relayConfig) error {
+func (r *LabEnvironmentReconciler) ensureRelayDeployment(ctx context.Context, env *labv1alpha1.LabEnvironment, nsName string, cfg relayConfig) error {
 	var existing appsv1.Deployment
-	err := r.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay-primitive"}, &existing)
+	err := r.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay-exec"}, &existing)
 	if err == nil {
 		return nil
 	}
@@ -181,18 +181,18 @@ func (r *LabEnvironmentReconciler) ensureRelayDeployment(ctx context.Context, ns
 	}
 	deploy := appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "relay-primitive",
+			Name:      "relay-exec",
 			Namespace: nsName,
-			Labels:    map[string]string{"app": "relay-primitive"},
+			Labels:    map[string]string{"app": "relay-exec"},
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: ptr.To(int32(1)),
 			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{"app": "relay-primitive"},
+				MatchLabels: map[string]string{"app": "relay-exec"},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{"app": "relay-primitive"},
+					Labels: map[string]string{"app": "relay-exec"},
 				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName: "relay",
@@ -205,11 +205,14 @@ func (r *LabEnvironmentReconciler) ensureRelayDeployment(ctx context.Context, ns
 					},
 					Containers: []corev1.Container{
 						{
-							Name:            "relay-primitive",
+							Name:            "relay-exec",
 							Image:           cfg.image,
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Env: []corev1.EnvVar{
-								{Name: "RELAY_NAMESPACE", Value: nsName},
+								{Name: "RELAY_MY_NAMESPACE", Value: nsName},
+								{Name: "RELAY_MY_ATTEMPT_ID", Value: env.Name},
+								{Name: "RELAY_MY_OWNER_ID", Value: env.Spec.OwnerId},
+								{Name: "RELAY_SKIP_AUTH", Value: "true"},
 							},
 							SecurityContext: &corev1.SecurityContext{
 								AllowPrivilegeEscalation: ptr.To(false),
@@ -221,7 +224,7 @@ func (r *LabEnvironmentReconciler) ensureRelayDeployment(ctx context.Context, ns
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/",
+										Path: "/healthz",
 										Port: intstr.FromInt32(8080),
 									},
 								},
@@ -260,7 +263,7 @@ func (r *LabEnvironmentReconciler) ensureRelayService(ctx context.Context, nsNam
 			Namespace: nsName,
 		},
 		Spec: corev1.ServiceSpec{
-			Selector: map[string]string{"app": "relay-primitive"},
+			Selector: map[string]string{"app": "relay-exec"},
 			Ports: []corev1.ServicePort{
 				{Port: 8080, TargetPort: intstr.FromInt32(8080)},
 			},
@@ -337,7 +340,7 @@ func (r *LabEnvironmentReconciler) ensureRelayNetworkPolicy(ctx context.Context,
 		},
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{
-				MatchLabels: map[string]string{"app": "relay-primitive"},
+				MatchLabels: map[string]string{"app": "relay-exec"},
 			},
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
 			Ingress: []networkingv1.NetworkPolicyIngressRule{
