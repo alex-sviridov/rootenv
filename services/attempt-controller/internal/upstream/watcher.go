@@ -30,11 +30,11 @@ func (r *Reconciler) Run(ctx context.Context, dyn dynamic.Interface) {
 		},
 	}
 
-	_, informer := cache.NewInformer(
-		lw,
-		&unstructured.Unstructured{},
-		resyncPeriod,
-		cache.ResourceEventHandlerFuncs{
+	_, informer := cache.NewInformerWithOptions(cache.InformerOptions{
+		ListerWatcher: lw,
+		ObjectType:    &unstructured.Unstructured{},
+		ResyncPeriod:  resyncPeriod,
+		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj any) {
 				u, ok := obj.(*unstructured.Unstructured)
 				if !ok {
@@ -65,7 +65,7 @@ func (r *Reconciler) Run(ctx context.Context, dyn dynamic.Interface) {
 				r.ReconcileDelete(ctx, u)
 			},
 		},
-	)
+	})
 
 	log.Println("upstream: starting LabEnvironment watcher")
 	informer.Run(ctx.Done())

@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
-	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/config"
 	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/downstream"
+	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/health"
 	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/k8s"
 	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/pocketbase"
 	"github.com/alex-sviridov/rootenv/services/attempt-controller/internal/upstream"
@@ -20,6 +21,8 @@ import (
 const (
 	subscriptionReconnectBackoff = 5 * time.Second
 	fullResyncInterval           = 5 * time.Minute
+	pbConnectBackoff             = 10 * time.Second
+	healthAddr                   = ":8081"
 )
 
 func main() {
@@ -31,23 +34,42 @@ func main() {
 		log.Fatal("config error:", err)
 	}
 
-	pb, err := pocketbase.NewClient(cfg.PbURL, cfg.PbEmail, cfg.PbPassword, cfg.TlsVerify)
-	if err != nil {
-		log.Fatal("PocketBase auth failed:", err)
+	hs := &health.Server{}
+	go func() {
+		srv := &http.Server{Addr: healthAddr, Handler: hs.Handler()}
+		log.Printf("health server listening on %s", healthAddr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("health server error: %v", err)
+		}
+	}()
+
+	var pb *pocketbase.Client
+	for {
+		pb, err = pocketbase.NewClient(cfg.PbURL, cfg.PbEmail, cfg.PbPassword, cfg.TlsVerify)
+		if err == nil {
+			break
+		}
+		log.Printf("PocketBase connect failed: %v; retrying in %s", err, pbConnectBackoff)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pbConnectBackoff):
+		}
 	}
 	log.Printf("connected to PocketBase at %s", cfg.PbURL)
+	hs.SetReady(true)
 
 	dyn, err := k8s.NewClient()
 	if err != nil {
 		log.Fatal("k8s client failed:", err)
 	}
 
-	rec := downstream.NewReconciler(dyn)
-
-	var firstConnect atomic.Bool
-	firstConnect.Store(true)
+	rec := downstream.NewReconciler(dyn, pb)
 
 	go pb.RunAttemptSubscription(ctx, func(action string, pbRec pocketbase.AttemptRecord) {
+		if pbRec.DesiredState == downstream.DesiredStateDecommissioned && pbRec.CurrentState == downstream.DesiredStateDecommissioned {
+			return
+		}
 		if pbRec.DesiredState != downstream.DesiredStateDecommissioned {
 			full, err := pb.GetAttempt(ctx, pbRec.ID)
 			if errors.Is(err, pocketbase.ErrNotFound) {
@@ -76,14 +98,7 @@ func main() {
 		}
 		rec.ReconcileAttempt(ctx, a)
 	}, func(ctx context.Context) {
-		// Skip the first onConnect resync: PocketBase replays current state via
-		// SSE events immediately after subscribing, so a resync here would
-		// reconcile every attempt twice. On reconnects the replay may miss events
-		// that arrived while disconnected, so the resync is still needed then.
-		if firstConnect.Swap(false) {
-			return
-		}
-		rec.ResyncAttempts(ctx, pb)
+		rec.ResyncAttempts(ctx)
 	}, subscriptionReconnectBackoff)
 
 	upRec := upstream.NewReconciler(pb)
@@ -96,7 +111,7 @@ func main() {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			rec.ResyncAttempts(ctx, pb)
+			rec.ResyncAttempts(ctx)
 		}
 	}
 }

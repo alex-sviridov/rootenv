@@ -1,23 +1,37 @@
+.PHONY: test lint scan govulncheck ci-dryrun
 
-.PHONY: all
-all: build
+test:
+	docker run --rm \
+		-v $(PWD):/app \
+		-w /app \
+		-v $(HOME)/gopath/pkg/mod:/go/pkg/mod \
+		golang:1.26 sh -c "go test -v ./... && go build -v ./..."
 
-.PHONY: fmt
-fmt: ## Run go fmt against code.
-	go fmt ./...
+lint:
+	docker run --rm \
+		-v $(PWD):/app \
+		-w /app \
+		-v $(HOME)/gopath/pkg/mod:/go/pkg/mod \
+		-v $(HOME)/gopath/bin:/go/bin \
+		-v go-build-cache:/root/.cache/go-build \
+		golang:1.26 sh -c "go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest && golangci-lint run ./..."
 
-.PHONY: vet
-vet: ## Run go vet against code.
-	go vet ./...
+scan:
+	docker run --rm \
+		-v $(PWD):/app \
+		-v trivy-cache:/root/.cache/trivy \
+		aquasec/trivy fs \
+		--scanners vuln,secret,misconfig \
+		--ignore-unfixed \
+		/app
 
-.PHONY: test
-vet: fmt vet ## Run go test against code.
-	go test ./...
+govulncheck:
+	docker run --rm \
+		-v $(PWD):/app \
+		-w /app \
+		-v $(HOME)/gopath/pkg/mod:/go/pkg/mod \
+		-v $(HOME)/gopath/bin:/go/bin \
+		-v go-build-cache:/root/.cache/go-build \
+		golang:1.26 sh -c "go install golang.org/x/vuln/cmd/govulncheck@latest && govulncheck ./..."
 
-.PHONY: build
-build:  fmt vet ## Build a binary.
-	go build -o bin/controller cmd/main.go
-
-.PHONY: run
-run:  fmt vet ## Run a controller from your host.
-	export $$(cat .env | xargs) && go run ./cmd/main.go
+ci-dryrun: test lint scan govulncheck

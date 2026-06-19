@@ -19,6 +19,7 @@ const DesiredStateDecommissioned = "decommissioned"
 // interface without touching this one.
 type PocketBaseClient interface {
 	ListActiveAttempts(ctx context.Context) ([]Attempt, error)
+	PatchAttempt(ctx context.Context, id string, patch map[string]any) error
 }
 
 // Attempt is the controller's internal domain type. It is populated by the
@@ -52,10 +53,11 @@ type Asset struct {
 // Reconciler applies attempt state to Kubernetes LabEnvironment resources.
 type Reconciler struct {
 	dyn dynamic.Interface
+	pb  PocketBaseClient
 }
 
-func NewReconciler(dyn dynamic.Interface) *Reconciler {
-	return &Reconciler{dyn: dyn}
+func NewReconciler(dyn dynamic.Interface, pb PocketBaseClient) *Reconciler {
+	return &Reconciler{dyn: dyn, pb: pb}
 }
 
 // toLabEnvironment translates an Attempt into a LabEnvironment custom resource
@@ -100,7 +102,15 @@ func (r *Reconciler) ReconcileAttempt(ctx context.Context, a Attempt) {
 	if a.DesiredState == DesiredStateDecommissioned {
 		log.Printf("attempt %s: decommission requested (reason: %s), deleting LabEnvironment", a.ID, a.DecommissionReason)
 		err := r.dyn.Resource(k8s.LabEnvironmentGVR).Delete(ctx, a.ID, metav1.DeleteOptions{})
-		if err != nil && !apierrors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
+			// LabEnvironment never existed or was already deleted — upstream
+			// won't fire a Delete event, so patch PocketBase directly.
+			if patchErr := r.pb.PatchAttempt(ctx, a.ID, map[string]any{"current_state": DesiredStateDecommissioned}); patchErr != nil {
+				log.Printf("attempt %s: failed to mark decommissioned: %v", a.ID, patchErr)
+			} else {
+				log.Printf("attempt %s: LabEnvironment not found, marked decommissioned", a.ID)
+			}
+		} else if err != nil {
 			log.Printf("attempt %s: failed to delete LabEnvironment: %v", a.ID, err)
 		}
 		return
@@ -118,8 +128,8 @@ func (r *Reconciler) ReconcileAttempt(ctx context.Context, a Attempt) {
 	log.Printf("attempt %s: applied LabEnvironment", a.ID)
 }
 
-func (r *Reconciler) ResyncAttempts(ctx context.Context, pb PocketBaseClient) {
-	attempts, err := pb.ListActiveAttempts(ctx)
+func (r *Reconciler) ResyncAttempts(ctx context.Context) {
+	attempts, err := r.pb.ListActiveAttempts(ctx)
 	if err != nil {
 		log.Printf("resync: list attempts failed: %v", err)
 		return

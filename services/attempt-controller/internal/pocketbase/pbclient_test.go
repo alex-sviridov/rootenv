@@ -267,6 +267,60 @@ func TestPatchAttemptSuccess(t *testing.T) {
 	}
 }
 
+func TestToAttemptNoEnvironment(t *testing.T) {
+	rec := AttemptRecord{
+		ID:           "a1",
+		UserId:       "u1",
+		UserName:     "alice",
+		Lab:          "rhcsa-lab1",
+		DesiredState: "provisioned",
+	}
+	a, err := rec.ToAttempt()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if a.ID != "a1" || a.UserID != "u1" || a.UserName != "alice" {
+		t.Errorf("attempt = %+v", a)
+	}
+	if len(a.Environment.Assets) != 0 {
+		t.Errorf("expected empty assets, got %v", a.Environment.Assets)
+	}
+}
+
+func TestToAttemptInvalidEnvironmentJSON(t *testing.T) {
+	rec := AttemptRecord{ID: "a1"}
+	rec.Expand.Lab.Environment = []byte(`{not valid json`)
+
+	_, err := rec.ToAttempt()
+	if err == nil {
+		t.Error("expected error for invalid environment JSON")
+	}
+}
+
+func TestToAttemptEnvironmentParsed(t *testing.T) {
+	rec := AttemptRecord{ID: "a1", DesiredState: "provisioned"}
+	rec.Expand.Lab.Environment = []byte(`{"duration":60,"assets":[{"name":"server-0","image":"ubuntu","cpu":"200m","memory":"256Mi","disk":"5Gi","setup":"echo hi","protocols":["ssh"]}]}`)
+
+	a, err := rec.ToAttempt()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if a.Environment.Duration != 60 {
+		t.Errorf("duration = %d", a.Environment.Duration)
+	}
+	if len(a.Environment.Assets) != 1 {
+		t.Fatalf("len(assets) = %d", len(a.Environment.Assets))
+	}
+	asset := a.Environment.Assets[0]
+	if asset.Name != "server-0" || asset.Image != "ubuntu" || asset.CPU != "200m" ||
+		asset.Memory != "256Mi" || asset.Disk != "5Gi" || asset.Setup != "echo hi" {
+		t.Errorf("asset = %+v", asset)
+	}
+	if len(asset.RelayProtocols) != 1 || asset.RelayProtocols[0] != "ssh" {
+		t.Errorf("protocols = %v", asset.RelayProtocols)
+	}
+}
+
 func TestPatchAttemptReauthsOn401(t *testing.T) {
 	var authCalls int
 	var patchCalls int

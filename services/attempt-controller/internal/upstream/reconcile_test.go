@@ -258,6 +258,104 @@ func TestReconcileLabEnvEmptyPhaseSkips(t *testing.T) {
 	}
 }
 
+func TestReconcileLabEnvNoAssets(t *testing.T) {
+	w := &stubWriter{}
+	r := NewReconciler(w)
+
+	obj := mustUnstructured(map[string]any{
+		"metadata": map[string]any{"name": "abc123", "resourceVersion": "1"},
+		"status":   map[string]any{"phase": "Pending"},
+	})
+	r.ReconcileLabEnv(context.Background(), obj)
+
+	if w.patch["current_state"] != "provisioning" {
+		t.Errorf("current_state = %v, want provisioning", w.patch["current_state"])
+	}
+	assets, _ := w.patch["assets"].([]map[string]any)
+	if len(assets) != 0 {
+		t.Errorf("expected empty assets, got %v", assets)
+	}
+}
+
+func TestReconcileLabEnvInvalidExpiresAtDoesNotCrash(t *testing.T) {
+	w := &stubWriter{}
+	r := NewReconciler(w)
+
+	obj := mustUnstructured(map[string]any{
+		"metadata": map[string]any{"name": "abc123", "resourceVersion": "1"},
+		"status": map[string]any{
+			"phase":     "Ready",
+			"expiresAt": "not-a-date",
+			"assets":    []any{},
+		},
+	})
+	r.ReconcileLabEnv(context.Background(), obj)
+
+	if w.id != "abc123" {
+		t.Fatalf("patch not called, id = %q", w.id)
+	}
+	if _, ok := w.patch["expires_at"]; ok {
+		t.Error("expires_at should not be set when expiresAt is invalid")
+	}
+}
+
+func TestReconcileDeleteClearsExpiresAtCache(t *testing.T) {
+	w := &stubWriter{}
+	r := NewReconciler(w)
+
+	// Reconcile once to populate caches.
+	obj := mustUnstructured(map[string]any{
+		"metadata": map[string]any{"name": "abc123", "resourceVersion": "1"},
+		"status": map[string]any{
+			"phase":     "Ready",
+			"expiresAt": "2026-06-16T12:00:00Z",
+			"assets":    []any{},
+		},
+	})
+	r.ReconcileLabEnv(context.Background(), obj)
+
+	r.ReconcileDelete(context.Background(), obj)
+
+	// After delete, a new reconcile for the same ID should write expires_at again.
+	obj.SetResourceVersion("2")
+	w.patch = nil
+	r.ReconcileLabEnv(context.Background(), obj)
+
+	if _, ok := w.patch["expires_at"]; !ok {
+		t.Error("expires_at should be written again after delete cleared the cache")
+	}
+}
+
+func TestReconcileLabEnvMultipleAssets(t *testing.T) {
+	w := &stubWriter{}
+	r := NewReconciler(w)
+
+	obj := mustUnstructured(map[string]any{
+		"metadata": map[string]any{"name": "abc123", "resourceVersion": "1"},
+		"status": map[string]any{
+			"phase": "Ready",
+			"assets": []any{
+				map[string]any{"name": "server-0", "phase": "Running", "protocols": []any{"ssh"}},
+				map[string]any{"name": "server-1", "phase": "Pending", "protocols": []any{}},
+			},
+		},
+	})
+	r.ReconcileLabEnv(context.Background(), obj)
+
+	var assets []map[string]any
+	b, _ := json.Marshal(w.patch["assets"])
+	_ = json.Unmarshal(b, &assets)
+	if len(assets) != 2 {
+		t.Fatalf("len(assets) = %d", len(assets))
+	}
+	if assets[0]["state"] != "provisioned" {
+		t.Errorf("server-0 state = %v", assets[0]["state"])
+	}
+	if assets[1]["state"] != "provisioning" {
+		t.Errorf("server-1 state = %v", assets[1]["state"])
+	}
+}
+
 func TestReconcileLabEnvSetsExpiresAtFromMetav1Time(t *testing.T) {
 	w := &stubWriter{}
 	r := NewReconciler(w)
