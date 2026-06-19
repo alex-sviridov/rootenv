@@ -14,3 +14,7 @@ resources:
   - 32-frontend-svc.yaml
   - 40-backend-ingress.yaml
   - 49-frontend-ingress.yaml
+  - ../../services/labenv-operator/config/default
+  - 50-attempt-controller-secrets.yaml
+  - 51-attempt-controller-serviceaccount.yaml
+  - 53-attempt-controller.yaml

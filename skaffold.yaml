@@ -50,6 +50,10 @@ build:
       context: services/labenv-operator
       docker:
         dockerfile: Dockerfile
+    - image: attempt-controller
+      context: services/attempt-controller
+      docker:
+        dockerfile: Dockerfile
 deploy:
   kubectl: {}
   kubeContext: k3d-rootenv

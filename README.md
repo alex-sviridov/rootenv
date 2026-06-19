@@ -59,7 +59,7 @@ vi scripts/.env
 cp infra/terraform/environments/sandbox/terraform.tfvars.example infra/terraform/environments/sandbox/terraform.tfvars
 vi infra/terraform/environments/sandbox/terraform.tfvars
 
-kubectl create secret generic contmgr-secrets -n rootenv-infra --from-literal CONTMGR_BACKEND_USERNAME=contmgr@example.local --from-literal CONTMGR_BACKEND_PASSWORD=password123 --dry-run=client -o yaml > deploy/base/05-contmgr-secrets.yaml
+kubectl create secret generic attempt-controller-secrets -n rootenv-infra --from-literal ATTEMPT_CONTROLLER_BACKEND_USERNAME=attempt-controller@example.local --from-literal ATTEMPT_CONTROLLER_BACKEND_PASSWORD=password123 --dry-run=client -o yaml > deploy/base/50-attempt-controller-secrets.yaml
 kubectl create secret generic relay-secrets -n rootenv-infra --from-literal RELAY_BACKEND_USERNAME=relay@example.local --from-literal RELAY_BACKEND_PASSWORD=password123 --dry-run=client -o yaml > deploy/base/05-relay-secrets.yaml
 
 # Bootstrap k3s cluster

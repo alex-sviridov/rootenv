@@ -3,3 +3,9 @@ kind: Kustomization
 
 resources:
   - ../../base
+
+images:
+  - name: rootenv-frontend
+  - name: rootenv-backend
+  - name: labenv-operator
+  - name: attempt-controller
