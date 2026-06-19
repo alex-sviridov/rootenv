@@ -98,23 +98,8 @@ func (r *LabEnvironmentReconciler) reconcileCreate(ctx context.Context, env *lab
 	if err := r.ensureLimitRange(ctx, nsName); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.ensureRelayServiceAccount(ctx, nsName); err != nil {
-		return ctrl.Result{}, fmt.Errorf("ensureRelayServiceAccount: %w", err)
-	}
-	if err := r.ensureRelayRole(ctx, nsName); err != nil {
-		return ctrl.Result{}, fmt.Errorf("ensureRelayRole: %w", err)
-	}
-	if err := r.ensureRelayRoleBinding(ctx, nsName); err != nil {
-		return ctrl.Result{}, fmt.Errorf("ensureRelayRoleBinding: %w", err)
-	}
-	if err := r.ensureRelayDeployment(ctx, env, nsName); err != nil {
-		return ctrl.Result{}, fmt.Errorf("ensureRelayDeployment: %w", err)
-	}
-	if err := r.ensureRelayService(ctx, nsName); err != nil {
-		return ctrl.Result{}, fmt.Errorf("ensureRelayService: %w", err)
-	}
-	if err := r.ensureIngressRoute(ctx, env, nsName); err != nil {
-		return ctrl.Result{}, fmt.Errorf("ensureIngressRoute: %w", err)
+	if err := r.ensureRelay(ctx, env, nsName); err != nil {
+		return ctrl.Result{}, err
 	}
 	// get asset status
 	notReadyMsg := []string{}
