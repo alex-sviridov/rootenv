@@ -1,0 +1,9 @@
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: relay-exec-strip-prefix
+  namespace: kube-system
+spec:
+  replacePathRegex:
+    regex: ^/relay/exec/[^/]+(/.*)?$
+    replacement: $1

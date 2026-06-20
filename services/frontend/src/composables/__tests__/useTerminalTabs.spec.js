@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { useTerminalTabs } from '../useTerminalTabs'
 
-const server = (id, name = `server-${id}`) => ({ id, name })
+const server = (id, name = id) => ({ id, name })
 
 describe('initial state', () => {
   it('starts with no tabs, no active tab, and no error', () => {

@@ -37,7 +37,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	port := os.Getenv("RELAY_PORT")
+	port := os.Getenv("RELAY_LISTEN_PORT")
 	if port == "" {
 		port = "8080"
 	}

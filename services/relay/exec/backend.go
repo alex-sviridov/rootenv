@@ -32,7 +32,8 @@ func (b *Backend) Serve(ctx context.Context, conn *websocket.Conn, assetName, us
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	log := slog.With("asset", assetName, "user_id", userID)
+	log := slog.With("asset", assetName, "user_id", userID, "namespace", b.Namespace)
+	log.Info("exec session starting", "pod", assetName)
 
 	stdinR, stdinW := io.Pipe()
 	stdoutR, stdoutW := io.Pipe()
@@ -40,7 +41,14 @@ func (b *Backend) Serve(ctx context.Context, conn *websocket.Conn, assetName, us
 
 	execDone := make(chan error, 1)
 	go func() {
-		execDone <- b.Execer.Exec(ctx, b.Namespace, assetName, stdinR, stdoutW, io.Discard, resizeCh)
+		log.Info("dialing pod exec", "pod", assetName)
+		err := b.Execer.Exec(ctx, b.Namespace, assetName, stdinR, stdoutW, io.Discard, resizeCh)
+		if err != nil {
+			log.Error("exec stream ended with error", "pod", assetName, "err", err)
+		} else {
+			log.Info("exec stream closed cleanly", "pod", assetName)
+		}
+		execDone <- err
 		_ = stdoutW.Close()
 	}()
 
@@ -137,10 +145,15 @@ func (k *KubeExecer) Exec(ctx context.Context, namespace, podName string, stdin 
 			TTY:     true,
 		}, scheme.ParameterCodec)
 
-	exec, err := remotecommand.NewSPDYExecutor(k.config, http.MethodPost, req.URL())
+	execURL := req.URL()
+	slog.Info("opening SPDY exec stream", "url", execURL.String())
+
+	exec, err := remotecommand.NewSPDYExecutor(k.config, http.MethodPost, execURL)
 	if err != nil {
+		slog.Error("failed to create SPDY executor", "url", execURL.String(), "err", err)
 		return err
 	}
+	slog.Info("SPDY executor created, streaming", "url", execURL.String())
 	return exec.StreamWithContext(ctx, remotecommand.StreamOptions{
 		Stdin:             stdin,
 		Stdout:            stdout,

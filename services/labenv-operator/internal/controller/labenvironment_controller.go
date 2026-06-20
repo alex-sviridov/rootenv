@@ -297,7 +297,7 @@ func (r *LabEnvironmentReconciler) ensureNamespace(ctx context.Context, env *lab
 func (r *LabEnvironmentReconciler) ensureNetworkPolicy(ctx context.Context, nsName string) error {
 	np := &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "network-policy",
+			Name:      "networkpolicy-denyall",
 			Namespace: nsName,
 		},
 	}

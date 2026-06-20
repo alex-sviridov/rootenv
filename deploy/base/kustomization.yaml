@@ -18,3 +18,4 @@ resources:
   - 50-attempt-controller-secrets.yaml
   - 51-attempt-controller-serviceaccount.yaml
   - 53-attempt-controller.yaml
+  - 60-relay-middleware.yaml

@@ -324,38 +324,58 @@ func (r *LabEnvironmentReconciler) ensureRelayIngress(ctx context.Context, env *
 
 func (r *LabEnvironmentReconciler) ensureRelayNetworkPolicy(ctx context.Context, nsName string) error {
 	var existing networkingv1.NetworkPolicy
-	err := r.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "allow-traefik-to-relay"}, &existing)
+	err := r.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "networkpolicy-relay"}, &existing)
 	if err == nil {
 		return nil
 	}
 	if !apierrors.IsNotFound(err) {
 		return err
 	}
+
+	apiServerIP := os.Getenv("KUBERNETES_SERVICE_HOST")
+	if apiServerIP == "" {
+		apiServerIP = "10.43.0.1"
+	}
+	apiServerCIDR := apiServerIP + "/32"
+
 	tcp := corev1.ProtocolTCP
-	port := intstr.FromInt32(8080)
+	wsPort := intstr.FromInt32(8080)
+	apiPort := intstr.FromInt32(443)
+
 	np := networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "allow-traefik-to-relay",
+			Name:      "networkpolicy-relay",
 			Namespace: nsName,
 		},
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{"app": "relay-exec"},
 			},
-			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+			PolicyTypes: []networkingv1.PolicyType{
+				networkingv1.PolicyTypeIngress,
+				networkingv1.PolicyTypeEgress,
+			},
 			Ingress: []networkingv1.NetworkPolicyIngressRule{
 				{
-					From: []networkingv1.NetworkPolicyPeer{
-						{
-							NamespaceSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									"kubernetes.io/metadata.name": "kube-system",
-								},
+					From: []networkingv1.NetworkPolicyPeer{{
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"kubernetes.io/metadata.name": "kube-system",
 							},
 						},
-					},
+					}},
 					Ports: []networkingv1.NetworkPolicyPort{
-						{Protocol: &tcp, Port: &port},
+						{Protocol: &tcp, Port: &wsPort},
+					},
+				},
+			},
+			Egress: []networkingv1.NetworkPolicyEgressRule{
+				{
+					To: []networkingv1.NetworkPolicyPeer{{
+						IPBlock: &networkingv1.IPBlock{CIDR: apiServerCIDR},
+					}},
+					Ports: []networkingv1.NetworkPolicyPort{
+						{Protocol: &tcp, Port: &apiPort},
 					},
 				},
 			},
