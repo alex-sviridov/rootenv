@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/alexsviridov/linuxlab/ingress-authenticator/internal/auth"
 	"github.com/alexsviridov/linuxlab/ingress-authenticator/internal/pbclient"
@@ -30,9 +32,21 @@ func main() {
 	pb := pbclient.New(pbURL, tlsVerify)
 	handler := auth.NewHandler(pb)
 
+	readyzClient := &http.Client{Timeout: 3 * time.Second}
+	healthURL := strings.TrimRight(pbURL, "/") + "/api/health"
+
 	mux := http.NewServeMux()
 	mux.Handle("/auth", handler)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		resp, err := readyzClient.Get(healthURL)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			http.Error(w, "pocketbase unreachable", http.StatusServiceUnavailable)
+			return
+		}
+		resp.Body.Close()
 		w.WriteHeader(http.StatusOK)
 	})
 
