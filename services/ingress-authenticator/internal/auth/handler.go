@@ -3,9 +3,10 @@ package auth
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 )
 
-// PocketBase is the interface the handler needs — two calls, both with the user token.
+// PocketBase is the interface the handler needs.
 type PocketBase interface {
 	ValidateToken(token string) (string, error)
 	GetAttempt(token, attemptID string) (string, error)
@@ -19,16 +20,35 @@ func NewHandler(pb PocketBase) *Handler {
 	return &Handler{pb: pb}
 }
 
+// parseAttemptID extracts the attempt ID from a Traefik X-Forwarded-Uri value.
+// Expected pattern: /relay/exec/<attemptId>/...
+func parseAttemptID(uri string) (string, bool) {
+	parts := strings.FieldsFunc(uri, func(r rune) bool { return r == '/' })
+	for i, p := range parts {
+		if p == "exec" && i+1 < len(parts) {
+			return parts[i+1], true
+		}
+	}
+	return "", false
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	token := r.Header.Get("Authorization")
-	if token == "" {
-		http.Error(w, "missing authorization", http.StatusUnauthorized)
+	cookie, err := r.Cookie("pb_auth")
+	if err != nil {
+		http.Error(w, "missing pb_auth cookie", http.StatusUnauthorized)
+		return
+	}
+	token := cookie.Value
+
+	forwardedURI := r.Header.Get("X-Forwarded-Uri")
+	if forwardedURI == "" {
+		http.Error(w, "missing X-Forwarded-Uri", http.StatusBadRequest)
 		return
 	}
 
-	attemptID := r.Header.Get("X-Attempt-Id")
-	if attemptID == "" {
-		http.Error(w, "missing X-Attempt-Id", http.StatusBadRequest)
+	attemptID, ok := parseAttemptID(forwardedURI)
+	if !ok {
+		http.Error(w, "cannot parse attempt ID from X-Forwarded-Uri", http.StatusBadRequest)
 		return
 	}
 

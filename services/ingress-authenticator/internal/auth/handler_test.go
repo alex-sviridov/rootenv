@@ -26,15 +26,23 @@ func (f *fakePB) GetAttempt(token, attemptID string) (string, error) {
 	return f.userID, nil
 }
 
+func makeReq(cookie, forwardedURI string) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "/auth", nil)
+	if cookie != "" {
+		req.AddCookie(&http.Cookie{Name: "pb_auth", Value: cookie})
+	}
+	if forwardedURI != "" {
+		req.Header.Set("X-Forwarded-Uri", forwardedURI)
+	}
+	return req
+}
+
 func TestHandler_success(t *testing.T) {
 	pb := &fakePB{userID: "usr_abc"}
 	h := auth.NewHandler(pb)
 
-	req := httptest.NewRequest(http.MethodGet, "/auth", nil)
-	req.Header.Set("Authorization", "tok")
-	req.Header.Set("X-Attempt-Id", "atm_123")
+	req := makeReq("tok123", "/relay/exec/atm_123/server-0/")
 	w := httptest.NewRecorder()
-
 	h.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
@@ -48,12 +56,11 @@ func TestHandler_success(t *testing.T) {
 	}
 }
 
-func TestHandler_missing_authorization(t *testing.T) {
-	pb := &fakePB{}
+func TestHandler_missing_cookie(t *testing.T) {
+	pb := &fakePB{userID: "usr_abc"}
 	h := auth.NewHandler(pb)
 
-	req := httptest.NewRequest(http.MethodGet, "/auth", nil)
-	req.Header.Set("X-Attempt-Id", "atm_123")
+	req := makeReq("", "/relay/exec/atm_123/server-0/")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 
@@ -62,12 +69,24 @@ func TestHandler_missing_authorization(t *testing.T) {
 	}
 }
 
-func TestHandler_missing_attempt_id(t *testing.T) {
+func TestHandler_missing_forwarded_uri(t *testing.T) {
 	pb := &fakePB{userID: "usr_abc"}
 	h := auth.NewHandler(pb)
 
-	req := httptest.NewRequest(http.MethodGet, "/auth", nil)
-	req.Header.Set("Authorization", "tok")
+	req := makeReq("tok123", "")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("want 400, got %d", w.Code)
+	}
+}
+
+func TestHandler_unparseable_uri(t *testing.T) {
+	pb := &fakePB{userID: "usr_abc"}
+	h := auth.NewHandler(pb)
+
+	req := makeReq("tok123", "/not/the/right/pattern/")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 
@@ -80,9 +99,7 @@ func TestHandler_invalid_token(t *testing.T) {
 	pb := &fakePB{validateErr: fmt.Errorf("unauthorized")}
 	h := auth.NewHandler(pb)
 
-	req := httptest.NewRequest(http.MethodGet, "/auth", nil)
-	req.Header.Set("Authorization", "badtok")
-	req.Header.Set("X-Attempt-Id", "atm_123")
+	req := makeReq("badtok", "/relay/exec/atm_123/server-0/")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 
@@ -95,9 +112,7 @@ func TestHandler_forbidden_attempt(t *testing.T) {
 	pb := &fakePB{userID: "usr_abc", attemptErr: fmt.Errorf("forbidden")}
 	h := auth.NewHandler(pb)
 
-	req := httptest.NewRequest(http.MethodGet, "/auth", nil)
-	req.Header.Set("Authorization", "tok")
-	req.Header.Set("X-Attempt-Id", "atm_other")
+	req := makeReq("tok123", "/relay/exec/atm_other/server-0/")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 
