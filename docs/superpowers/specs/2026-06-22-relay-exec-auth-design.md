@@ -70,9 +70,11 @@ New manifest in `rootenv-infra` namespace:
 
 - `Deployment`: `ingress-authenticator`, 1 replica, image `ingress-authenticator:latest`
   - Env: `INGAUTH_POCKETBASE_URL` = `http://backend-svc.rootenv-infra.svc.cluster.local:8090`
-  - Liveness/readiness probe: `GET /healthz`
+  - Liveness probe: `GET /healthz` — checks the process is alive
+  - Readiness probe: `GET /readyz` — checks PocketBase reachability; add `/readyz` endpoint to `cmd/main.go` that calls `GET <INGAUTH_POCKETBASE_URL>/api/health` and returns 200/503
   - Security context: `runAsNonRoot`, `readOnlyRootFilesystem`, drop ALL caps
 - `Service`: `ingress-authenticator`, port 8080 → 8080
+- `NetworkPolicy`: allow ingress on port 8080 from `kube-system` (Traefik) only; allow egress to `rootenv-infra` on port 8090 (PocketBase) only
 
 ### 4. `deploy/base/62-relay-auth-middleware.yaml`
 
@@ -91,11 +93,15 @@ spec:
       - X-User-Id
 ```
 
-### 5. `services/labenv-operator/internal/controller/relay.go`
+### 5. `services/ingress-authenticator/cmd/main.go`
 
-Add `authMiddleware string` field to `relayConfig`. In `loadRelayConfig`, read `RELAY_AUTH_MIDDLEWARE` env var. When non-empty, merge it into `ingressAnnotations` under key `traefik.ingress.kubernetes.io/router.middlewares` in `ensureRelayIngress` (appending with comma if an existing middleware annotation is already present).
+Add `/readyz` endpoint that calls `GET <INGAUTH_POCKETBASE_URL>/api/health`. Returns 200 if PocketBase responds 200, 503 otherwise.
 
-### 6. `services/frontend/src/composables/useExecRelayConnection.js`
+### 6. `services/labenv-operator/internal/controller/relay.go`
+
+`RELAY_AUTH_MIDDLEWARE` is removed — the middleware name is environment-independent and belongs in base. Instead, hardcode `traefik.ingress.kubernetes.io/router.middlewares: kube-system-relay-auth-middleware@kubernetescrd` into `relayConfig.ingressAnnotations` as a default, alongside any annotations from `RELAY_INGRESS_ANNOTATIONS` (which can still override). No new env var needed.
+
+### 7. `services/frontend/src/composables/useExecRelayConnection.js`
 
 Before `new WebSocket(url)` in `connect()`, set:
 
@@ -105,24 +111,21 @@ document.cookie = `pb_auth=${pb.authStore.token}; SameSite=Strict; Secure; path=
 
 This refreshes the cookie on every connect so it stays current if the session was renewed.
 
-### 7. `deploy/overlays/dev/kustomization.yaml`
+### 8. `deploy/overlays/dev/kustomization.yaml`
 
-Add `RELAY_AUTH_MIDDLEWARE` to the labenv-operator env patch:
+No `RELAY_AUTH_MIDDLEWARE` patch needed — middleware annotation is now a default in the operator.
 
-```yaml
-- name: RELAY_AUTH_MIDDLEWARE
-  value: "kube-system-relay-auth-middleware@kubernetescrd"
-```
-
-### 8. `deploy/base/kustomization.yaml`
+### 9. `deploy/base/kustomization.yaml`
 
 Add `61-ingress-authenticator.yaml` and `62-relay-auth-middleware.yaml` to the resources list.
 
-## Network Policy Considerations
+## Network Policy
 
-The ingress-authenticator in `rootenv-infra` needs egress to PocketBase (same namespace, already co-located). No new cross-namespace egress rules needed for the lab namespace — relay-exec network policy is unchanged.
+**ingress-authenticator** (in `rootenv-infra`, defined in `61-ingress-authenticator.yaml`):
+- Ingress: allow port 8080 from `kube-system` (Traefik) only
+- Egress: allow port 8090 to `rootenv-infra` (PocketBase) only
 
-Traefik (in `kube-system`) needs to reach ingress-authenticator in `rootenv-infra`. If a NetworkPolicy exists on `rootenv-infra`, add an ingress rule allowing traffic from `kube-system` on port 8080.
+**relay-exec lab namespace** (existing `ensureRelayNetworkPolicy`): unchanged — relay-exec has no egress to `rootenv-infra` or `kube-system`.
 
 ## What Changes Later (out of scope)
 
