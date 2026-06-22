@@ -78,6 +78,28 @@ describe('useExecRelayConnection', () => {
     unmount()
   })
 
+  it('sets pb_auth cookie before WebSocket connect', async () => {
+    let setCookieValue = null
+    const originalDescriptor = Object.getOwnPropertyDescriptor(document, 'cookie')
+    Object.defineProperty(document, 'cookie', {
+      set(value) { setCookieValue = value },
+      configurable: true,
+    })
+
+    try {
+      const { unmount } = withSetup(() => useExecRelayConnection('atm_123', 'workstation'))
+      await flushPromises()
+
+      expect(setCookieValue).toContain('pb_auth=test-token')
+      expect(setCookieValue).toContain('SameSite=Strict')
+      expect(setCookieValue).toContain('Secure')
+      expect(setCookieValue).toContain('path=/')
+      unmount()
+    } finally {
+      if (originalDescriptor) Object.defineProperty(document, 'cookie', originalDescriptor)
+    }
+  })
+
   it('opens WebSocket at wss when protocol is https', async () => {
     vi.stubGlobal('location', { protocol: 'https:', host: 'example.com' })
 

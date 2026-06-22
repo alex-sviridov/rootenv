@@ -33,6 +33,7 @@ export function useExecRelayConnection(attemptId, assetName) {
   function connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
     const url = `${proto}://${location.host}/relay/exec/${attemptId}/${assetName}/`
+    document.cookie = `pb_auth=${pb.authStore.token}; SameSite=Strict; Secure; path=/`
     ws = new WebSocket(url)
     ws.binaryType = 'arraybuffer'
 
