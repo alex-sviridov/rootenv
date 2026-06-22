@@ -43,6 +43,10 @@ build:
       context: services/relay
       docker:
         dockerfile: cmd/relay-exec/Dockerfile
+    - image: ingress-authenticator
+      context: services/ingress-authenticator
+      docker:
+        dockerfile: Dockerfile
 deploy:
   kubectl: {}
   kubeContext: k3d-rootenv
