@@ -22,7 +22,7 @@ Rootenv consists of five services:
 - **backend** — REST API and lab metadata store (PocketBase)
 - **attempt-controller** — creates `LabEnv` custom objects in Kubernetes when a lab is provisioned, then syncs their status back to the database
 - **labenv-operator** — watches `LabEnv` objects and reconciles the underlying Kubernetes resources (namespace, pods, network policies, etc.)
-- **relay** — WebSocket-to-kubectl-exec bridge enabling browser-based terminal access to lab containers
+- **relay-exec** — WebSocket-to-kubectl-exec bridge enabling browser-based terminal access to lab containers
 - **frontend** — web UI for browsing labs and launching environments
 
 See [docs/architecture.md](docs/architecture.md) for detailed design and trade-offs.
@@ -52,7 +52,7 @@ graph LR
 
 ## Quickstart
 
-### Remove
+### Remote
 
 Prerequisites: `opentofy`, `kubectl`.
 
@@ -64,7 +64,8 @@ vi scripts/.env
 cp infra/terraform/environments/sandbox/terraform.tfvars.example infra/terraform/environments/sandbox/terraform.tfvars
 vi infra/terraform/environments/sandbox/terraform.tfvars
 
-kubectl create secret generic attempt-controller-secrets -n rootenv-infra --from-literal ATTEMPT_CONTROLLER_BACKEND_USERNAME=attempt-controller@example.local --from-literal ATTEMPT_CONTROLLER_BACKEND_PASSWORD=password123 --dry-run=client -o yaml > deploy/base/50-attempt-controller-secrets.yaml
+PWD=password123
+kubectl create secret generic attempt-controller-secrets -n rootenv-infra --from-literal ATTEMPT_CONTROLLER_BACKEND_USERNAME=attempt-controller@example.local --from-literal ATTEMPT_CONTROLLER_BACKEND_PASSWORD=$PWD --dry-run=client -o yaml > deploy/base/50-attempt-controller-secrets.yaml
 
 # Bootstrap k3s cluster
 
@@ -107,7 +108,9 @@ Prerequisites:
 # Make secrets
 cp scripts/.env.example scripts/.env
 vi scripts/.env 
-kubectl create secret generic attempt-controller-secrets -n rootenv-infra --from-literal ATTEMPT_CONTROLLER_BACKEND_USERNAME=attempt-controller@example.local --from-literal ATTEMPT_CONTROLLER_BACKEND_PASSWORD=password123 --dry-run=client -o yaml > deploy/base/50-attempt-controller-secrets.yaml
+
+PWD=password123
+kubectl create secret generic attempt-controller-secrets -n rootenv-infra --from-literal ATTEMPT_CONTROLLER_BACKEND_USERNAME=attempt-controller@example.local --from-literal ATTEMPT_CONTROLLER_BACKEND_PASSWORD=$PWD --dry-run=client -o yaml > deploy/base/50-attempt-controller-secrets.yaml
 
 # Create cluster, apply manifests
 make dev-cluster
@@ -117,10 +120,6 @@ make dev
 
 # Seed the database: create superuser and service accounts
 make dev-dbusers-init
-
-# Build lab images
-
-make labs-build
 
 # Load lab definitions into the backend
 make labs-sync
@@ -148,7 +147,7 @@ make dev   # starts the cluster then runs skaffold dev
 ├── services/        # platform services (backend, attempt-controller, labenv-operator, frontend, relay)
 ├── deploy/          # Kubernetes manifests and deployment configs
 ├── labs/            # lab definitions (YAML) and lab base images
-│   ├── definitions/ # YAML descriptors loaded into the backend
+│   ├── definitions/ # YAML descriptors to be loaded into the backend
 │   └── images/      # Dockerfiles for lab base images
 ├── scripts/         # operational scripts
 ├── docs/            # architecture and operational documentation
@@ -158,14 +157,7 @@ make dev   # starts the cluster then runs skaffold dev
 
 ## Status
 
-This is an active personal project exploring patterns in self-service infrastructure, multi-tenant isolation on Kubernetes, and ephemeral environment management. Not production-hardened — see [Limitations](#limitations).
-
-## Limitations
-
-- Single-cluster deployment; no HA control plane
-- Namespace-level isolation only (no VM-grade boundaries — labs must be considered semi-trusted)
-- No persistent state for labs across restarts
-- Images lost on full cluster recreate (`make cluster`) — re-push with `skaffold build && make push-latest`
+This is an active personal project exploring patterns in self-service infrastructure, multi-tenant isolation on Kubernetes, and ephemeral environment management. Not production-hardened.
 
 ## Roadmap
 

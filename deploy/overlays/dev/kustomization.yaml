@@ -24,7 +24,7 @@ patches:
         path: /spec/template/spec/containers/0/env
         value:
           - name: RELAY_IMAGE
-            value: "relay-exec:7ef4936c2e4f74ac37edc13f084f6c2148602b6eb040728526aa122b4b0c8e8f"
+            value: "relay-exec:72396645ae0376a2e536bff563924a183fb4e15298b92e270635f97a5435358c"
           - name: RELAY_INGRESS_CLASS
             value: "traefik"
           - name: RELAY_INGRESS_ANNOTATIONS

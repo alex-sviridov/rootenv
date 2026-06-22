@@ -218,7 +218,6 @@ func (r *LabEnvironmentReconciler) ensureRelayDeployment(ctx context.Context, en
 								{Name: "RELAY_MY_NAMESPACE", Value: nsName},
 								{Name: "RELAY_MY_ATTEMPT_ID", Value: env.Name},
 								{Name: "RELAY_MY_OWNER_ID", Value: env.Spec.OwnerId},
-								{Name: "RELAY_SKIP_AUTH", Value: "true"},
 							},
 							SecurityContext: &corev1.SecurityContext{
 								AllowPrivilegeEscalation: ptr.To(false),
@@ -237,12 +236,12 @@ func (r *LabEnvironmentReconciler) ensureRelayDeployment(ctx context.Context, en
 							},
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("100m"),
+									corev1.ResourceCPU:    resource.MustParse("20m"),
 									corev1.ResourceMemory: resource.MustParse("64Mi"),
 								},
 								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("200m"),
-									corev1.ResourceMemory: resource.MustParse("128Mi"),
+									corev1.ResourceCPU:    resource.MustParse("50m"),
+									corev1.ResourceMemory: resource.MustParse("96Mi"),
 								},
 							},
 						},

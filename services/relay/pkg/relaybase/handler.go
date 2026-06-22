@@ -65,15 +65,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var userID string
+	userID := r.Header.Get("X-User-Id")
+	attemptID := r.Header.Get("X-Attempt-Id")
 	if h.SkipAuth {
-		userID = "anonymous"
+		if userID == "" {
+			userID = "anonymous"
+		}
+		if attemptID == "" {
+			attemptID = "anonymous"
+		}
 	} else {
-		attemptID := r.Header.Get("X-Attempt-Id")
-		userID = r.Header.Get("X-User-Id")
-
 		if attemptID != h.AttemptID {
 			log.Warn("security: X-Attempt-Id mismatch", "got", attemptID, "want", h.AttemptID)
+			_ = conn.Close(websocket.StatusPolicyViolation, "unauthorized")
+			return
+		}
+		if userID != h.OwnerID {
+			log.Warn("security: X-User-Id mismatch", "got", userID, "want", h.OwnerID)
 			_ = conn.Close(websocket.StatusPolicyViolation, "unauthorized")
 			return
 		}
@@ -91,7 +99,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer h.Limiter.Release(userID)
 
-	log = log.With("user_id", userID)
+	log = log.With("user_id", userID, "attempt_id", r.Header.Get("X-Attempt-Id"))
 	log.Info("ws connected", "active_total", h.Limiter.Total())
 
 	if h.WG != nil {

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -32,8 +31,9 @@ func main() {
 	pb := pbclient.New(pbURL, tlsVerify)
 	handler := auth.NewHandler(pb)
 
-	readyzClient := &http.Client{Timeout: 3 * time.Second}
-	healthURL := strings.TrimRight(pbURL, "/") + "/api/health"
+	// Reuse the pbclient's transport so TLS settings (e.g. InsecureSkipVerify) are consistent.
+	readyzClient := &http.Client{Timeout: 3 * time.Second, Transport: pb.HTTPClient().Transport}
+	healthURL := pb.BaseURL() + "/api/health"
 
 	mux := http.NewServeMux()
 	mux.Handle("/auth", handler)
@@ -68,6 +68,8 @@ func main() {
 	}()
 
 	<-ctx.Done()
-	_ = srv.Shutdown(context.Background())
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	_ = srv.Shutdown(shutdownCtx)
 	slog.Info("shutdown complete")
 }

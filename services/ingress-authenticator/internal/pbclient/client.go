@@ -26,6 +26,12 @@ func New(baseURL string, tlsVerify bool) *Client {
 	}
 }
 
+// BaseURL returns the normalized base URL (trailing slash stripped).
+func (c *Client) BaseURL() string { return c.baseURL }
+
+// HTTPClient returns the configured HTTP client, sharing the same TLS settings.
+func (c *Client) HTTPClient() *http.Client { return c.httpClient }
+
 // ValidateToken calls PocketBase auth-refresh and returns the userID on success.
 func (c *Client) ValidateToken(token string) (string, error) {
 	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/collections/users/auth-refresh", nil)
