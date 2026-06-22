@@ -77,7 +77,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
-	mux.Handle("/{assetName}/", handler)
+	mux.Handle("/relay/exec/{attemptID}/{assetName}/", handler)
 
 	srv := &http.Server{
 		Addr:    ":" + port,

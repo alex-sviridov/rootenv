@@ -16,11 +16,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	labv1alpha1 "github.com/alex-sviridov/rootenv/services/labenv-operator/api/v1alpha1"
 )
 
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create
+// +kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;bind;escalate
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create
@@ -322,25 +324,37 @@ func (r *LabEnvironmentReconciler) ensureRelayIngress(ctx context.Context, env *
 	return client.IgnoreAlreadyExists(r.Create(ctx, &ingress))
 }
 
-func (r *LabEnvironmentReconciler) ensureRelayNetworkPolicy(ctx context.Context, nsName string) error {
-	var existing networkingv1.NetworkPolicy
-	err := r.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "networkpolicy-relay-exec"}, &existing)
-	if err == nil {
-		return nil
+// apiServerEndpoint returns the actual IP and port of the kube-apiserver by
+// reading the "kubernetes" Endpoints in the default namespace. This is necessary
+// because k3s (and flannel-based CNIs in general) evaluate network policy after
+// DNAT, so the ClusterIP (10.x.x.1:443) never matches — only the post-DNAT
+// node IP and real port (e.g. 172.18.0.2:6443) do.
+func (r *LabEnvironmentReconciler) apiServerEndpoint(ctx context.Context) (ip string, port int32, err error) {
+	var ep corev1.Endpoints
+	if err = r.Get(ctx, client.ObjectKey{Namespace: "default", Name: "kubernetes"}, &ep); err != nil {
+		return
 	}
-	if !apierrors.IsNotFound(err) {
-		return err
+	for _, subset := range ep.Subsets {
+		for _, addr := range subset.Addresses {
+			for _, p := range subset.Ports {
+				return addr.IP, p.Port, nil
+			}
+		}
 	}
+	err = fmt.Errorf("kubernetes endpoints has no addresses")
+	return
+}
 
-	apiServerIP := os.Getenv("KUBERNETES_SERVICE_HOST")
-	if apiServerIP == "" {
-		apiServerIP = "10.43.0.1"
+func (r *LabEnvironmentReconciler) ensureRelayNetworkPolicy(ctx context.Context, nsName string) error {
+	apiIP, apiPort, err := r.apiServerEndpoint(ctx)
+	if err != nil {
+		return fmt.Errorf("resolving apiserver endpoint: %w", err)
 	}
-	apiServerCIDR := apiServerIP + "/32"
+	apiServerCIDR := apiIP + "/32"
+	apiPortVal := intstr.FromInt32(apiPort)
 
 	tcp := corev1.ProtocolTCP
 	wsPort := intstr.FromInt32(8080)
-	apiPort := intstr.FromInt32(443)
 
 	notRelayExec := metav1.LabelSelectorRequirement{
 		Key:      "app",
@@ -348,12 +362,14 @@ func (r *LabEnvironmentReconciler) ensureRelayNetworkPolicy(ctx context.Context,
 		Values:   []string{"relay-exec"},
 	}
 
-	np := networkingv1.NetworkPolicy{
+	np := &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "networkpolicy-relay-exec",
 			Namespace: nsName,
 		},
-		Spec: networkingv1.NetworkPolicySpec{
+	}
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, np, func() error {
+		np.Spec = networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{"app": "relay-exec"},
 			},
@@ -396,11 +412,12 @@ func (r *LabEnvironmentReconciler) ensureRelayNetworkPolicy(ctx context.Context,
 						IPBlock: &networkingv1.IPBlock{CIDR: apiServerCIDR},
 					}},
 					Ports: []networkingv1.NetworkPolicyPort{
-						{Protocol: &tcp, Port: &apiPort},
+						{Protocol: &tcp, Port: &apiPortVal},
 					},
 				},
 			},
-		},
-	}
-	return client.IgnoreAlreadyExists(r.Create(ctx, &np))
+		}
+		return nil
+	})
+	return err
 }

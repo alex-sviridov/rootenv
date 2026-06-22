@@ -6,6 +6,15 @@ resources:
 
 patches:
   - target:
+      kind: TLSOption
+      name: relay-exec-no-h2
+    patch: |-
+      apiVersion: traefik.io/v1alpha1
+      kind: TLSOption
+      metadata:
+        name: relay-exec-no-h2
+        namespace: traefik-system
+  - target:
       kind: ConfigMap
       name: frontend-config
     patch: |-

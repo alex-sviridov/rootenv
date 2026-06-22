@@ -32,12 +32,7 @@ type Handler struct {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// PathValue is set when registered with a named pattern (e.g. "/{assetName}/").
-	// Fall back to extracting the first path segment for plain HandlerFunc usage.
 	assetName := strings.Trim(r.PathValue("assetName"), "/")
-	if assetName == "" {
-		assetName = strings.Trim(strings.SplitN(r.URL.Path, "/", 3)[1], "/")
-	}
 	if assetName == "" {
 		http.Error(w, "missing asset name", http.StatusBadRequest)
 		return

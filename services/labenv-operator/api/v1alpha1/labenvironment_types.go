@@ -86,11 +86,14 @@ type LabEnvironmentStatus struct {
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// Phase reflects overall labenv status
-	Phase string `json:"phase"`
+	// +optional
+	Phase string `json:"phase,omitempty"`
 	// Namespace is the name of the Kubernetes namespace where the lab environment is provisioned.
-	Namespace string `json:"namespace"`
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 	// ExpiresAt is the timestamp when the lab environment is scheduled to expire and be automatically deleted.
-	ExpiresAt *metav1.Time `json:"expiresAt"`
+	// +optional
+	ExpiresAt *metav1.Time `json:"expiresAt,omitempty"`
 
 	// TotalAssets shows total count of assets in this labenv
 	TotalAssets int `json:"totalAssets,omitempty"`

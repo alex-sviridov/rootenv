@@ -23,10 +23,10 @@ patches:
         path: /spec/template/spec/containers/0/env
         value:
           - name: RELAY_IMAGE
-            value: "relay-exec:1d609cee6d7a5d3c24bd02791a9cd19d36ca337f39cb16e64cb7c1ac64dedf95"
+            value: "relay-exec:b69d93914363025dde865999a1440207e7ee76f8242e2237f37266d260d59517"
           - name: RELAY_INGRESS_CLASS
             value: "traefik"
           - name: RELAY_INGRESS_ANNOTATIONS
-            value: "traefik.ingress.kubernetes.io/router.entrypoints=websecure,traefik.ingress.kubernetes.io/router.middlewares=kube-system-relay-exec-strip-prefix@kubernetescrd"
+            value: "traefik.ingress.kubernetes.io/router.entrypoints=web"
           - name: RELAY_INGRESS_BASE_PATH
             value: "/relay/exec"

@@ -1,9 +1,8 @@
 apiVersion: traefik.io/v1alpha1
-kind: Middleware
+kind: TLSOption
 metadata:
-  name: relay-exec-strip-prefix
+  name: relay-exec-no-h2
   namespace: kube-system
 spec:
-  replacePathRegex:
-    regex: ^/relay/exec/[^/]+(/.*)?$
-    replacement: $1
+  alpnProtocols:
+    - http/1.1

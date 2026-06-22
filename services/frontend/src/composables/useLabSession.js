@@ -59,9 +59,12 @@ export function useLabSession() {
     }
   }
 
-  watch(() => route.params.slug, (slug) => { if (slug) initLab(slug) })
+  watch(() => route?.params?.slug, (slug) => { if (slug) initLab(slug) })
 
-  onMounted(() => initLab(route.params.slug))
+  onMounted(() => {
+    const slug = route?.params?.slug
+    if (slug) initLab(slug)
+  })
 
   onUnmounted(async () => {
     await attemptsStore.stopWatching()
