@@ -8,6 +8,20 @@ paths:
 
 _Record decisions here as they are made — include what was decided, why, and what alternatives were rejected._
 
+## relay-exec — Binary Size & Performance
+
+- **No `kubernetes.Clientset`:** `exec/kube.go` builds the pod exec URL manually (`/api/v1/namespaces/{ns}/pods/{pod}/exec?...`) instead of using `kubernetes.Clientset` + `kubernetes/scheme` + `corev1.PodExecOptions`. Those packages register all 30+ API group types at init time, adding ~12 MB to the binary. Only `k8s.io/client-go/rest` and `k8s.io/client-go/tools/remotecommand` are imported.
+- **Transport cached at startup:** `KubeExecer` calls `spdy.RoundTripperFor(cfg)` once in `NewKubeExecer` and stores `host`, `transport`, `upgrader`. Each `Exec` call reuses them via `remotecommand.NewSPDYExecutorForTransports` — avoids re-parsing TLS config per session.
+- **Build flags:** both Dockerfiles use `-ldflags="-s -w"` (strip debug info + DWARF). Result: 37 MB → 14 MB (62% reduction). Both Dockerfiles now use `golang:1.26-alpine` (was `1.24` in `exec/Dockerfile`).
+- **`LOG_LEVEL` env:** relay-exec now reads `LOG_LEVEL=debug` (matching relay-ssh). Wired into `slog.HandlerOptions.Level`.
+
+## relay-exec — Logging & Config
+
+- **Backend.Log field:** `exec.Backend` carries a `*slog.Logger` (defaults to `slog.Default()` if nil). Set in `main.go` with `namespace` pre-baked as a field. `KubeExecer.Exec` has no logging — errors bubble up to `Backend.Serve` which logs them.
+- **Session log lines:** `relaybase.Handler` logs `"ws connected"` and `"ws disconnected"` at the connection level. `Backend.Serve` logs `"exec session ended with error"` only on error — no duplicate success line.
+- **loadConfig():** `relay-exec/main.go` now has a `loadConfig()` function returning a `config` struct (matching relay-ssh pattern). Config validation exits via `return config{}, false` — `main` calls `os.Exit(1)` centrally.
+- **Handler tests:** `handler_test.go` mounts the handler on a real `http.ServeMux` (pattern `/relay/exec/{attemptID}/{assetName}/`) so `PathValue("assetName")` is populated. Tests were previously broken because the handler was called directly without a mux.
+
 ## Iteration 4 — Terminal Resize
 
 - **Framing protocol:** Single control-byte prefix on WebSocket messages — `\x01` for resize (cols uint16 LE, rows uint16 LE), `\x00` for token refresh, else stdin.

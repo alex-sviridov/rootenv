@@ -35,11 +35,23 @@ func (f *fakeBackend) wasCalled() bool {
 	return f.called
 }
 
+// newTestServer mounts the handler on a real ServeMux so PathValue is populated.
+func newTestServer(h *relaybase.Handler, extraHeaders map[string]string) *httptest.Server {
+	mux := http.NewServeMux()
+	mux.Handle("/relay/exec/{attemptID}/{assetName}/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for k, v := range extraHeaders {
+			r.Header.Set(k, v)
+		}
+		h.ServeHTTP(w, r)
+	}))
+	return httptest.NewServer(mux)
+}
+
 func dialWS(t *testing.T, srv *httptest.Server) *websocket.Conn {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	t.Cleanup(cancel)
-	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/workstation/", nil)
+	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/relay/exec/atm_123/workstation/", nil)
 	if err != nil {
 		t.Fatalf("dial failed: %v", err)
 	}
@@ -59,12 +71,10 @@ func makeHandler(fb *fakeBackend, attemptID, ownerID string, authTimeout time.Du
 func TestHandler_success(t *testing.T) {
 	fb := &fakeBackend{}
 	h := makeHandler(fb, "atm_123", "usr_abc", 2*time.Second)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Header.Set("X-Attempt-Id", "atm_123")
-		r.Header.Set("X-User-Id", "usr_abc")
-		h.ServeHTTP(w, r)
-	}))
+	srv := newTestServer(h, map[string]string{
+		"X-Attempt-Id": "atm_123",
+		"X-User-Id":    "usr_abc",
+	})
 	defer srv.Close()
 
 	conn := dialWS(t, srv)
@@ -91,12 +101,10 @@ func TestHandler_success(t *testing.T) {
 func TestHandler_wrong_attempt_id(t *testing.T) {
 	fb := &fakeBackend{}
 	h := makeHandler(fb, "atm_123", "usr_abc", 2*time.Second)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Header.Set("X-Attempt-Id", "atm_WRONG")
-		r.Header.Set("X-User-Id", "usr_abc")
-		h.ServeHTTP(w, r)
-	}))
+	srv := newTestServer(h, map[string]string{
+		"X-Attempt-Id": "atm_WRONG",
+		"X-User-Id":    "usr_abc",
+	})
 	defer srv.Close()
 
 	conn := dialWS(t, srv)
@@ -111,11 +119,9 @@ func TestHandler_wrong_attempt_id(t *testing.T) {
 func TestHandler_missing_user_id(t *testing.T) {
 	fb := &fakeBackend{}
 	h := makeHandler(fb, "atm_123", "usr_abc", 2*time.Second)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Header.Set("X-Attempt-Id", "atm_123")
-		h.ServeHTTP(w, r)
-	}))
+	srv := newTestServer(h, map[string]string{
+		"X-Attempt-Id": "atm_123",
+	})
 	defer srv.Close()
 
 	conn := dialWS(t, srv)
@@ -130,12 +136,10 @@ func TestHandler_missing_user_id(t *testing.T) {
 func TestHandler_auth_timeout(t *testing.T) {
 	fb := &fakeBackend{}
 	h := makeHandler(fb, "atm_123", "usr_abc", 50*time.Millisecond)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Header.Set("X-Attempt-Id", "atm_123")
-		r.Header.Set("X-User-Id", "usr_abc")
-		h.ServeHTTP(w, r)
-	}))
+	srv := newTestServer(h, map[string]string{
+		"X-Attempt-Id": "atm_123",
+		"X-User-Id":    "usr_abc",
+	})
 	defer srv.Close()
 
 	conn := dialWS(t, srv)
@@ -155,11 +159,7 @@ func TestHandler_skip_auth_calls_backend(t *testing.T) {
 		SkipAuth:    true,
 		AuthTimeout: 2 * time.Second,
 	}
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// No X-Attempt-Id or X-User-Id headers injected
-		h.ServeHTTP(w, r)
-	}))
+	srv := newTestServer(h, nil)
 	defer srv.Close()
 
 	conn := dialWS(t, srv)
@@ -189,11 +189,9 @@ func TestHandler_skip_auth_ignores_wrong_attempt_id(t *testing.T) {
 		SkipAuth:    true,
 		AuthTimeout: 2 * time.Second,
 	}
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Header.Set("X-Attempt-Id", "atm_WRONG")
-		h.ServeHTTP(w, r)
-	}))
+	srv := newTestServer(h, map[string]string{
+		"X-Attempt-Id": "atm_WRONG",
+	})
 	defer srv.Close()
 
 	conn := dialWS(t, srv)

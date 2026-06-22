@@ -16,25 +16,38 @@ import (
 	"github.com/alexsviridov/linuxlab/relay/pkg/relaybase"
 )
 
-func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+type config struct {
+	port           string
+	namespace      string
+	attemptID      string
+	ownerID        string
+	skipAuth       bool
+	allowedOrigins []string
+	logLevel       slog.Level
+}
+
+func loadConfig() (config, bool) {
+	level := slog.LevelInfo
+	if os.Getenv("LOG_LEVEL") == "debug" {
+		level = slog.LevelDebug
+	}
 
 	skipAuth := os.Getenv("RELAY_SKIP_AUTH") == "true"
 
 	attemptID := os.Getenv("RELAY_MY_ATTEMPT_ID")
 	if attemptID == "" && !skipAuth {
-		slog.Error("RELAY_MY_ATTEMPT_ID is required (set RELAY_SKIP_AUTH=true to skip auth)")
-		os.Exit(1)
+		slog.Error("RELAY_MY_ATTEMPT_ID is required (set RELAY_SKIP_AUTH=true to skip)")
+		return config{}, false
 	}
 	ownerID := os.Getenv("RELAY_MY_OWNER_ID")
 	if ownerID == "" && !skipAuth {
-		slog.Error("RELAY_MY_OWNER_ID is required (set RELAY_SKIP_AUTH=true to skip auth)")
-		os.Exit(1)
+		slog.Error("RELAY_MY_OWNER_ID is required (set RELAY_SKIP_AUTH=true to skip)")
+		return config{}, false
 	}
 	namespace := os.Getenv("RELAY_MY_NAMESPACE")
 	if namespace == "" {
 		slog.Error("RELAY_MY_NAMESPACE is required")
-		os.Exit(1)
+		return config{}, false
 	}
 
 	port := os.Getenv("RELAY_LISTEN_PORT")
@@ -51,23 +64,46 @@ func main() {
 		}
 	}
 
+	return config{
+		port:           port,
+		namespace:      namespace,
+		attemptID:      attemptID,
+		ownerID:        ownerID,
+		skipAuth:       skipAuth,
+		allowedOrigins: origins,
+		logLevel:       level,
+	}, true
+}
+
+func main() {
+	cfg, ok := loadConfig()
+	if !ok {
+		os.Exit(1)
+	}
+
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.logLevel})))
+
 	kubeExecer, err := exec.NewKubeExecer()
 	if err != nil {
 		slog.Error("failed to create kube execer", "err", err)
 		os.Exit(1)
 	}
 
-	backend := exec.Backend{Namespace: namespace, Execer: kubeExecer}
+	backend := exec.Backend{
+		Namespace: cfg.namespace,
+		Execer:    kubeExecer,
+		Log:       slog.Default().With("namespace", cfg.namespace),
+	}
 	limiter := relaybase.NewConnLimiter(16)
 
 	var wg sync.WaitGroup
 	handler := &relaybase.Handler{
 		Backend:        &backend,
 		Limiter:        limiter,
-		AttemptID:      attemptID,
-		OwnerID:        ownerID,
-		SkipAuth:       skipAuth,
-		AllowedOrigins: origins,
+		AttemptID:      cfg.attemptID,
+		OwnerID:        cfg.ownerID,
+		SkipAuth:       cfg.skipAuth,
+		AllowedOrigins: cfg.allowedOrigins,
 		WG:             &wg,
 	}
 
@@ -80,14 +116,14 @@ func main() {
 	mux.Handle("/relay/exec/{attemptID}/{assetName}/", handler)
 
 	srv := &http.Server{
-		Addr:    ":" + port,
+		Addr:    ":" + cfg.port,
 		Handler: mux,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	slog.Info("relay-exec starting", "port", port, "skip_auth", skipAuth, "attempt_id", attemptID, "namespace", namespace)
+	slog.Info("relay-exec starting", "port", cfg.port, "skip_auth", cfg.skipAuth, "attempt_id", cfg.attemptID, "namespace", cfg.namespace)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("server error", "err", err)

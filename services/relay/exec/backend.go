@@ -5,13 +5,8 @@ import (
 	"encoding/binary"
 	"io"
 	"log/slog"
-	"net/http"
 
 	"github.com/coder/websocket"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 )
 
@@ -25,6 +20,14 @@ type Execer interface {
 type Backend struct {
 	Namespace string
 	Execer    Execer
+	Log       *slog.Logger // defaults to slog.Default() if nil
+}
+
+func (b *Backend) logger() *slog.Logger {
+	if b.Log != nil {
+		return b.Log
+	}
+	return slog.Default()
 }
 
 // Serve proxies WebSocket ↔ kubectl exec stream for the named asset.
@@ -32,8 +35,7 @@ func (b *Backend) Serve(ctx context.Context, conn *websocket.Conn, assetName, us
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	log := slog.With("asset", assetName, "user_id", userID, "namespace", b.Namespace)
-	log.Info("exec session starting", "pod", assetName)
+	log := b.logger().With("asset", assetName, "user_id", userID, "namespace", b.Namespace)
 
 	stdinR, stdinW := io.Pipe()
 	stdoutR, stdoutW := io.Pipe()
@@ -41,13 +43,7 @@ func (b *Backend) Serve(ctx context.Context, conn *websocket.Conn, assetName, us
 
 	execDone := make(chan error, 1)
 	go func() {
-		log.Info("dialing pod exec", "pod", assetName)
 		err := b.Execer.Exec(ctx, b.Namespace, assetName, stdinR, stdoutW, io.Discard, resizeCh)
-		if err != nil {
-			log.Error("exec stream ended with error", "pod", assetName, "err", err)
-		} else {
-			log.Info("exec stream closed cleanly", "pod", assetName)
-		}
 		execDone <- err
 		_ = stdoutW.Close()
 	}()
@@ -72,6 +68,7 @@ func (b *Backend) Serve(ctx context.Context, conn *websocket.Conn, assetName, us
 
 	// WebSocket → stdin (with resize handling)
 	go func() {
+		defer cancel() // WS disconnect cancels the exec context
 		defer stdinW.Close()
 		defer close(resizeCh)
 		for {
@@ -98,67 +95,9 @@ func (b *Backend) Serve(ctx context.Context, conn *websocket.Conn, assetName, us
 
 	err := <-execDone
 	<-stdoutDone
+	if err != nil {
+		log.Error("exec session ended with error", "err", err)
+	}
 	return err
 }
 
-// chanSizeQueue implements remotecommand.TerminalSizeQueue over a channel.
-type chanSizeQueue struct{ ch <-chan remotecommand.TerminalSize }
-
-func (q *chanSizeQueue) Next() *remotecommand.TerminalSize {
-	sz, ok := <-q.ch
-	if !ok {
-		return nil
-	}
-	return &sz
-}
-
-// KubeExecer implements Execer using a real Kubernetes client.
-type KubeExecer struct {
-	client *kubernetes.Clientset
-	config *rest.Config
-}
-
-// NewKubeExecer creates an Execer using the in-cluster ServiceAccount.
-func NewKubeExecer() (*KubeExecer, error) {
-	cfg, err := rest.InClusterConfig()
-	if err != nil {
-		return nil, err
-	}
-	cs, err := kubernetes.NewForConfig(cfg)
-	if err != nil {
-		return nil, err
-	}
-	return &KubeExecer{client: cs, config: cfg}, nil
-}
-
-func (k *KubeExecer) Exec(ctx context.Context, namespace, podName string, stdin io.Reader, stdout, stderr io.Writer, resize <-chan remotecommand.TerminalSize) error {
-	req := k.client.CoreV1().RESTClient().Post().
-		Resource("pods").
-		Name(podName).
-		Namespace(namespace).
-		SubResource("exec").
-		VersionedParams(&corev1.PodExecOptions{
-			Command: []string{"/bin/sh"},
-			Stdin:   true,
-			Stdout:  true,
-			Stderr:  true,
-			TTY:     true,
-		}, scheme.ParameterCodec)
-
-	execURL := req.URL()
-	slog.Info("opening SPDY exec stream", "url", execURL.String())
-
-	exec, err := remotecommand.NewSPDYExecutor(k.config, http.MethodPost, execURL)
-	if err != nil {
-		slog.Error("failed to create SPDY executor", "url", execURL.String(), "err", err)
-		return err
-	}
-	slog.Info("SPDY executor created, streaming", "url", execURL.String())
-	return exec.StreamWithContext(ctx, remotecommand.StreamOptions{
-		Stdin:             stdin,
-		Stdout:            stdout,
-		Stderr:            stderr,
-		Tty:               true,
-		TerminalSizeQueue: &chanSizeQueue{ch: resize},
-	})
-}

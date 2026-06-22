@@ -1,0 +1,17 @@
+# binaries and build artifacts
+tmp/
+*.exe
+*.test
+
+# test and dev files
+**/*_test.go
+**/.air.toml
+**/Dockerfile.dev
+
+# docs and memory
+README.md
+.claude/
+
+# git
+.git/
+.gitignore
