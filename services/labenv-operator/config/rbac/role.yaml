@@ -7,14 +7,6 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - endpoints
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - limitranges
   - namespaces
   - pods
@@ -41,6 +33,14 @@ rules:
   - deployments
   verbs:
   - create
+  - get
+  - list
+  - watch
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
   - get
   - list
   - watch

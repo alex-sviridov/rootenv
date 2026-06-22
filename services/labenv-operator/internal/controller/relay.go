@@ -8,6 +8,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -22,7 +23,7 @@ import (
 )
 
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create
-// +kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch
+// +kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;bind;escalate
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create
@@ -45,7 +46,10 @@ func loadRelayConfig() (relayConfig, error) {
 		basePath = "/relay/exec"
 	}
 
-	annotations := map[string]string{}
+	// start with the hardcoded auth middleware — always required
+	annotations := map[string]string{
+		"traefik.ingress.kubernetes.io/router.middlewares": "kube-system-relay-auth-middleware@kubernetescrd",
+	}
 	if raw := os.Getenv("RELAY_INGRESS_ANNOTATIONS"); raw != "" {
 		for _, token := range strings.Split(raw, ",") {
 			k, v, ok := strings.Cut(token, "=")
@@ -325,23 +329,34 @@ func (r *LabEnvironmentReconciler) ensureRelayIngress(ctx context.Context, env *
 }
 
 // apiServerEndpoint returns the actual IP and port of the kube-apiserver by
-// reading the "kubernetes" Endpoints in the default namespace. This is necessary
+// reading the "kubernetes" EndpointSlice in the default namespace. This is necessary
 // because k3s (and flannel-based CNIs in general) evaluate network policy after
 // DNAT, so the ClusterIP (10.x.x.1:443) never matches — only the post-DNAT
 // node IP and real port (e.g. 172.18.0.2:6443) do.
 func (r *LabEnvironmentReconciler) apiServerEndpoint(ctx context.Context) (ip string, port int32, err error) {
-	var ep corev1.Endpoints
-	if err = r.Get(ctx, client.ObjectKey{Namespace: "default", Name: "kubernetes"}, &ep); err != nil {
+	var slices discoveryv1.EndpointSliceList
+	if err = r.List(ctx, &slices,
+		client.InNamespace("default"),
+		client.MatchingLabels{"kubernetes.io/service-name": "kubernetes"},
+	); err != nil {
 		return
 	}
-	for _, subset := range ep.Subsets {
-		for _, addr := range subset.Addresses {
-			for _, p := range subset.Ports {
-				return addr.IP, p.Port, nil
+	for _, slice := range slices.Items {
+		for _, ep := range slice.Endpoints {
+			if ep.Conditions.Ready != nil && !*ep.Conditions.Ready {
+				continue
+			}
+			for _, addr := range ep.Addresses {
+				for _, p := range slice.Ports {
+					if p.Port == nil {
+						continue
+					}
+					return addr, *p.Port, nil
+				}
 			}
 		}
 	}
-	err = fmt.Errorf("kubernetes endpoints has no addresses")
+	err = fmt.Errorf("kubernetes endpointslice has no ready addresses")
 	return
 }
 
