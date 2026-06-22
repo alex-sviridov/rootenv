@@ -42,11 +42,15 @@ func main() {
 	})
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		resp, err := readyzClient.Get(healthURL)
-		if err != nil || resp.StatusCode != http.StatusOK {
+		if err != nil {
 			http.Error(w, "pocketbase unreachable", http.StatusServiceUnavailable)
 			return
 		}
 		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			http.Error(w, "pocketbase unreachable", http.StatusServiceUnavailable)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 
