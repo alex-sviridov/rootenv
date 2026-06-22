@@ -8,3 +8,4 @@ spec:
     address: http://ingress-authenticator.rootenv-infra.svc.cluster.local:8080/auth
     authResponseHeaders:
       - X-User-Id
+      - X-Attempt-Id
