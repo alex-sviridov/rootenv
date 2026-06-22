@@ -1,0 +1,10 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: relay-auth-middleware
+  namespace: kube-system
+spec:
+  forwardAuth:
+    address: http://ingress-authenticator.rootenv-infra.svc.cluster.local:8080/auth
+    authResponseHeaders:
+      - X-User-Id
