@@ -324,7 +324,7 @@ func (r *LabEnvironmentReconciler) ensureRelayIngress(ctx context.Context, env *
 
 func (r *LabEnvironmentReconciler) ensureRelayNetworkPolicy(ctx context.Context, nsName string) error {
 	var existing networkingv1.NetworkPolicy
-	err := r.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "networkpolicy-relay"}, &existing)
+	err := r.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "networkpolicy-relay-exec"}, &existing)
 	if err == nil {
 		return nil
 	}
@@ -342,9 +342,15 @@ func (r *LabEnvironmentReconciler) ensureRelayNetworkPolicy(ctx context.Context,
 	wsPort := intstr.FromInt32(8080)
 	apiPort := intstr.FromInt32(443)
 
+	notRelayExec := metav1.LabelSelectorRequirement{
+		Key:      "app",
+		Operator: metav1.LabelSelectorOpNotIn,
+		Values:   []string{"relay-exec"},
+	}
+
 	np := networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "networkpolicy-relay",
+			Name:      "networkpolicy-relay-exec",
 			Namespace: nsName,
 		},
 		Spec: networkingv1.NetworkPolicySpec{
@@ -356,6 +362,7 @@ func (r *LabEnvironmentReconciler) ensureRelayNetworkPolicy(ctx context.Context,
 				networkingv1.PolicyTypeEgress,
 			},
 			Ingress: []networkingv1.NetworkPolicyIngressRule{
+				// allow WebSocket connections from ingress controller
 				{
 					From: []networkingv1.NetworkPolicyPeer{{
 						NamespaceSelector: &metav1.LabelSelector{
@@ -370,6 +377,20 @@ func (r *LabEnvironmentReconciler) ensureRelayNetworkPolicy(ctx context.Context,
 				},
 			},
 			Egress: []networkingv1.NetworkPolicyEgressRule{
+				// reach lab pods only (not relay-exec itself) for kubectl exec
+				{
+					To: []networkingv1.NetworkPolicyPeer{{
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"kubernetes.io/metadata.name": nsName,
+							},
+						},
+						PodSelector: &metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{notRelayExec},
+						},
+					}},
+				},
+				// reach kube-apiserver for pods/exec API calls
 				{
 					To: []networkingv1.NetworkPolicyPeer{{
 						IPBlock: &networkingv1.IPBlock{CIDR: apiServerCIDR},

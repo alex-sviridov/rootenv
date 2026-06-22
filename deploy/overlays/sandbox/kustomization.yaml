@@ -15,6 +15,7 @@ patches:
         name: frontend-config
       data:
         VITE_API_URL: "https://rootenv.sviridov.lu/api/"
+        __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: "rootenv.sviridov.lu"
 
 images:
   - name: rootenv-frontend

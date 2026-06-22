@@ -16,11 +16,14 @@ patches:
       kind: Deployment
       name: labenv-operator-controller-manager
     patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
       - op: add
         path: /spec/template/spec/containers/0/env
         value:
           - name: RELAY_IMAGE
-            value: "relay-exec:d2ac8bdbba3b8efed8f0d45cd760c1b9f9223692cd71a02ad26ae6c122c63ecc"
+            value: "relay-exec:1d609cee6d7a5d3c24bd02791a9cd19d36ca337f39cb16e64cb7c1ac64dedf95"
           - name: RELAY_INGRESS_CLASS
             value: "traefik"
           - name: RELAY_INGRESS_ANNOTATIONS

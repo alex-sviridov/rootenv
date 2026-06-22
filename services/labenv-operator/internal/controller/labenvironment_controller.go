@@ -7,17 +7,13 @@ import (
 	"strings"
 	"time"
 
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -222,9 +218,6 @@ func (r *LabEnvironmentReconciler) reconcileDelete(ctx context.Context, env *lab
 	err := r.Get(ctx, client.ObjectKey{Name: nsName}, &ns)
 
 	if apierrors.IsNotFound(err) {
-		if err := r.deleteIngressRoute(ctx, env.Name); err != nil {
-			return ctrl.Result{}, fmt.Errorf("deleteIngressRoute: %w", err)
-		}
 		controllerutil.RemoveFinalizer(env, finalizerName)
 		if err := r.Update(ctx, env); err != nil {
 			return ctrl.Result{}, err
@@ -339,13 +332,20 @@ func (r *LabEnvironmentReconciler) ensureNetworkPolicy(ctx context.Context, nsNa
 				},
 			},
 			Egress: []networkingv1.NetworkPolicyEgressRule{
-				// allow outgoing to the same namespace (for inter-pod communication)
+				// allow lab pods to reach each other (excludes relay-exec; its egress is in networkpolicy-relay-exec)
 				{
 					To: []networkingv1.NetworkPolicyPeer{{
 						NamespaceSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{
 								"kubernetes.io/metadata.name": nsName,
 							},
+						},
+						PodSelector: &metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{{
+								Key:      "app",
+								Operator: metav1.LabelSelectorOpNotIn,
+								Values:   []string{"relay-exec"},
+							}},
 						},
 					}},
 				},
@@ -366,14 +366,7 @@ func (r *LabEnvironmentReconciler) ensureNetworkPolicy(ctx context.Context, nsNa
 						},
 					}},
 				},
-				// allow relay-exec pods to reach kube-apiserver on port 6443 (for kubectl exec)
-				// empty To means: allow to all destinations on this port
-				{
-					Ports: []networkingv1.NetworkPolicyPort{{
-						Protocol: protocolPtr(corev1.ProtocolTCP),
-						Port:     portPtr(6443),
-					}},
-				},
+				// (relay-exec apiserver egress is in networkpolicy-relay-exec)
 			},
 		}
 		return nil
@@ -554,268 +547,6 @@ func (r *LabEnvironmentReconciler) ensureHeadlessService(ctx context.Context, en
 		return client.IgnoreAlreadyExists(err)
 	}
 	log.Info("created headless service", "namespace", nsName, "asset", assetName)
-	return nil
-}
-
-func (r *LabEnvironmentReconciler) ensureRelayServiceAccount(ctx context.Context, nsName string) error {
-	sa := &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "relay-exec-sa",
-			Namespace: nsName,
-		},
-	}
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, sa, func() error { return nil })
-	return err
-}
-
-func (r *LabEnvironmentReconciler) ensureRelayRole(ctx context.Context, nsName string) error {
-	role := &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{Name: "relay-exec-role", Namespace: nsName},
-		Rules: []rbacv1.PolicyRule{
-			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list"}},
-			{APIGroups: []string{""}, Resources: []string{"pods/exec"}, Verbs: []string{"create"}},
-		},
-	}
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, role, func() error {
-		role.Rules = []rbacv1.PolicyRule{
-			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list"}},
-			{APIGroups: []string{""}, Resources: []string{"pods/exec"}, Verbs: []string{"create"}},
-		}
-		return nil
-	})
-	return err
-}
-
-func (r *LabEnvironmentReconciler) ensureRelayRoleBinding(ctx context.Context, nsName string) error {
-	rb := &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{Name: "relay-exec-rb", Namespace: nsName},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
-			Name:     "relay-exec-role",
-		},
-		Subjects: []rbacv1.Subject{
-			{Kind: "ServiceAccount", Name: "relay-exec-sa", Namespace: nsName},
-		},
-	}
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, rb, func() error {
-		rb.RoleRef = rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
-			Name:     "relay-exec-role",
-		}
-		rb.Subjects = []rbacv1.Subject{
-			{Kind: "ServiceAccount", Name: "relay-exec-sa", Namespace: nsName},
-		}
-		return nil
-	})
-	return err
-}
-
-func (r *LabEnvironmentReconciler) ensureRelayDeployment(ctx context.Context, env *labv1alpha1.LabEnvironment, nsName string) error {
-	image := os.Getenv("LABENV_RELAY_EXEC_IMAGE")
-	if image == "" {
-		return fmt.Errorf("LABENV_RELAY_EXEC_IMAGE env var not set")
-	}
-	labels := map[string]string{"app": "relay-exec"}
-	replicas := int32(1)
-	dep := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "relay-exec", Namespace: nsName},
-	}
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, dep, func() error {
-		dep.Spec = appsv1.DeploymentSpec{
-			Replicas: &replicas,
-			Selector: &metav1.LabelSelector{MatchLabels: labels},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
-				Spec: corev1.PodSpec{
-					ServiceAccountName: "relay-exec-sa",
-					Containers: []corev1.Container{{
-						Name:  "relay-exec",
-						Image: image,
-						Ports: []corev1.ContainerPort{{ContainerPort: 8080}},
-						Env: []corev1.EnvVar{
-							{Name: "RELAY_MY_ATTEMPT_ID", Value: env.Name},
-							{Name: "RELAY_MY_OWNER_ID", Value: env.Spec.OwnerId},
-							{Name: "RELAY_MY_NAMESPACE", Value: nsName},
-							{Name: "RELAY_PORT", Value: "8080"},
-						},
-					}},
-				},
-			},
-		}
-		return nil
-	})
-	return err
-}
-
-func (r *LabEnvironmentReconciler) ensureRelayService(ctx context.Context, nsName string) error {
-	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "relay-exec-svc", Namespace: nsName},
-	}
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
-		svc.Spec = corev1.ServiceSpec{
-			Selector: map[string]string{"app": "relay-exec"},
-			Ports: []corev1.ServicePort{{
-				Port:       8080,
-				TargetPort: intstr.FromInt(8080),
-				Protocol:   corev1.ProtocolTCP,
-			}},
-			Type: corev1.ServiceTypeClusterIP,
-		}
-		return nil
-	})
-	return err
-}
-
-const traefikInfraNamespace = "rootenv-infra"
-
-var traefikGVK = map[string]schema.GroupVersionKind{
-	"Middleware": {
-		Group:   "traefik.io",
-		Version: "v1alpha1",
-		Kind:    "Middleware",
-	},
-	"IngressRoute": {
-		Group:   "traefik.io",
-		Version: "v1alpha1",
-		Kind:    "IngressRoute",
-	},
-}
-
-func (r *LabEnvironmentReconciler) ensureIngressRoute(ctx context.Context, env *labv1alpha1.LabEnvironment, nsName string) error {
-	attemptID := env.Name
-
-	// Middleware 1: inject X-Attempt-Id header
-	mwHeaders := &unstructured.Unstructured{}
-	mwHeaders.SetGroupVersionKind(traefikGVK["Middleware"])
-	mwHeaders.SetName("relay-exec-headers-" + attemptID)
-	mwHeaders.SetNamespace(traefikInfraNamespace)
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, mwHeaders, func() error {
-		mwHeaders.Object["spec"] = map[string]interface{}{
-			"headers": map[string]interface{}{
-				"customRequestHeaders": map[string]interface{}{
-					"X-Attempt-Id": attemptID,
-				},
-			},
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("ensure Middleware headers: %w", err)
-	}
-
-	// Middleware 2: ForwardAuth
-	mwAuth := &unstructured.Unstructured{}
-	mwAuth.SetGroupVersionKind(traefikGVK["Middleware"])
-	mwAuth.SetName("relay-exec-auth-" + attemptID)
-	mwAuth.SetNamespace(traefikInfraNamespace)
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, mwAuth, func() error {
-		mwAuth.Object["spec"] = map[string]interface{}{
-			"forwardAuth": map[string]interface{}{
-				"address": "http://ingress-authenticator-svc.rootenv-infra.svc/auth",
-				"authRequestHeaders": []interface{}{
-					"Authorization",
-					"X-Attempt-Id",
-				},
-				"authResponseHeaders": []interface{}{
-					"X-User-Id",
-					"X-Attempt-Id",
-				},
-			},
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("ensure Middleware auth: %w", err)
-	}
-
-	// Middleware 3: stripPrefix
-	mwStrip := &unstructured.Unstructured{}
-	mwStrip.SetGroupVersionKind(traefikGVK["Middleware"])
-	mwStrip.SetName("relay-exec-strip-" + attemptID)
-	mwStrip.SetNamespace(traefikInfraNamespace)
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, mwStrip, func() error {
-		mwStrip.Object["spec"] = map[string]interface{}{
-			"stripPrefix": map[string]interface{}{
-				"prefixes": []interface{}{
-					"/relay/" + attemptID + "/exec",
-				},
-			},
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("ensure Middleware strip: %w", err)
-	}
-
-	// IngressRoute
-	ir := &unstructured.Unstructured{}
-	ir.SetGroupVersionKind(traefikGVK["IngressRoute"])
-	ir.SetName("relay-exec-" + attemptID)
-	ir.SetNamespace(traefikInfraNamespace)
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, ir, func() error {
-		labels := ir.GetLabels()
-		if labels == nil {
-			labels = map[string]string{}
-		}
-		labels["rootenv.io/attempt-id"] = attemptID
-		ir.SetLabels(labels)
-		ir.Object["spec"] = map[string]interface{}{
-			"entryPoints": []interface{}{"websecure"},
-			"routes": []interface{}{
-				map[string]interface{}{
-					"match": "PathPrefix(`/relay/" + attemptID + "/exec/`)",
-					"kind":  "Rule",
-					"middlewares": []interface{}{
-						map[string]interface{}{
-							"name":      "relay-exec-headers-" + attemptID,
-							"namespace": traefikInfraNamespace,
-						},
-						map[string]interface{}{
-							"name":      "relay-exec-auth-" + attemptID,
-							"namespace": traefikInfraNamespace,
-						},
-						map[string]interface{}{
-							"name":      "relay-exec-strip-" + attemptID,
-							"namespace": traefikInfraNamespace,
-						},
-					},
-					"services": []interface{}{
-						map[string]interface{}{
-							"name":      "relay-exec-svc",
-							"namespace": nsName,
-							"port":      int64(8080),
-						},
-					},
-				},
-			},
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("ensure IngressRoute: %w", err)
-	}
-
-	return nil
-}
-
-func (r *LabEnvironmentReconciler) deleteIngressRoute(ctx context.Context, attemptID string) error {
-	toDelete := []struct{ kind, name string }{
-		{"Middleware", "relay-exec-headers-" + attemptID},
-		{"Middleware", "relay-exec-auth-" + attemptID},
-		{"Middleware", "relay-exec-strip-" + attemptID},
-		{"IngressRoute", "relay-exec-" + attemptID},
-	}
-	for _, td := range toDelete {
-		obj := &unstructured.Unstructured{}
-		obj.SetGroupVersionKind(traefikGVK[td.kind])
-		obj.SetName(td.name)
-		obj.SetNamespace(traefikInfraNamespace)
-		if err := r.Client.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
-			return fmt.Errorf("delete %s %s: %w", td.kind, td.name, err)
-		}
-	}
 	return nil
 }
 

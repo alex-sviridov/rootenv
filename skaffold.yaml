@@ -5,6 +5,7 @@ metadata:
 build:
   local:
     push: false
+    useDockerCLI: true
   artifacts:
     - image: rootenv-backend
       context: services/backend
@@ -29,22 +30,6 @@ build:
           - src: 'public/**'
             dest: '/app'
           - src: 'index.html'
-            dest: '/app'
-    - image: ingress-authenticator
-      context: services/ingress-authenticator
-      docker:
-        dockerfile: Dockerfile
-      sync:
-        manual:
-          - src: '.'
-            dest: '/app'
-    - image: relay-exec
-      context: services/relay
-      docker:
-        dockerfile: ./exec/Dockerfile
-      sync:
-        manual:
-          - src: '.'
             dest: '/app'
     - image: labenv-operator
       context: services/labenv-operator

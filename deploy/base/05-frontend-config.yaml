@@ -1,6 +1,7 @@
 apiVersion: v1
 data:
-  VITE_API_URL: "https://localhost:8443"
+  VITE_API_URL: "/"
+  __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: "true"
 
 kind: ConfigMap
 metadata:

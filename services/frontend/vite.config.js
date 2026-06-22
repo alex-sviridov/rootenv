@@ -15,4 +15,7 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     },
   },
+  server: {
+    allowedHosts: process.env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS === 'true' ? true : [],
+  },
 })
