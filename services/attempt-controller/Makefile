@@ -5,7 +5,7 @@ test:
 		-v $(PWD):/app \
 		-w /app \
 		-v $(HOME)/gopath/pkg/mod:/go/pkg/mod \
-		golang:1.26 sh -c "go test -v ./... && go build -v ./..."
+		golang:1.26 sh -c "go test -v ./... && CGO_ENABLED=0 go build -ldflags='-s -w' -o /tmp/attempt-controller ./cmd/"
 
 lint:
 	docker run --rm \

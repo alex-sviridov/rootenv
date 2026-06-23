@@ -43,7 +43,7 @@ func TestSubscribeAttempts(t *testing.T) {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
 
-			fmt.Fprintf(w, "id:0\nevent:PB_CONNECT\ndata:%s\n\n", `{"clientId":"client123"}`)
+			_, _ = fmt.Fprintf(w,"id:0\nevent:PB_CONNECT\ndata:%s\n\n", `{"clientId":"client123"}`)
 			flusher.Flush()
 
 			select {
@@ -56,7 +56,7 @@ func TestSubscribeAttempts(t *testing.T) {
 
 			rec := AttemptRecord{ID: "a1", UserId: "u1", Lab: "rhcsa-lab1", CurrentState: "provisioning", DesiredState: "provisioned"}
 			data, _ := json.Marshal(map[string]any{"action": "update", "record": rec})
-			fmt.Fprintf(w, "id:1\nevent:attempts/a1\ndata:%s\n\n", data)
+			_, _ = fmt.Fprintf(w,"id:1\nevent:attempts/a1\ndata:%s\n\n", data)
 			flusher.Flush()
 
 			<-r.Context().Done()
@@ -138,7 +138,7 @@ func TestSubscribeAttemptsCallsOnConnect(t *testing.T) {
 			flusher := w.(http.Flusher)
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, "id:0\nevent:PB_CONNECT\ndata:%s\n\n", `{"clientId":"client123"}`)
+			_, _ = fmt.Fprintf(w,"id:0\nevent:PB_CONNECT\ndata:%s\n\n", `{"clientId":"client123"}`)
 			flusher.Flush()
 			<-r.Context().Done()
 		case http.MethodPost:
@@ -190,7 +190,7 @@ func TestSubscribeRealtimeReauthsOn401(t *testing.T) {
 			flusher := w.(http.Flusher)
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, "id:0\nevent:PB_CONNECT\ndata:%s\n\n", `{"clientId":"client123"}`)
+			_, _ = fmt.Fprintf(w,"id:0\nevent:PB_CONNECT\ndata:%s\n\n", `{"clientId":"client123"}`)
 			flusher.Flush()
 			<-r.Context().Done()
 		case http.MethodPost:
@@ -249,7 +249,7 @@ func TestRunAttemptSubscriptionReconnectsAfterFailure(t *testing.T) {
 				flusher := w.(http.Flusher)
 				w.Header().Set("Content-Type", "text/event-stream")
 				w.WriteHeader(http.StatusOK)
-				fmt.Fprintf(w, "id:0\nevent:PB_CONNECT\ndata:%s\n\n", `{"clientId":"client1"}`)
+				_, _ = fmt.Fprintf(w,"id:0\nevent:PB_CONNECT\ndata:%s\n\n", `{"clientId":"client1"}`)
 				flusher.Flush()
 				return
 			}
@@ -257,12 +257,12 @@ func TestRunAttemptSubscriptionReconnectsAfterFailure(t *testing.T) {
 			flusher := w.(http.Flusher)
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, "id:0\nevent:PB_CONNECT\ndata:%s\n\n", `{"clientId":"client2"}`)
+			_, _ = fmt.Fprintf(w,"id:0\nevent:PB_CONNECT\ndata:%s\n\n", `{"clientId":"client2"}`)
 			flusher.Flush()
 
 			rec := AttemptRecord{ID: "a1", CurrentState: "provisioning"}
 			data, _ := json.Marshal(map[string]any{"action": "update", "record": rec})
-			fmt.Fprintf(w, "id:1\nevent:attempts/a1\ndata:%s\n\n", data)
+			_, _ = fmt.Fprintf(w,"id:1\nevent:attempts/a1\ndata:%s\n\n", data)
 			flusher.Flush()
 
 			<-r.Context().Done()
