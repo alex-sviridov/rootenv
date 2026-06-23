@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-16
 **Branch:** feat/crd-labenv-operator
-**Scope:** `services/ingress-authenticator`, `services/relay`, `services/labenv-operator`, `deploy/`
+**Scope:** `services/relay-authenticator`, `services/relay`, `services/labenv-operator`, `deploy/`
 
 ## Problem
 
@@ -13,7 +13,7 @@ relay-ssh is cluster-wide and uses SSH with encrypted keys stored in PocketBase.
 - Replace SSH with `kubectl exec` — eliminates key lifecycle entirely
 - One `relay-exec` pod per LabEnvironment namespace — blast radius limited to one namespace
 - labenv namespaces remain fully isolated — no egress to PocketBase from within the namespace
-- Auth logic centralised in one stateless service (`ingress-authenticator`) reusable by future relay types
+- Auth logic centralised in one stateless service (`relay-authenticator`) reusable by future relay types
 - No admin token at the auth boundary — PocketBase's own rules enforce ownership
 
 ## Architecture
@@ -26,7 +26,7 @@ Browser
 Traefik
   │  IngressRoute matches /relay/<attemptId>/exec/<assetName>/
   │  Middleware: set X-Attempt-Id: <attemptId> (static, from route)
-  │  Middleware: ForwardAuth → ingress-authenticator
+  │  Middleware: ForwardAuth → relay-authenticator
   │    sends: Authorization + X-Attempt-Id
   │    receives: 200 + X-User-Id + X-Attempt-Id  (or 401/403 → reject)
   │  Middleware: stripPrefix /relay/<attemptId>/exec
@@ -48,18 +48,18 @@ asset pod (e.g. workstation, target) in same namespace
 
 | Component | Location | What it does |
 |---|---|---|
-| `ingress-authenticator` | `services/ingress-authenticator/` | Stateless HTTP service; validates PB token + attempt ownership; sets X-User-Id / X-Attempt-Id |
+| `relay-authenticator` | `services/relay-authenticator/` | Stateless HTTP service; validates PB token + attempt ownership; sets X-User-Id / X-Attempt-Id |
 | `relay-exec` | `services/relay/cmd/relay-exec/` + `services/relay/exec/` | WebSocket → kubectl exec proxy; uses shared relaybase.Handler |
 | `relaybase.Handler` | `services/relay/pkg/relaybase/` | Generic WS handler extracted from ssh; shared by all relay types |
 | operator changes | `services/labenv-operator/` | Provisions relay-exec Deployment + Service + RBAC + IngressRoute + Middlewares per namespace |
 | Traefik resources | created by operator in `rootenv-infra` | IngressRoute + ForwardAuth Middleware + headers + stripPrefix per attempt |
 
-## Section 1: `ingress-authenticator`
+## Section 1: `relay-authenticator`
 
 ### Repository layout
 
 ```
-services/ingress-authenticator/
+services/relay-authenticator/
   cmd/main.go
   internal/
     auth/
@@ -264,7 +264,7 @@ metadata:
   namespace: rootenv-infra
 spec:
   forwardAuth:
-    address: http://ingress-authenticator-svc.rootenv-infra.svc/auth
+    address: http://relay-authenticator-svc.rootenv-infra.svc/auth
     authRequestHeaders: ["Authorization", "X-Attempt-Id"]
     authResponseHeaders: ["X-User-Id", "X-Attempt-Id"]
 ```
@@ -324,7 +324,7 @@ LABENV_RELAY_EXEC_IMAGE   — relay-exec container image (tag injected at build 
 ## Section 4: Security invariants
 
 1. **NetworkPolicy is the primary trust boundary** — relay-exec only accepts connections from the Traefik namespace; header forgery requires compromising Traefik or the operator.
-2. **ingress-authenticator never uses admin token** — all PocketBase calls use the user's own token; PocketBase enforces ownership via its own viewRule.
+2. **relay-authenticator never uses admin token** — all PocketBase calls use the user's own token; PocketBase enforces ownership via its own viewRule.
 3. **relay-exec validates headers against its own identity** — `X-Attempt-Id` must match `MY_ATTEMPT_ID`; a misconfigured route pointing to the wrong relay is rejected at the relay.
 4. **labenv namespace has zero PocketBase egress** — asset pods and relay-exec cannot reach PocketBase.
 5. **One active attempt per user** enforced by PocketBase before-create hook (existing).
@@ -332,6 +332,6 @@ LABENV_RELAY_EXEC_IMAGE   — relay-exec container image (tag injected at build 
 ## What is NOT in scope
 
 - relay-ssh removal (parallel operation during transition)
-- relay-http and relay-filemanager (future; will reuse `relaybase.Handler` and `ingress-authenticator`)
+- relay-http and relay-filemanager (future; will reuse `relaybase.Handler` and `relay-authenticator`)
 - Frontend changes to connect to the new URL pattern
-- ingress-authenticator HA / replicas (operator concern, not design concern)
+- relay-authenticator HA / replicas (operator concern, not design concern)

@@ -16,5 +16,5 @@ resources:
   - 51-attempt-controller-serviceaccount.yaml
   - 53-attempt-controller.yaml
   - 60-relay-middleware.yaml
-  - 61-ingress-authenticator.yaml
+  - 61-relay-authenticator.yaml
   - 62-relay-auth-middleware.yaml

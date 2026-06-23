@@ -4,7 +4,7 @@
 
 **Goal:** Replace relay-ssh with a `kubectl exec`-based relay, one instance per LabEnvironment namespace, with centralized PocketBase auth at the Traefik ingress layer.
 
-**Architecture:** A new stateless `ingress-authenticator` service in `rootenv-infra` validates PocketBase tokens and attempt ownership via ForwardAuth before Traefik routes to the per-namespace `relay-exec` pod. The relay-exec pod trusts injected headers (protected by NetworkPolicy) and execs into asset pods using its in-cluster ServiceAccount. Generic WebSocket handling is extracted into `pkg/relaybase` so future relay types (http, filemanager) reuse it.
+**Architecture:** A new stateless `relay-authenticator` service in `rootenv-infra` validates PocketBase tokens and attempt ownership via ForwardAuth before Traefik routes to the per-namespace `relay-exec` pod. The relay-exec pod trusts injected headers (protected by NetworkPolicy) and execs into asset pods using its in-cluster ServiceAccount. Generic WebSocket handling is extracted into `pkg/relaybase` so future relay types (http, filemanager) reuse it.
 
 **Tech Stack:** Go 1.26, `github.com/coder/websocket`, `k8s.io/client-go` (exec), controller-runtime (operator), Traefik IngressRoute/Middleware CRDs (managed as unstructured), standard `net/http`.
 
@@ -12,8 +12,8 @@
 
 ## File Map
 
-### New: `services/ingress-authenticator/`
-- `go.mod` — module `github.com/alexsviridov/linuxlab/ingress-authenticator`
+### New: `services/relay-authenticator/`
+- `go.mod` — module `github.com/alexsviridov/linuxlab/relay-authenticator`
 - `cmd/main.go` — HTTP server, reads env vars, wires handler
 - `internal/pbclient/client.go` — `ValidateToken` + `GetAttempt` (user token only)
 - `internal/pbclient/client_test.go`
@@ -41,23 +41,23 @@
 
 ---
 
-## Task 1: `ingress-authenticator` — PocketBase client
+## Task 1: `relay-authenticator` — PocketBase client
 
 **Files:**
-- Create: `services/ingress-authenticator/go.mod`
-- Create: `services/ingress-authenticator/internal/pbclient/client.go`
-- Create: `services/ingress-authenticator/internal/pbclient/client_test.go`
+- Create: `services/relay-authenticator/go.mod`
+- Create: `services/relay-authenticator/internal/pbclient/client.go`
+- Create: `services/relay-authenticator/internal/pbclient/client_test.go`
 
 - [ ] **Step 1: Create go.mod**
 
 ```
-cd services/ingress-authenticator
-go mod init github.com/alexsviridov/linuxlab/ingress-authenticator
+cd services/relay-authenticator
+go mod init github.com/alexsviridov/linuxlab/relay-authenticator
 ```
 
 - [ ] **Step 2: Write failing tests**
 
-Create `services/ingress-authenticator/internal/pbclient/client_test.go`:
+Create `services/relay-authenticator/internal/pbclient/client_test.go`:
 
 ```go
 package pbclient_test
@@ -68,7 +68,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/alexsviridov/linuxlab/ingress-authenticator/internal/pbclient"
+	"github.com/alexsviridov/linuxlab/relay-authenticator/internal/pbclient"
 )
 
 func TestValidateToken_success(t *testing.T) {
@@ -147,14 +147,14 @@ func TestGetAttempt_forbidden(t *testing.T) {
 - [ ] **Step 3: Run tests — expect compile failure (package doesn't exist yet)**
 
 ```
-cd services/ingress-authenticator && go test ./internal/pbclient/...
+cd services/relay-authenticator && go test ./internal/pbclient/...
 ```
 
 Expected: `cannot find package`
 
 - [ ] **Step 4: Implement the client**
 
-Create `services/ingress-authenticator/internal/pbclient/client.go`:
+Create `services/relay-authenticator/internal/pbclient/client.go`:
 
 ```go
 package pbclient
@@ -259,7 +259,7 @@ func (c *Client) GetAttempt(token, attemptID string) (*Attempt, error) {
 - [ ] **Step 5: Run tests — expect pass**
 
 ```
-cd services/ingress-authenticator && go test ./internal/pbclient/... -v
+cd services/relay-authenticator && go test ./internal/pbclient/... -v
 ```
 
 Expected: all 4 tests PASS
@@ -267,21 +267,21 @@ Expected: all 4 tests PASS
 - [ ] **Step 6: Commit**
 
 ```
-git add services/ingress-authenticator/
-git commit -m "feat(ingress-authenticator): pbclient with ValidateToken and GetAttempt"
+git add services/relay-authenticator/
+git commit -m "feat(relay-authenticator): pbclient with ValidateToken and GetAttempt"
 ```
 
 ---
 
-## Task 2: `ingress-authenticator` — auth handler
+## Task 2: `relay-authenticator` — auth handler
 
 **Files:**
-- Create: `services/ingress-authenticator/internal/auth/handler.go`
-- Create: `services/ingress-authenticator/internal/auth/handler_test.go`
+- Create: `services/relay-authenticator/internal/auth/handler.go`
+- Create: `services/relay-authenticator/internal/auth/handler_test.go`
 
 - [ ] **Step 1: Write failing tests**
 
-Create `services/ingress-authenticator/internal/auth/handler_test.go`:
+Create `services/relay-authenticator/internal/auth/handler_test.go`:
 
 ```go
 package auth_test
@@ -291,7 +291,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/alexsviridov/linuxlab/ingress-authenticator/internal/auth"
+	"github.com/alexsviridov/linuxlab/relay-authenticator/internal/auth"
 )
 
 type fakePB struct {
@@ -395,14 +395,14 @@ Note: add `"fmt"` to the import in the test file.
 - [ ] **Step 2: Run tests — expect compile failure**
 
 ```
-cd services/ingress-authenticator && go test ./internal/auth/... 
+cd services/relay-authenticator && go test ./internal/auth/... 
 ```
 
 Expected: `cannot find package`
 
 - [ ] **Step 3: Implement the handler**
 
-Create `services/ingress-authenticator/internal/auth/handler.go`:
+Create `services/relay-authenticator/internal/auth/handler.go`:
 
 ```go
 package auth
@@ -493,7 +493,7 @@ func TestGetAttempt_success(t *testing.T) {
 - [ ] **Step 4: Run all tests — expect pass**
 
 ```
-cd services/ingress-authenticator && go test ./... -v
+cd services/relay-authenticator && go test ./... -v
 ```
 
 Expected: all tests PASS
@@ -501,21 +501,21 @@ Expected: all tests PASS
 - [ ] **Step 5: Commit**
 
 ```
-git add services/ingress-authenticator/
-git commit -m "feat(ingress-authenticator): auth handler with PB validation"
+git add services/relay-authenticator/
+git commit -m "feat(relay-authenticator): auth handler with PB validation"
 ```
 
 ---
 
-## Task 3: `ingress-authenticator` — main + Dockerfile
+## Task 3: `relay-authenticator` — main + Dockerfile
 
 **Files:**
-- Create: `services/ingress-authenticator/cmd/main.go`
-- Create: `services/ingress-authenticator/Dockerfile`
+- Create: `services/relay-authenticator/cmd/main.go`
+- Create: `services/relay-authenticator/Dockerfile`
 
 - [ ] **Step 1: Write main.go**
 
-Create `services/ingress-authenticator/cmd/main.go`:
+Create `services/relay-authenticator/cmd/main.go`:
 
 ```go
 package main
@@ -528,8 +528,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/alexsviridov/linuxlab/ingress-authenticator/internal/auth"
-	"github.com/alexsviridov/linuxlab/ingress-authenticator/internal/pbclient"
+	"github.com/alexsviridov/linuxlab/relay-authenticator/internal/auth"
+	"github.com/alexsviridov/linuxlab/relay-authenticator/internal/pbclient"
 )
 
 func main() {
@@ -562,7 +562,7 @@ func main() {
 	defer stop()
 
 	go func() {
-		slog.Info("ingress-authenticator starting", "port", port, "pb_url", pbURL, "tls_verify", tlsVerify)
+		slog.Info("relay-authenticator starting", "port", port, "pb_url", pbURL, "tls_verify", tlsVerify)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("server error", "err", err)
 			os.Exit(1)
@@ -577,7 +577,7 @@ func main() {
 
 - [ ] **Step 2: Write Dockerfile**
 
-Create `services/ingress-authenticator/Dockerfile`:
+Create `services/relay-authenticator/Dockerfile`:
 
 ```dockerfile
 FROM golang:1.26-alpine AS builder
@@ -585,17 +585,17 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /ingress-authenticator ./cmd/main.go
+RUN CGO_ENABLED=0 go build -o /relay-authenticator ./cmd/main.go
 
 FROM gcr.io/distroless/static:nonroot
-COPY --from=builder /ingress-authenticator /ingress-authenticator
-ENTRYPOINT ["/ingress-authenticator"]
+COPY --from=builder /relay-authenticator /relay-authenticator
+ENTRYPOINT ["/relay-authenticator"]
 ```
 
 - [ ] **Step 3: Build check**
 
 ```
-cd services/ingress-authenticator && go build ./...
+cd services/relay-authenticator && go build ./...
 ```
 
 Expected: no errors
@@ -603,8 +603,8 @@ Expected: no errors
 - [ ] **Step 4: Commit**
 
 ```
-git add services/ingress-authenticator/
-git commit -m "feat(ingress-authenticator): main entrypoint and Dockerfile"
+git add services/relay-authenticator/
+git commit -m "feat(relay-authenticator): main entrypoint and Dockerfile"
 ```
 
 ---
@@ -1743,7 +1743,7 @@ func (r *LabEnvironmentReconciler) ensureIngressRoute(ctx context.Context, env *
     fwdAuth.SetNamespace(infraNamespace)
     fwdAuth.SetLabels(map[string]string{"rootenv.io/attempt-id": attemptID})
     if err := unstructured.SetNestedMap(fwdAuth.Object, map[string]any{
-        "address":            "http://ingress-authenticator-svc.rootenv-infra.svc/auth",
+        "address":            "http://relay-authenticator-svc.rootenv-infra.svc/auth",
         "authRequestHeaders": []any{"Authorization", "X-Attempt-Id"},
         "authResponseHeaders": []any{"X-User-Id", "X-Attempt-Id"},
     }, "spec", "forwardAuth"); err != nil {
@@ -1867,35 +1867,35 @@ git commit -m "feat(labenv-operator): create/delete Traefik IngressRoute and Mid
 
 ---
 
-## Task 10: Deploy `ingress-authenticator` to `rootenv-infra`
+## Task 10: Deploy `relay-authenticator` to `rootenv-infra`
 
 **Files:**
-- Create: `deploy/base/23-ingress-authenticator-deploy.yaml`
+- Create: `deploy/base/23-relay-authenticator-deploy.yaml`
 - Modify: `deploy/base/kustomization.yaml` (or overlay)
 
 - [ ] **Step 1: Write the deployment manifest**
 
-Create `deploy/base/23-ingress-authenticator-deploy.yaml`:
+Create `deploy/base/23-relay-authenticator-deploy.yaml`:
 
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ingress-authenticator
+  name: relay-authenticator
   namespace: rootenv-infra
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: ingress-authenticator
+      app: relay-authenticator
   template:
     metadata:
       labels:
-        app: ingress-authenticator
+        app: relay-authenticator
     spec:
       containers:
-        - name: ingress-authenticator
-          image: ingress-authenticator:latest
+        - name: relay-authenticator
+          image: relay-authenticator:latest
           ports:
             - containerPort: 8080
           env:
@@ -1909,11 +1909,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: ingress-authenticator-svc
+  name: relay-authenticator-svc
   namespace: rootenv-infra
 spec:
   selector:
-    app: ingress-authenticator
+    app: relay-authenticator
   ports:
     - port: 8080
       targetPort: 8080
@@ -1926,14 +1926,14 @@ In `deploy/base/kustomization.yaml` (or the sandbox overlay's kustomization), ad
 ```yaml
 resources:
   # ... existing resources ...
-  - 23-ingress-authenticator-deploy.yaml
+  - 23-relay-authenticator-deploy.yaml
 ```
 
 - [ ] **Step 3: Commit**
 
 ```
 git add deploy/
-git commit -m "feat(deploy): ingress-authenticator Deployment and Service"
+git commit -m "feat(deploy): relay-authenticator Deployment and Service"
 ```
 
 ---
@@ -1996,14 +1996,14 @@ After writing the plan, checking spec coverage:
 
 | Spec requirement | Task |
 |---|---|
-| ingress-authenticator: ValidateToken + GetAttempt, user token only | Task 1 |
-| ingress-authenticator: handler 200/400/401/403/503 | Task 2 |
-| ingress-authenticator: env vars INGAUTH_* | Task 3 |
+| relay-authenticator: ValidateToken + GetAttempt, user token only | Task 1 |
+| relay-authenticator: handler 200/400/401/403/503 | Task 2 |
+| relay-authenticator: env vars INGAUTH_* | Task 3 |
 | relaybase.Handler + Backend interface | Task 4 |
 | relay-exec: kubectl exec backend + KubeExecer | Task 5 |
 | relay-exec: RELAY_* env vars, main, Dockerfile | Task 6 |
 | Operator: SA + Role + RoleBinding + Deployment + Service per namespace | Task 7 |
 | Operator: NetworkPolicy CreateOrPatch with relay-exec rules | Task 8 |
 | Operator: Traefik IngressRoute + 3 Middlewares, cleanup on delete | Task 9 |
-| ingress-authenticator deployment in rootenv-infra | Task 10 |
+| relay-authenticator deployment in rootenv-infra | Task 10 |
 | Operator RBAC for Traefik resources in rootenv-infra | Task 11 |

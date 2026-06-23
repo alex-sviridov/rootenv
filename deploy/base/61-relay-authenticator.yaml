@@ -1,19 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ingress-authenticator
+  name: relay-authenticator
   namespace: rootenv-infra
   labels:
-    app: ingress-authenticator
+    app: relay-authenticator
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: ingress-authenticator
+      app: relay-authenticator
   template:
     metadata:
       labels:
-        app: ingress-authenticator
+        app: relay-authenticator
     spec:
       securityContext:
         runAsNonRoot: true
@@ -21,11 +21,11 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-      - name: ingress-authenticator
-        image: ingress-authenticator
+      - name: relay-authenticator
+        image: relay-authenticator
         imagePullPolicy: IfNotPresent
         env:
-        - name: INGAUTH_POCKETBASE_URL
+        - name: RELAUTH_POCKETBASE_URL
           value: http://backend-svc.rootenv-infra.svc.cluster.local:8090
         securityContext:
           allowPrivilegeEscalation: false
@@ -55,11 +55,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: ingress-authenticator
+  name: relay-authenticator
   namespace: rootenv-infra
 spec:
   selector:
-    app: ingress-authenticator
+    app: relay-authenticator
   ports:
   - port: 8080
     targetPort: 8080
@@ -67,12 +67,12 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: ingress-authenticator
+  name: relay-authenticator
   namespace: rootenv-infra
 spec:
   podSelector:
     matchLabels:
-      app: ingress-authenticator
+      app: relay-authenticator
   policyTypes:
   - Ingress
   - Egress

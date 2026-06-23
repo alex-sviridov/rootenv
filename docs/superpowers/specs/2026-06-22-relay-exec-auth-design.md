@@ -5,7 +5,7 @@
 
 ## Goal
 
-Add authentication to the Traefik ingress route created per relay-exec instance. A shared `ingress-authenticator` in `rootenv-infra` validates the user's PocketBase session cookie and verifies attempt ownership before Traefik proxies the WebSocket upgrade. The relay-exec namespace stays fully isolated — relay-exec never calls PocketBase.
+Add authentication to the Traefik ingress route created per relay-exec instance. A shared `relay-authenticator` in `rootenv-infra` validates the user's PocketBase session cookie and verifies attempt ownership before Traefik proxies the WebSocket upgrade. The relay-exec namespace stays fully isolated — relay-exec never calls PocketBase.
 
 ## Constraints
 
@@ -24,10 +24,10 @@ Browser
 
 Traefik (kube-system)
   3. matches ForwardAuth middleware on the per-attempt ingress route
-  4. calls ingress-authenticator /auth  (rootenv-infra, over cluster DNS)
+  4. calls relay-authenticator /auth  (rootenv-infra, over cluster DNS)
      forwarded headers: Cookie, X-Forwarded-Uri: /relay/exec/<attemptId>/server-0/
 
-ingress-authenticator
+relay-authenticator
   5. reads pb_auth cookie → token
   6. parses X-Forwarded-Uri → extracts <attemptId> (2nd segment after /relay/exec/)
   7. calls PocketBase auth-refresh(token) → userID
@@ -43,7 +43,7 @@ relay-exec (separate task)
 
 ## Components
 
-### 1. `services/ingress-authenticator/internal/auth/handler.go`
+### 1. `services/relay-authenticator/internal/auth/handler.go`
 
 Replace header-based input with cookie + URI parsing:
 
@@ -55,7 +55,7 @@ Replace header-based input with cookie + URI parsing:
 
 Path parsing rule: given `/relay/exec/<attemptId>/server-0/`, split on `/`, drop empty segments, find index of `exec`, take the next segment. Return 400 if pattern not found.
 
-### 2. `services/ingress-authenticator/internal/auth/handler_test.go`
+### 2. `services/relay-authenticator/internal/auth/handler_test.go`
 
 Update tests to use cookie + `X-Forwarded-Uri` instead of `Authorization` + `X-Attempt-Id` headers. Cover:
 - success path
@@ -64,16 +64,16 @@ Update tests to use cookie + `X-Forwarded-Uri` instead of `Authorization` + `X-A
 - invalid token → 401
 - attempt ownership denied → 403
 
-### 3. `deploy/base/61-ingress-authenticator.yaml`
+### 3. `deploy/base/61-relay-authenticator.yaml`
 
 New manifest in `rootenv-infra` namespace:
 
-- `Deployment`: `ingress-authenticator`, 1 replica, image `ingress-authenticator:latest`
+- `Deployment`: `relay-authenticator`, 1 replica, image `relay-authenticator:latest`
   - Env: `INGAUTH_POCKETBASE_URL` = `http://backend-svc.rootenv-infra.svc.cluster.local:8090`
   - Liveness probe: `GET /healthz` — checks the process is alive
   - Readiness probe: `GET /readyz` — checks PocketBase reachability; add `/readyz` endpoint to `cmd/main.go` that calls `GET <INGAUTH_POCKETBASE_URL>/api/health` and returns 200/503
   - Security context: `runAsNonRoot`, `readOnlyRootFilesystem`, drop ALL caps
-- `Service`: `ingress-authenticator`, port 8080 → 8080
+- `Service`: `relay-authenticator`, port 8080 → 8080
 - `NetworkPolicy`: allow ingress on port 8080 from `kube-system` (Traefik) only; allow egress to `rootenv-infra` on port 8090 (PocketBase) only
 
 ### 4. `deploy/base/62-relay-auth-middleware.yaml`
@@ -88,12 +88,12 @@ metadata:
   namespace: kube-system
 spec:
   forwardAuth:
-    address: http://ingress-authenticator.rootenv-infra.svc.cluster.local:8080/auth
+    address: http://relay-authenticator.rootenv-infra.svc.cluster.local:8080/auth
     authResponseHeaders:
       - X-User-Id
 ```
 
-### 5. `services/ingress-authenticator/cmd/main.go`
+### 5. `services/relay-authenticator/cmd/main.go`
 
 Add `/readyz` endpoint that calls `GET <INGAUTH_POCKETBASE_URL>/api/health`. Returns 200 if PocketBase responds 200, 503 otherwise.
 
@@ -117,11 +117,11 @@ No `RELAY_AUTH_MIDDLEWARE` patch needed — middleware annotation is now a defau
 
 ### 9. `deploy/base/kustomization.yaml`
 
-Add `61-ingress-authenticator.yaml` and `62-relay-auth-middleware.yaml` to the resources list.
+Add `61-relay-authenticator.yaml` and `62-relay-auth-middleware.yaml` to the resources list.
 
 ## Network Policy
 
-**ingress-authenticator** (in `rootenv-infra`, defined in `61-ingress-authenticator.yaml`):
+**relay-authenticator** (in `rootenv-infra`, defined in `61-relay-authenticator.yaml`):
 - Ingress: allow port 8080 from `kube-system` (Traefik) only
 - Egress: allow port 8090 to `rootenv-infra` (PocketBase) only
 

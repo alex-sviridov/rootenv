@@ -5,7 +5,7 @@ metadata:
   namespace: kube-system
 spec:
   forwardAuth:
-    address: http://ingress-authenticator.rootenv-infra.svc.cluster.local:8080/auth
+    address: http://relay-authenticator.rootenv-infra.svc.cluster.local:8080/auth
     authResponseHeaders:
       - X-User-Id
       - X-Attempt-Id

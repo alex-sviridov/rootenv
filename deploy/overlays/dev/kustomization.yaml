@@ -10,7 +10,7 @@ images:
   - name: labenv-operator
   - name: attempt-controller
   - name: relay-exec
-  - name: ingress-authenticator
+  - name: relay-authenticator
 
 patches:
   - target:

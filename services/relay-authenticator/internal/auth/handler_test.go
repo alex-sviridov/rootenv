@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/alexsviridov/linuxlab/ingress-authenticator/internal/auth"
+	"github.com/alexsviridov/linuxlab/relay-authenticator/internal/auth"
 )
 
 type fakePB struct {

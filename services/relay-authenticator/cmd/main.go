@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/alexsviridov/linuxlab/ingress-authenticator/internal/auth"
-	"github.com/alexsviridov/linuxlab/ingress-authenticator/internal/pbclient"
+	"github.com/alexsviridov/linuxlab/relay-authenticator/internal/auth"
+	"github.com/alexsviridov/linuxlab/relay-authenticator/internal/pbclient"
 )
 
 func main() {
@@ -60,7 +60,7 @@ func main() {
 	defer stop()
 
 	go func() {
-		slog.Info("ingress-authenticator starting", "port", port, "pb_url", pbURL, "tls_verify", tlsVerify)
+		slog.Info("relay-authenticator starting", "port", port, "pb_url", pbURL, "tls_verify", tlsVerify)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("server error", "err", err)
 			os.Exit(1)

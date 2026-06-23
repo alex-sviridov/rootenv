@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/alexsviridov/linuxlab/ingress-authenticator/internal/pbclient"
+	"github.com/alexsviridov/linuxlab/relay-authenticator/internal/pbclient"
 )
 
 func TestValidateToken_success(t *testing.T) {

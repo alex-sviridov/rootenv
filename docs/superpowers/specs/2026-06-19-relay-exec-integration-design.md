@@ -145,7 +145,7 @@ Browser
 
 ## What Is Not Changed
 
-- `ingress-authenticator` — not wired yet; `RELAY_SKIP_AUTH=true` bypasses header checks
+- `relay-authenticator` — not wired yet; `RELAY_SKIP_AUTH=true` bypasses header checks
 - `relay-ssh` — left in the repo, just removed from frontend
 - `LabEnvironment` CRD — no schema changes
 - `useTerminalTabs.js` — logic unchanged, only test strings updated

@@ -2,28 +2,28 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add Traefik ForwardAuth to every relay-exec ingress route so the ingress-authenticator validates the user's PocketBase session cookie and sets `X-User-Id` before the WebSocket reaches relay-exec.
+**Goal:** Add Traefik ForwardAuth to every relay-exec ingress route so the relay-authenticator validates the user's PocketBase session cookie and sets `X-User-Id` before the WebSocket reaches relay-exec.
 
-**Architecture:** The browser sets a `pb_auth` cookie (containing the existing PocketBase token) before opening the WebSocket. Traefik calls the shared `ingress-authenticator` in `rootenv-infra` via a `ForwardAuth` Middleware CRD. The authenticator extracts the attempt ID from `X-Forwarded-Uri`, validates the cookie token against PocketBase, verifies attempt ownership, and returns `X-User-Id`. The relay-exec lab namespace never contacts PocketBase.
+**Architecture:** The browser sets a `pb_auth` cookie (containing the existing PocketBase token) before opening the WebSocket. Traefik calls the shared `relay-authenticator` in `rootenv-infra` via a `ForwardAuth` Middleware CRD. The authenticator extracts the attempt ID from `X-Forwarded-Uri`, validates the cookie token against PocketBase, verifies attempt ownership, and returns `X-User-Id`. The relay-exec lab namespace never contacts PocketBase.
 
-**Tech Stack:** Go 1.24 (ingress-authenticator, labenv-operator), Vue.js (frontend), Kubernetes NetworkPolicy, Traefik Middleware CRD, Kustomize
+**Tech Stack:** Go 1.24 (relay-authenticator, labenv-operator), Vue.js (frontend), Kubernetes NetworkPolicy, Traefik Middleware CRD, Kustomize
 
 ## Global Constraints
 
 - No PocketBase access from inside the lab namespace
 - Middleware name is `kube-system-relay-auth-middleware@kubernetescrd` everywhere — no per-overlay override
-- All Go tests use `testing` stdlib (ingress-authenticator); operator tests use Ginkgo/Gomega
+- All Go tests use `testing` stdlib (relay-authenticator); operator tests use Ginkgo/Gomega
 - Security context on all new pods: `runAsNonRoot`, `readOnlyRootFilesystem`, drop ALL caps
-- Module path for ingress-authenticator: `github.com/alexsviridov/linuxlab/ingress-authenticator`
+- Module path for relay-authenticator: `github.com/alexsviridov/linuxlab/relay-authenticator`
 - Module path for labenv-operator: `github.com/alex-sviridov/rootenv/services/labenv-operator`
 
 ---
 
-### Task 1: Update ingress-authenticator handler to use cookie + X-Forwarded-Uri
+### Task 1: Update relay-authenticator handler to use cookie + X-Forwarded-Uri
 
 **Files:**
-- Modify: `services/ingress-authenticator/internal/auth/handler.go`
-- Modify: `services/ingress-authenticator/internal/auth/handler_test.go`
+- Modify: `services/relay-authenticator/internal/auth/handler.go`
+- Modify: `services/relay-authenticator/internal/auth/handler_test.go`
 
 **Interfaces:**
 - Consumes: `PocketBase` interface (`ValidateToken(token string) (string, error)`, `GetAttempt(token, attemptID string) (string, error)`) — unchanged
@@ -31,7 +31,7 @@
 
 - [ ] **Step 1: Replace the existing tests**
 
-Replace the full contents of `services/ingress-authenticator/internal/auth/handler_test.go`:
+Replace the full contents of `services/relay-authenticator/internal/auth/handler_test.go`:
 
 ```go
 package auth_test
@@ -42,7 +42,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/alexsviridov/linuxlab/ingress-authenticator/internal/auth"
+	"github.com/alexsviridov/linuxlab/relay-authenticator/internal/auth"
 )
 
 type fakePB struct {
@@ -161,14 +161,14 @@ func TestHandler_forbidden_attempt(t *testing.T) {
 - [ ] **Step 2: Run tests to confirm they fail**
 
 ```bash
-cd services/ingress-authenticator && go test ./internal/auth/...
+cd services/relay-authenticator && go test ./internal/auth/...
 ```
 
 Expected: FAIL — tests call the old header-based interface.
 
 - [ ] **Step 3: Rewrite handler.go**
 
-Replace the full contents of `services/ingress-authenticator/internal/auth/handler.go`:
+Replace the full contents of `services/relay-authenticator/internal/auth/handler.go`:
 
 ```go
 package auth
@@ -247,7 +247,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 - [ ] **Step 4: Run tests to confirm they pass**
 
 ```bash
-cd services/ingress-authenticator && go test ./internal/auth/...
+cd services/relay-authenticator && go test ./internal/auth/...
 ```
 
 Expected: PASS
@@ -255,24 +255,24 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add services/ingress-authenticator/internal/auth/handler.go \
-        services/ingress-authenticator/internal/auth/handler_test.go
-git commit -m "feat(ingress-authenticator): read token from cookie, attempt from X-Forwarded-Uri"
+git add services/relay-authenticator/internal/auth/handler.go \
+        services/relay-authenticator/internal/auth/handler_test.go
+git commit -m "feat(relay-authenticator): read token from cookie, attempt from X-Forwarded-Uri"
 ```
 
 ---
 
-### Task 2: Add /readyz endpoint to ingress-authenticator
+### Task 2: Add /readyz endpoint to relay-authenticator
 
 **Files:**
-- Modify: `services/ingress-authenticator/cmd/main.go`
+- Modify: `services/relay-authenticator/cmd/main.go`
 
 **Interfaces:**
 - Produces: `GET /readyz` → 200 if PocketBase `/api/health` returns 200, 503 otherwise
 
 - [ ] **Step 1: Replace cmd/main.go**
 
-Replace the full contents of `services/ingress-authenticator/cmd/main.go`:
+Replace the full contents of `services/relay-authenticator/cmd/main.go`:
 
 ```go
 package main
@@ -286,8 +286,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/alexsviridov/linuxlab/ingress-authenticator/internal/auth"
-	"github.com/alexsviridov/linuxlab/ingress-authenticator/internal/pbclient"
+	"github.com/alexsviridov/linuxlab/relay-authenticator/internal/auth"
+	"github.com/alexsviridov/linuxlab/relay-authenticator/internal/pbclient"
 )
 
 func main() {
@@ -332,7 +332,7 @@ func main() {
 	defer stop()
 
 	go func() {
-		slog.Info("ingress-authenticator starting", "port", port, "pb_url", pbURL, "tls_verify", tlsVerify)
+		slog.Info("relay-authenticator starting", "port", port, "pb_url", pbURL, "tls_verify", tlsVerify)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("server error", "err", err)
 			os.Exit(1)
@@ -360,15 +360,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/alexsviridov/linuxlab/ingress-authenticator/internal/auth"
-	"github.com/alexsviridov/linuxlab/ingress-authenticator/internal/pbclient"
+	"github.com/alexsviridov/linuxlab/relay-authenticator/internal/auth"
+	"github.com/alexsviridov/linuxlab/relay-authenticator/internal/pbclient"
 )
 ```
 
 - [ ] **Step 3: Verify it compiles**
 
 ```bash
-cd services/ingress-authenticator && go build ./...
+cd services/relay-authenticator && go build ./...
 ```
 
 Expected: no output (success)
@@ -376,42 +376,42 @@ Expected: no output (success)
 - [ ] **Step 4: Commit**
 
 ```bash
-git add services/ingress-authenticator/cmd/main.go
-git commit -m "feat(ingress-authenticator): add /readyz probe that checks PocketBase reachability"
+git add services/relay-authenticator/cmd/main.go
+git commit -m "feat(relay-authenticator): add /readyz probe that checks PocketBase reachability"
 ```
 
 ---
 
-### Task 3: Deploy ingress-authenticator to rootenv-infra
+### Task 3: Deploy relay-authenticator to rootenv-infra
 
 **Files:**
-- Create: `deploy/base/61-ingress-authenticator.yaml`
+- Create: `deploy/base/61-relay-authenticator.yaml`
 - Modify: `deploy/base/kustomization.yaml`
 
 **Interfaces:**
-- Produces: Service `ingress-authenticator.rootenv-infra.svc.cluster.local:8080` reachable by Traefik in `kube-system`
+- Produces: Service `relay-authenticator.rootenv-infra.svc.cluster.local:8080` reachable by Traefik in `kube-system`
 
 - [ ] **Step 1: Create the manifest**
 
-Create `deploy/base/61-ingress-authenticator.yaml`:
+Create `deploy/base/61-relay-authenticator.yaml`:
 
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ingress-authenticator
+  name: relay-authenticator
   namespace: rootenv-infra
   labels:
-    app: ingress-authenticator
+    app: relay-authenticator
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: ingress-authenticator
+      app: relay-authenticator
   template:
     metadata:
       labels:
-        app: ingress-authenticator
+        app: relay-authenticator
     spec:
       securityContext:
         runAsNonRoot: true
@@ -419,8 +419,8 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-      - name: ingress-authenticator
-        image: ingress-authenticator
+      - name: relay-authenticator
+        image: relay-authenticator
         imagePullPolicy: IfNotPresent
         env:
         - name: INGAUTH_POCKETBASE_URL
@@ -453,11 +453,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: ingress-authenticator
+  name: relay-authenticator
   namespace: rootenv-infra
 spec:
   selector:
-    app: ingress-authenticator
+    app: relay-authenticator
   ports:
   - port: 8080
     targetPort: 8080
@@ -465,12 +465,12 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: ingress-authenticator
+  name: relay-authenticator
   namespace: rootenv-infra
 spec:
   podSelector:
     matchLabels:
-      app: ingress-authenticator
+      app: relay-authenticator
   policyTypes:
   - Ingress
   - Egress
@@ -497,7 +497,7 @@ spec:
 
 - [ ] **Step 2: Add to kustomization**
 
-In `deploy/base/kustomization.yaml`, add `61-ingress-authenticator.yaml` after `60-relay-middleware.yaml` in the `resources` list:
+In `deploy/base/kustomization.yaml`, add `61-relay-authenticator.yaml` after `60-relay-middleware.yaml` in the `resources` list:
 
 ```yaml
 resources:
@@ -515,7 +515,7 @@ resources:
   - 51-attempt-controller-serviceaccount.yaml
   - 53-attempt-controller.yaml
   - 60-relay-middleware.yaml
-  - 61-ingress-authenticator.yaml
+  - 61-relay-authenticator.yaml
 ```
 
 - [ ] **Step 3: Verify kustomize renders cleanly**
@@ -529,8 +529,8 @@ Expected: YAML output with no errors
 - [ ] **Step 4: Commit**
 
 ```bash
-git add deploy/base/61-ingress-authenticator.yaml deploy/base/kustomization.yaml
-git commit -m "feat(deploy): add ingress-authenticator deployment, service, and network policy"
+git add deploy/base/61-relay-authenticator.yaml deploy/base/kustomization.yaml
+git commit -m "feat(deploy): add relay-authenticator deployment, service, and network policy"
 ```
 
 ---
@@ -556,14 +556,14 @@ metadata:
   namespace: kube-system
 spec:
   forwardAuth:
-    address: http://ingress-authenticator.rootenv-infra.svc.cluster.local:8080/auth
+    address: http://relay-authenticator.rootenv-infra.svc.cluster.local:8080/auth
     authResponseHeaders:
       - X-User-Id
 ```
 
 - [ ] **Step 2: Add to kustomization**
 
-In `deploy/base/kustomization.yaml`, add `62-relay-auth-middleware.yaml` after `61-ingress-authenticator.yaml`:
+In `deploy/base/kustomization.yaml`, add `62-relay-auth-middleware.yaml` after `61-relay-authenticator.yaml`:
 
 ```yaml
 resources:
@@ -581,7 +581,7 @@ resources:
   - 51-attempt-controller-serviceaccount.yaml
   - 53-attempt-controller.yaml
   - 60-relay-middleware.yaml
-  - 61-ingress-authenticator.yaml
+  - 61-relay-authenticator.yaml
   - 62-relay-auth-middleware.yaml
 ```
 
@@ -756,23 +756,23 @@ git commit -m "feat(frontend): set pb_auth cookie before WebSocket upgrade for T
 
 ---
 
-### Task 7: Add ingress-authenticator image to skaffold and dev overlay
+### Task 7: Add relay-authenticator image to skaffold and dev overlay
 
 **Files:**
 - Modify: `skaffold.yaml`
 - Modify: `deploy/overlays/dev/kustomization.yaml`
 
 **Interfaces:**
-- Skaffold builds and pushes `ingress-authenticator` image from `services/ingress-authenticator/`
+- Skaffold builds and pushes `relay-authenticator` image from `services/relay-authenticator/`
 - Dev overlay resolves the image tag
 
-- [ ] **Step 1: Add ingress-authenticator to skaffold.yaml**
+- [ ] **Step 1: Add relay-authenticator to skaffold.yaml**
 
 In `skaffold.yaml`, add after the `relay-exec` artifact in the `build.artifacts` list:
 
 ```yaml
-    - image: ingress-authenticator
-      context: services/ingress-authenticator
+    - image: relay-authenticator
+      context: services/relay-authenticator
       docker:
         dockerfile: Dockerfile
 ```
@@ -782,20 +782,20 @@ In `skaffold.yaml`, add after the `relay-exec` artifact in the `build.artifacts`
 In `deploy/overlays/dev/kustomization.yaml`, add to the `images` list:
 
 ```yaml
-- name: ingress-authenticator
+- name: relay-authenticator
 ```
 
 - [ ] **Step 4: Verify kustomize renders cleanly**
 
 ```bash
-kubectl kustomize deploy/overlays/dev 2>&1 | grep -A3 "ingress-authenticator"
+kubectl kustomize deploy/overlays/dev 2>&1 | grep -A3 "relay-authenticator"
 ```
 
-Expected: the Deployment appears with `image: ingress-authenticator`
+Expected: the Deployment appears with `image: relay-authenticator`
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add skaffold.yaml deploy/overlays/dev/kustomization.yaml
-git commit -m "feat(deploy): add ingress-authenticator to skaffold and dev overlay"
+git commit -m "feat(deploy): add relay-authenticator to skaffold and dev overlay"
 ```
