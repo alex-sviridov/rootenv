@@ -1,4 +1,4 @@
-name: Relay CI
+name: Relay-exec CI
 
 on:
   push:
@@ -103,8 +103,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - service: relay-ssh
-            dockerfile: services/relay/ssh/Dockerfile
+          - service: relay-exec
+            dockerfile: services/relay/cmd/relay-exec/Dockerfile
     steps:
       - uses: actions/checkout@v6
       - uses: docker/login-action@v3

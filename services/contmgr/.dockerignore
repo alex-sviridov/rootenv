@@ -1,5 +1,0 @@
-*_test.go
-Makefile
-Dockerfile
-.dockerignore
-.claude/

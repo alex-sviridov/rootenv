@@ -43,8 +43,8 @@ build:
       context: services/relay
       docker:
         dockerfile: cmd/relay-exec/Dockerfile
-    - image: ingress-authenticator
-      context: services/ingress-authenticator
+    - image: relay-authenticator
+      context: services/relay-authenticator
       docker:
         dockerfile: Dockerfile
 deploy:
