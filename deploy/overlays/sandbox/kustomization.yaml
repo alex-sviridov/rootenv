@@ -25,11 +25,38 @@ patches:
       data:
         VITE_API_URL: "https://rootenv.sviridov.lu/api/"
         __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: "rootenv.sviridov.lu"
+  - target:
+      kind: Deployment
+      name: labenv-operator-controller-manager
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+      - op: add
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: RELAY_IMAGE
+            value: "ghcr.io/alex-sviridov/rootenv/relay-exec:latest"
+          - name: RELAY_INGRESS_CLASS
+            value: "traefik"
+          - name: RELAY_INGRESS_ANNOTATIONS
+            value: "traefik.ingress.kubernetes.io/router.entrypoints=web"
+          - name: RELAY_INGRESS_BASE_PATH
+            value: "/relay/exec"
 
 images:
   - name: rootenv-frontend
     newName: ghcr.io/alex-sviridov/rootenv/frontend
-    newTag: sha-28a70ec 
+    newTag: latest
   - name: rootenv-backend
     newName: ghcr.io/alex-sviridov/rootenv/backend
-    newTag: sha-2032b77 
+    newTag: latest
+  - name: attempt-controller
+    newName: ghcr.io/alex-sviridov/rootenv/attempt-controller
+    newTag: latest
+  - name: relay-authenticator
+    newName: ghcr.io/alex-sviridov/rootenv/relay-authenticator
+    newTag: latest
+  - name: labenv-operator
+    newName: ghcr.io/alex-sviridov/rootenv/labenv-operator
+    newTag: latest
