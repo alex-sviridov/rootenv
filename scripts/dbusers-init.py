@@ -26,8 +26,12 @@ NAMESPACE = "rootenv-infra"
 DEFAULT_BACKEND_URL = "http://localhost:8080/api/"
 
 SVC_ACCOUNTS = [
-    {"secret": "contmgr-secrets", "email_key": "CONTMGR_BACKEND_USERNAME", "password_key": "CONTMGR_BACKEND_PASSWORD", "role": "contmgr"},
-    {"secret": "relay-secrets",   "email_key": "RELAY_BACKEND_USERNAME",   "password_key": "RELAY_BACKEND_PASSWORD", "role": "relay"},
+    {
+        "secret": "attempt-controller-secrets", 
+        "email_key": "ATTEMPT_CONTROLLER_BACKEND_USERNAME", 
+        "password_key": "ATTEMPT_CONTROLLER_BACKEND_PASSWORD", 
+        "role": "attempt-controller"
+    },
 ]
 
 

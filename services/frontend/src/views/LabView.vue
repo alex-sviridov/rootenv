@@ -9,8 +9,9 @@ import LabContent from '@/components/lab/LabContent.vue'
 import LabConsole from '@/components/lab/LabConsole.vue'
 
 const {
-  lab, selectedTask, currentTask, error, secrets,
+  lab, selectedTask, currentTask, error,
   tabs, activeTabId, limitError, openTab, selectTab, closeTab, moveTab,
+  attemptId,
 } = useLabSession()
 
 const userStore = useUserStore()
@@ -177,7 +178,7 @@ onUnmounted(() => {
         :tabs="tabs"
         :active-tab-id="activeTabId"
         :limit-error="limitError"
-        :secrets="secrets"
+        :attempt-id="attemptId"
         @select-tab="selectTab"
         @close-tab="closeTab"
         @move-tab="moveTab($event.from, $event.to)"

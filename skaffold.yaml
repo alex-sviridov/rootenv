@@ -5,6 +5,7 @@ metadata:
 build:
   local:
     push: false
+    useDockerCLI: true
   artifacts:
     - image: rootenv-backend
       context: services/backend
@@ -18,22 +19,6 @@ build:
           after:
             - container:
                 command: ["sh", "-c", "kill -HUP 1"]
-    - image: rootenv-relay-ssh
-      context: services/relay
-      docker:
-        dockerfile: ./ssh/Dockerfile
-      sync:
-        manual:
-          - src: '.'
-            dest: '/app'
-    - image: rootenv-contmgr
-      context: services/contmgr
-      docker:
-        dockerfile: Dockerfile
-      sync:
-        manual:
-          - src: '.'
-            dest: '/app'
     - image: rootenv-frontend
       context: services/frontend
       docker:
@@ -46,6 +31,22 @@ build:
             dest: '/app'
           - src: 'index.html'
             dest: '/app'
+    - image: labenv-operator
+      context: services/labenv-operator
+      docker:
+        dockerfile: Dockerfile
+    - image: attempt-controller
+      context: services/attempt-controller
+      docker:
+        dockerfile: Dockerfile
+    - image: relay-exec
+      context: services/relay
+      docker:
+        dockerfile: cmd/relay-exec/Dockerfile
+    - image: relay-authenticator
+      context: services/relay-authenticator
+      docker:
+        dockerfile: Dockerfile
 deploy:
   kubectl: {}
   kubeContext: k3d-rootenv

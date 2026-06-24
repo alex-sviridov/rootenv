@@ -1,0 +1,15 @@
+# Ignore everything by default
+**
+
+# Re-include source directories
+!cmd/
+!api/
+!internal/
+
+# Within them, keep only Go files (drop tests)
+!**/*.go
+**/*_test.go
+
+# Module files
+!go.mod
+!go.sum

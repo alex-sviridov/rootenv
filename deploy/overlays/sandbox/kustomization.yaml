@@ -6,16 +6,14 @@ resources:
 
 patches:
   - target:
-      kind: ConfigMap
-      name: contmgr-config
+      kind: TLSOption
+      name: relay-exec-no-h2
     patch: |-
-      apiVersion: v1
-      kind: ConfigMap
+      apiVersion: traefik.io/v1alpha1
+      kind: TLSOption
       metadata:
-        name: contmgr-config
-      data:
-        CONTMGR_IMAGE_REGISTRY: "ghcr.io/alex-sviridov/rootenv/lab"
-
+        name: relay-exec-no-h2
+        namespace: traefik-system
   - target:
       kind: ConfigMap
       name: frontend-config
@@ -26,6 +24,7 @@ patches:
         name: frontend-config
       data:
         VITE_API_URL: "https://rootenv.sviridov.lu/api/"
+        __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: "rootenv.sviridov.lu"
 
 images:
   - name: rootenv-frontend
@@ -34,9 +33,3 @@ images:
   - name: rootenv-backend
     newName: ghcr.io/alex-sviridov/rootenv/backend
     newTag: sha-2032b77 
-  - name: rootenv-relay-ssh
-    newName: ghcr.io/alex-sviridov/rootenv/relay-ssh
-    newTag: sha-1e9caef
-  - name: rootenv-contmgr 
-    newName: ghcr.io/alex-sviridov/rootenv/contmgr 
-    newTag: sha-1e9caef

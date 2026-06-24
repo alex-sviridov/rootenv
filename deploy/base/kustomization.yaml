@@ -3,22 +3,18 @@ kind: Kustomization
 
 resources:
   - 00-namespace-infra.yaml
-  - 05-contmgr-secrets.yaml
   - 05-frontend-config.yaml
-  - 05-contmgr-config.yaml
-  - 05-relay-config.yaml
-  - 05-relay-middleware.yaml
-  - 05-relay-secrets.yaml
   - 10-backend-pvc.yaml
   - 20-backend-deploy.yaml
-  - 21-relay-ssh-deploy.yaml
   - 22-frontend-deploy.yaml
-  - 23-contmgr-deploy.yaml
-  - 23-contmgra-rbac-sa.yaml
-  - 24-contmgr-rbac.yaml
   - 30-backend-svc.yaml
-  - 31-relay-ssh-svc.yaml
   - 32-frontend-svc.yaml
   - 40-backend-ingress.yaml
-  - 41-relay-ingress.yaml
   - 49-frontend-ingress.yaml
+  - ../../services/labenv-operator/config/default
+  - 50-attempt-controller-secrets.yaml
+  - 51-attempt-controller-serviceaccount.yaml
+  - 53-attempt-controller.yaml
+  - 60-relay-middleware.yaml
+  - 61-relay-authenticator.yaml
+  - 62-relay-auth-middleware.yaml

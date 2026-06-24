@@ -27,9 +27,11 @@
 relay/
   pkg/
     pbclient/     # PocketBase REST client
-    relaybase/    # Shared: auth middleware, limiter, healthz, BackoffReconnector
+    relaybase/    # Shared: Handler (exec auth), Authenticator (SSH auth), ConnLimiter, HandleHealthz, BackoffReconnector
+  exec/           # package exec — kubectl exec backend (Backend struct + KubeExecer)
   ssh/            # package ssh — SSH relay handler, proxy, key decrypt, metrics
   cmd/
+    relay-exec/   # Binary entry point for the exec relay (sidecar per lab environment)
     relay-ssh/    # Binary entry point for the SSH relay
 ```
 
@@ -37,6 +39,13 @@ relay/
 - External (via Traefik): `/relay/ssh/<serverid>/`
 - Internal (what relay-ssh sees after Traefik strips `/relay/ssh`): `/<serverid>/`
 - Healthz: `/relay/ssh/healthz` → `{"status":"ok","backend":"connected","active_connections":N}`
+
+## Connection URL (relay-exec)
+- External (via Traefik): `/relay/exec/<attemptID>/<assetName>/`
+- Auth: injected headers `X-Attempt-Id` and `X-User-Id` (set by the operator sidecar injector, not the client)
+- First WS message: discarded (placeholder for future token); auth happens via headers only
+- Healthz: `/healthz` → `{"status":"ok"}`
+- One relay-exec instance runs per lab environment (sidecar); `RELAY_MY_ATTEMPT_ID` and `RELAY_MY_NAMESPACE` are required env vars
 
 ## Auth message format (relay-ssh)
 First WebSocket message: `<pb_token>\n<secret>`

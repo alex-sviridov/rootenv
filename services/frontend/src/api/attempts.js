@@ -23,8 +23,3 @@ export const decommissionAttempt = (attemptId) =>
 
 export const subscribeToAttempt = (attemptId, callback) =>
   pb.collection('attempts').subscribe(attemptId, callback)
-
-export const fetchAssetSecret = (assetId) =>
-  pb.collection('keys_userview')
-    .getFirstListItem(`asset = "${assetId}"`, { requestKey: `asset-secret-${assetId}` })
-    .then(r => r.secret)

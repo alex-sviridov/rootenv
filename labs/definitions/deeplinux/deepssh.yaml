@@ -989,11 +989,10 @@ environment:
       image: ubuntu-sshd
       platform: container
       cpu: 200m
-      memory: 256MB
-      disk: 2GB
-      ssh_user: lab
-      relay_protocols:
-        - ssh
+      memory: 256Mi
+      disk: 2Gi
+      protocols:
+        - exec
       setup: |
         # Заранее заготовленная пара ключей для пользователя lab
         mkdir -p /home/lab/.ssh
@@ -1018,11 +1017,10 @@ environment:
       image: ubuntu-sshd
       platform: container
       cpu: 100m
-      memory: 128MB
-      disk: 1GB
-      ssh_user: lab
-      relay_protocols:
-        - ssh
+      memory: 128Mi
+      disk: 1Gi
+      protocols:
+        - exec
       setup: |
         # Каталог для CA-ключей, владелец lab — обучаемый сам нагенерит ключи
         mkdir -p /etc/ssh-ca
@@ -1031,11 +1029,8 @@ environment:
       image: ubuntu-sshd
       platform: container
       cpu: 200m
-      memory: 128MB
-      disk: 1GB
-      ssh_user: lab
-      relay_protocols:
-        - ssh
+      memory: 128Mi
+      disk: 1Gi
       setup: |
         # Юзеры лабы
         useradd -m -s /bin/bash engineer
@@ -1061,11 +1056,8 @@ environment:
       image: ubuntu-sshd
       platform: container
       cpu: 200m
-      memory: 128MB
-      disk: 1GB
-      ssh_user: lab
-      relay_protocols:
-        - ssh
+      memory: 128Mi
+      disk: 1Gi
       setup: |
         useradd -m -s /bin/bash appuser
         passwd -l appuser

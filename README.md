@@ -10,18 +10,19 @@ Rootenv provisions ephemeral lab environments — each lab runs in an isolated K
 
 - Click a lab → get a fully provisioned environment in seconds
 - Each lab is fully isolated: dedicated namespace, network policies, resource quotas
-- Access via browser-based SSH terminal — no local setup required
+- Access via browser-based terminal — no local setup required
 - Labs are defined declaratively in YAML and loaded into the platform
 - Environments self-destruct after configurable TTL
 
 ## Architecture
 
 
-Rootenv consists of four services:
+Rootenv consists of five services:
 
 - **backend** — REST API and lab metadata store (PocketBase)
-- **contmgr** — Kubernetes controller responsible for lab lifecycle: provisioning namespaces, applying isolation policies, enforcing TTL
-- **relay** — SSH-to-WebSocket bridge enabling browser-based terminal access to lab containers
+- **attempt-controller** — creates `LabEnv` custom objects in Kubernetes when a lab is provisioned, then syncs their status back to the database
+- **labenv-operator** — watches `LabEnv` objects and reconciles the underlying Kubernetes resources (namespace, pods, network policies, etc.)
+- **relay-exec** — WebSocket-to-kubectl-exec bridge enabling browser-based terminal access to lab containers
 - **frontend** — web UI for browsing labs and launching environments
 
 See [docs/architecture.md](docs/architecture.md) for detailed design and trade-offs.
@@ -30,24 +31,28 @@ See [docs/architecture.md](docs/architecture.md) for detailed design and trade-o
 graph LR
     User[User Browser] -->|HTTPS| Frontend
     Frontend -->|REST| Backend
-    Backend -->|provision request| Contmgr[Container Manager]
-    Contmgr -->|create namespace, apply policies| K8s[Kubernetes API]
+    Backend -->|provision request| AC[attempt-controller]
+    AC -->|create LabEnv CR| K8s[Kubernetes API]
+    K8s -->|LabEnv status| AC
+    AC -->|sync state| Backend
+    K8s --> LO[labenv-operator]
+    LO -->|create namespace, pods, policies| K8s
     K8s --> Lab[Lab Pod]
-    User -->|WebSocket SSH| Relay
-    Relay -->|SSH| Lab
+    User -->|WebSocket| Relay
+    Relay -->|kubectl exec| Lab
 ```
 
 ## Tech stack
 
 - **Kubernetes** — orchestration and isolation primitives (namespaces, NetworkPolicies, RBAC, ResourceQuotas)
-- **Go** — `contmgr` and `relay` services
+- **Go** — `attempt-controller`, `labenv-operator`, and `relay` services
 - **PocketBase** — `backend` (embedded DB + REST API)
 - **Vue.js** — `frontend` (JS)
 - **Skaffold + k3d** — local development workflow
 
 ## Quickstart
 
-### Remove
+### Remote
 
 Prerequisites: `opentofy`, `kubectl`.
 
@@ -59,8 +64,8 @@ vi scripts/.env
 cp infra/terraform/environments/sandbox/terraform.tfvars.example infra/terraform/environments/sandbox/terraform.tfvars
 vi infra/terraform/environments/sandbox/terraform.tfvars
 
-kubectl create secret generic contmgr-secrets -n rootenv-infra --from-literal CONTMGR_BACKEND_USERNAME=contmgr@example.local --from-literal CONTMGR_BACKEND_PASSWORD=password123 --dry-run=client -o yaml > deploy/base/05-contmgr-secrets.yaml
-kubectl create secret generic relay-secrets -n rootenv-infra --from-literal RELAY_BACKEND_USERNAME=relay@example.local --from-literal RELAY_BACKEND_PASSWORD=password123 --dry-run=client -o yaml > deploy/base/05-relay-secrets.yaml
+PWD=password123
+kubectl create secret generic attempt-controller-secrets -n rootenv-infra --from-literal ATTEMPT_CONTROLLER_BACKEND_USERNAME=attempt-controller@example.local --from-literal ATTEMPT_CONTROLLER_BACKEND_PASSWORD=$PWD --dry-run=client -o yaml > deploy/base/50-attempt-controller-secrets.yaml
 
 # Bootstrap k3s cluster
 
@@ -92,14 +97,20 @@ make labs-sync
 
 ### Locally
 
-Prerequisites: Docker, [k3d](https://k3d.io), [Skaffold](https://skaffold.dev), `kubectl`, `make`.
+Prerequisites: 
+ - Docker
+ - [k3d](https://k3d.io)
+ - [Skaffold](https://skaffold.dev)
+ - `kubectl`
+ - `make`
 
 ```bash
 # Make secrets
 cp scripts/.env.example scripts/.env
 vi scripts/.env 
-kubectl create secret generic contmgr-secrets -n rootenv-infra --from-literal CONTMGR_BACKEND_USERNAME=contmgr@example.local --from-literal CONTMGR_BACKEND_PASSWORD=password123 --dry-run=client -o yaml > deploy/base/05-contmgr-secrets.yaml
-kubectl create secret generic relay-secrets -n rootenv-infra --from-literal RELAY_BACKEND_USERNAME=relay@example.local --from-literal RELAY_BACKEND_PASSWORD=password123 --dry-run=client -o yaml > deploy/base/05-relay-secrets.yaml
+
+PWD=password123
+kubectl create secret generic attempt-controller-secrets -n rootenv-infra --from-literal ATTEMPT_CONTROLLER_BACKEND_USERNAME=attempt-controller@example.local --from-literal ATTEMPT_CONTROLLER_BACKEND_PASSWORD=$PWD --dry-run=client -o yaml > deploy/base/50-attempt-controller-secrets.yaml
 
 # Create cluster, apply manifests
 make dev-cluster
@@ -109,10 +120,6 @@ make dev
 
 # Seed the database: create superuser and service accounts
 make dev-dbusers-init
-
-# Build lab images
-
-make labs-build
 
 # Load lab definitions into the backend
 make labs-sync
@@ -137,10 +144,10 @@ make dev   # starts the cluster then runs skaffold dev
 
 ```
 .
-├── services/        # platform services (backend, contmgr, frontend, relay)
+├── services/        # platform services (backend, attempt-controller, labenv-operator, frontend, relay)
 ├── deploy/          # Kubernetes manifests and deployment configs
 ├── labs/            # lab definitions (YAML) and lab base images
-│   ├── definitions/ # YAML descriptors loaded into the backend
+│   ├── definitions/ # YAML descriptors to be loaded into the backend
 │   └── images/      # Dockerfiles for lab base images
 ├── scripts/         # operational scripts
 ├── docs/            # architecture and operational documentation
@@ -150,14 +157,7 @@ make dev   # starts the cluster then runs skaffold dev
 
 ## Status
 
-This is an active personal project exploring patterns in self-service infrastructure, multi-tenant isolation on Kubernetes, and ephemeral environment management. Not production-hardened — see [Limitations](#limitations).
-
-## Limitations
-
-- Single-cluster deployment; no HA control plane
-- Namespace-level isolation only (no VM-grade boundaries — labs must be considered semi-trusted)
-- No persistent state for labs across restarts
-- Images lost on full cluster recreate (`make cluster`) — re-push with `skaffold build && make push-latest`
+This is an active personal project exploring patterns in self-service infrastructure, multi-tenant isolation on Kubernetes, and ephemeral environment management. Not production-hardened.
 
 ## Roadmap
 

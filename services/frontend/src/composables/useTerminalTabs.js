@@ -23,9 +23,10 @@ export function useTerminalTabs() {
       return
     }
     limitError.value = null
-    const tabId = `${server.id}-${protocol}-${++_seq}`
-    tabs.value.push({ id: tabId, serverId: server.id, type: protocol, label: server.name })
-    _relabelGroup(server.id, protocol, server.name)
+    const serverId = server.name
+    const tabId = `${serverId}-${protocol}-${++_seq}`
+    tabs.value.push({ id: tabId, serverId, type: protocol, label: server.name })
+    _relabelGroup(serverId, protocol, server.name)
     activeTabId.value = tabId
   }
 
