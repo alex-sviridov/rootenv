@@ -21,6 +21,12 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - pods/exec
+  verbs:
+  - create
+- apiGroups:
+  - ""
+  resources:
   - serviceaccounts
   verbs:
   - create
@@ -97,7 +103,9 @@ rules:
   - rolebindings
   - roles
   verbs:
+  - bind
   - create
+  - escalate
   - get
   - list
   - watch
