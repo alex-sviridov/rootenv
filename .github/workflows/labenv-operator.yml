@@ -56,7 +56,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.6.0
+          version: v2.12
           working-directory: services/labenv-operator
 
   security-scan:
@@ -80,7 +80,7 @@ jobs:
           key: trivy-db-${{ github.run_id }}
           restore-keys: trivy-db-
       - name: Run Trivy Security Scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: ./services/labenv-operator

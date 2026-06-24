@@ -157,7 +157,6 @@ var _ = Describe("ensureRelay", func() {
 			corev1.EnvVar{Name: "RELAY_MY_NAMESPACE", Value: nsName},
 			corev1.EnvVar{Name: "RELAY_MY_ATTEMPT_ID", Value: envName},
 			corev1.EnvVar{Name: "RELAY_MY_OWNER_ID", Value: "usr-test"},
-			corev1.EnvVar{Name: "RELAY_SKIP_AUTH", Value: "true"},
 		))
 
 		By("Service relay exists")
