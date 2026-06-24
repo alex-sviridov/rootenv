@@ -78,7 +78,7 @@ func TestHandler_success(t *testing.T) {
 	defer srv.Close()
 
 	conn := dialWS(t, srv)
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 
 	if err := conn.Write(context.Background(), websocket.MessageText, []byte("sometoken")); err != nil {
 		t.Fatalf("write failed: %v", err)
@@ -108,7 +108,7 @@ func TestHandler_wrong_attempt_id(t *testing.T) {
 	defer srv.Close()
 
 	conn := dialWS(t, srv)
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 	_ = conn.Write(context.Background(), websocket.MessageText, []byte("tok"))
 	time.Sleep(100 * time.Millisecond)
 	if fb.wasCalled() {
@@ -125,7 +125,7 @@ func TestHandler_missing_user_id(t *testing.T) {
 	defer srv.Close()
 
 	conn := dialWS(t, srv)
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 	_ = conn.Write(context.Background(), websocket.MessageText, []byte("tok"))
 	time.Sleep(100 * time.Millisecond)
 	if fb.wasCalled() {
@@ -143,7 +143,7 @@ func TestHandler_auth_timeout(t *testing.T) {
 	defer srv.Close()
 
 	conn := dialWS(t, srv)
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 	// send nothing — should time out
 	time.Sleep(200 * time.Millisecond)
 	if fb.wasCalled() {
@@ -163,7 +163,7 @@ func TestHandler_skip_auth_calls_backend(t *testing.T) {
 	defer srv.Close()
 
 	conn := dialWS(t, srv)
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 
 	if err := conn.Write(context.Background(), websocket.MessageText, []byte("tok")); err != nil {
 		t.Fatalf("write failed: %v", err)
@@ -195,7 +195,8 @@ func TestHandler_skip_auth_ignores_wrong_attempt_id(t *testing.T) {
 	defer srv.Close()
 
 	conn := dialWS(t, srv)
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
+	
 	_ = conn.Write(context.Background(), websocket.MessageText, []byte("tok"))
 	time.Sleep(100 * time.Millisecond)
 	if !fb.wasCalled() {

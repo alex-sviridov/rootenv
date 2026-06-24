@@ -78,8 +78,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - service: relay-ssh
-            dockerfile: services/relay/ssh/Dockerfile
+          - service: relay-exec
+            dockerfile: services/relay/exec/Dockerfile
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3

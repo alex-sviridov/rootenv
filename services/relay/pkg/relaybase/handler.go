@@ -99,7 +99,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer h.Limiter.Release(userID)
 
-	log = log.With("user_id", userID, "attempt_id", r.Header.Get("X-Attempt-Id"))
+	log = log.With("user_id", userID, "attempt_id", attemptID)
 	log.Info("ws connected", "active_total", h.Limiter.Total())
 
 	if h.WG != nil {

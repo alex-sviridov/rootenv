@@ -10,5 +10,5 @@ USER nonroot
 COPY --from=builder /attempt-controller /attempt-controller
 EXPOSE 8081
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD wget -qO /dev/null http://localhost:8081/healthz
+    CMD ["/attempt-controller", "--healthcheck"]
 ENTRYPOINT ["/attempt-controller"]

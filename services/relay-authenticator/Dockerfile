@@ -9,5 +9,5 @@ FROM gcr.io/distroless/static:nonroot
 USER nonroot
 COPY --from=builder /relay-authenticator /relay-authenticator
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD wget -qO /dev/null http://localhost:8080/healthz
+    CMD ["/relay-authenticator", "--healthcheck"]
 ENTRYPOINT ["/relay-authenticator"]

@@ -14,6 +14,19 @@ import (
 )
 
 func main() {
+	port := os.Getenv("INGAUTH_PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	if len(os.Args) == 2 && os.Args[1] == "--healthcheck" {
+		r, err := http.Get("http://localhost:" + port + "/healthz")
+		if err != nil || r.StatusCode != http.StatusOK {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
 	pbURL := os.Getenv("INGAUTH_POCKETBASE_URL")
@@ -22,11 +35,6 @@ func main() {
 		os.Exit(1)
 	}
 	tlsVerify := os.Getenv("INGAUTH_POCKETBASE_TLS_VERIFY") != "false"
-
-	port := os.Getenv("INGAUTH_PORT")
-	if port == "" {
-		port = "8080"
-	}
 
 	pb := pbclient.New(pbURL, tlsVerify)
 	handler := auth.NewHandler(pb)

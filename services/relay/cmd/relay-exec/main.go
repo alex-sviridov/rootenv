@@ -76,6 +76,14 @@ func loadConfig() (config, bool) {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--healthcheck" {
+		r, err := http.Get("http://localhost:8080/healthz")
+		if err != nil || r.StatusCode != http.StatusOK {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	cfg, ok := loadConfig()
 	if !ok {
 		os.Exit(1)
