@@ -1,7 +1,7 @@
 import { pb } from '@/lib/pb'
 
 export const fetchLastAttempt = (labId) =>
-  pb.collection('attempts').getFirstListItem(`lab = "${labId}"`, { sort: '-created', requestKey: `last-attempt-${labId}` })
+  pb.collection('attempts').getFirstListItem(`lab = "${labId}"`, { sort: '-updated', requestKey: `last-attempt-${labId}` })
 
 export const fetchAttempts = (labId, page, perPage) =>
   pb.collection('attempts').getList(page, perPage, {

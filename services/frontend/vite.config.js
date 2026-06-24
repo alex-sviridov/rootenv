@@ -1,4 +1,5 @@
 import { fileURLToPath, URL } from 'node:url'
+import process from 'node:process'
 
 import { defineConfig } from 'vite'
 import tailwindcss from '@tailwindcss/vite'

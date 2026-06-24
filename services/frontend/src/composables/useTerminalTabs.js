@@ -23,8 +23,7 @@ export function useTerminalTabs() {
       return
     }
     limitError.value = null
-    // exec assets have no id field; use name as the stable identifier
-    const serverId = protocol === 'exec' ? server.name : server.id
+    const serverId = server.name
     const tabId = `${serverId}-${protocol}-${++_seq}`
     tabs.value.push({ id: tabId, serverId, type: protocol, label: server.name })
     _relabelGroup(serverId, protocol, server.name)
