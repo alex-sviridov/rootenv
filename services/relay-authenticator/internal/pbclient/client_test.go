@@ -18,7 +18,7 @@ func TestValidateToken_success(t *testing.T) {
 			t.Errorf("unexpected auth header: %s", r.Header.Get("Authorization"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"record": map[string]any{"id": "usr_abc"}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"record": map[string]any{"id": "usr_abc"}})
 	}))
 	defer srv.Close()
 
@@ -75,7 +75,7 @@ func TestValidateToken_empty_user_id(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		// record.id is missing/empty
-		json.NewEncoder(w).Encode(map[string]any{"record": map[string]any{"id": ""}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"record": map[string]any{"id": ""}})
 	}))
 	defer srv.Close()
 
@@ -89,7 +89,7 @@ func TestValidateToken_empty_user_id(t *testing.T) {
 func TestValidateToken_malformed_json(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("not json"))
+		_, _ = w.Write([]byte("not json"))
 	}))
 	defer srv.Close()
 
@@ -109,7 +109,7 @@ func TestGetAttempt_success(t *testing.T) {
 			t.Errorf("unexpected auth header: %s", r.Header.Get("Authorization"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"id": "atm_123", "user": "usr_abc"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "atm_123", "user": "usr_abc"})
 	}))
 	defer srv.Close()
 
@@ -131,12 +131,12 @@ func TestGetAttempt_path_escaped(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotRawPath = r.URL.RawPath
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"user": "usr_abc"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"user": "usr_abc"})
 	}))
 	defer srv.Close()
 
 	c := pbclient.New(srv.URL, true)
-	c.GetAttempt("tok", "atm/evil")
+	_, _ = c.GetAttempt("tok", "atm/evil")
 	// url.PathEscape("atm/evil") → "atm%2Fevil"; the server must see the encoded form
 	want := "/api/collections/attempts/records/atm%2Fevil"
 	if gotRawPath != want {
@@ -185,7 +185,7 @@ func TestGetAttempt_unexpected_status(t *testing.T) {
 
 func TestGetAttempt_malformed_json(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("not json"))
+		_, _ = w.Write([]byte("not json"))
 	}))
 	defer srv.Close()
 

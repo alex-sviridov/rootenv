@@ -6,5 +6,8 @@ COPY . .
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /relay-authenticator ./cmd/main.go
 
 FROM gcr.io/distroless/static:nonroot
+USER nonroot
 COPY --from=builder /relay-authenticator /relay-authenticator
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD wget -qO /dev/null http://localhost:8080/healthz
 ENTRYPOINT ["/relay-authenticator"]
