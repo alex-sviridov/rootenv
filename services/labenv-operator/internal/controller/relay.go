@@ -30,10 +30,11 @@ import (
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create
 
 type relayConfig struct {
-	image              string
-	ingressClass       string
-	ingressBasePath    string
-	ingressAnnotations map[string]string
+	image                     string
+	ingressClass              string
+	ingressBasePath           string
+	ingressAnnotations        map[string]string
+	ingressControllerNamespace string
 }
 
 func loadRelayConfig() (relayConfig, error) {
@@ -47,9 +48,14 @@ func loadRelayConfig() (relayConfig, error) {
 		basePath = "/relay/exec"
 	}
 
+	ingressControllerNS := os.Getenv("RELAY_INGRESS_CONTROLLER_NAMESPACE")
+	if ingressControllerNS == "" {
+		ingressControllerNS = "kube-system"
+	}
+
 	// start with the hardcoded auth middleware — always required
 	annotations := map[string]string{
-		"traefik.ingress.kubernetes.io/router.middlewares": "kube-system-relay-auth-middleware@kubernetescrd",
+		"traefik.ingress.kubernetes.io/router.middlewares": ingressControllerNS + "-relay-auth-middleware@kubernetescrd",
 	}
 	if raw := os.Getenv("RELAY_INGRESS_ANNOTATIONS"); raw != "" {
 		for token := range strings.SplitSeq(raw, ",") {
@@ -62,10 +68,11 @@ func loadRelayConfig() (relayConfig, error) {
 	}
 
 	return relayConfig{
-		image:              image,
-		ingressClass:       os.Getenv("RELAY_INGRESS_CLASS"),
-		ingressBasePath:    basePath,
-		ingressAnnotations: annotations,
+		image:                     image,
+		ingressClass:              os.Getenv("RELAY_INGRESS_CLASS"),
+		ingressBasePath:           basePath,
+		ingressAnnotations:        annotations,
+		ingressControllerNamespace: ingressControllerNS,
 	}, nil
 }
 
@@ -93,7 +100,7 @@ func (r *LabEnvironmentReconciler) ensureRelay(ctx context.Context, env *labv1al
 	if err := r.ensureRelayIngress(ctx, env, nsName, cfg); err != nil {
 		return err
 	}
-	if err := r.ensureRelayNetworkPolicy(ctx, nsName); err != nil {
+	if err := r.ensureRelayNetworkPolicy(ctx, nsName, cfg); err != nil {
 		return err
 	}
 	return nil
@@ -360,7 +367,7 @@ func (r *LabEnvironmentReconciler) apiServerEndpoint(ctx context.Context) (ip st
 	return
 }
 
-func (r *LabEnvironmentReconciler) ensureRelayNetworkPolicy(ctx context.Context, nsName string) error {
+func (r *LabEnvironmentReconciler) ensureRelayNetworkPolicy(ctx context.Context, nsName string, cfg relayConfig) error {
 	apiIP, apiPort, err := r.apiServerEndpoint(ctx)
 	if err != nil {
 		return fmt.Errorf("resolving apiserver endpoint: %w", err)
@@ -398,7 +405,7 @@ func (r *LabEnvironmentReconciler) ensureRelayNetworkPolicy(ctx context.Context,
 					From: []networkingv1.NetworkPolicyPeer{{
 						NamespaceSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{
-								"kubernetes.io/metadata.name": "kube-system",
+								"kubernetes.io/metadata.name": cfg.ingressControllerNamespace,
 							},
 						},
 					}},

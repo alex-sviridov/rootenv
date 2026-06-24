@@ -9,9 +9,11 @@ body:
       options:
         - frontend
         - backend
-        - contmgr
-        - relay-ssh
-        - infra\deploy
+        - labenv-operator
+        - attempt-controller
+        - relay-authenticator
+        - relay-exec
+        - infra or deploy
         - lab 
         - not-sure
     validations:

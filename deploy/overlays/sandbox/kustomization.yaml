@@ -15,6 +15,13 @@ patches:
         name: relay-exec-no-h2
         namespace: traefik-system
   - target:
+      kind: Middleware
+      name: relay-auth-middleware
+    patch: |-
+      - op: replace
+        path: /metadata/namespace
+        value: traefik-system
+  - target:
       kind: ConfigMap
       name: frontend-config
     patch: |-
@@ -25,6 +32,16 @@ patches:
       data:
         VITE_API_URL: "https://rootenv.sviridov.lu/api/"
         __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: "rootenv.sviridov.lu"
+  - target:
+      kind: NetworkPolicy
+      name: relay-authenticator
+    patch: |-
+      - op: add
+        path: /spec/ingress/0/from/-
+        value:
+          namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik-system
   - target:
       kind: Deployment
       name: labenv-operator-controller-manager
@@ -43,6 +60,8 @@ patches:
             value: "traefik.ingress.kubernetes.io/router.entrypoints=web"
           - name: RELAY_INGRESS_BASE_PATH
             value: "/relay/exec"
+          - name: RELAY_INGRESS_CONTROLLER_NAMESPACE
+            value: "traefik-system"
 
 images:
   - name: rootenv-frontend
