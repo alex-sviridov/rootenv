@@ -101,8 +101,6 @@ var _ = Describe("LabEnvironment Controller", func() {
 })
 
 var _ = Describe("ensureRelay", func() {
-	const envName = "relay-test-env"
-	const nsName = "rootenv-lab-" + envName
 	ctx := context.Background()
 
 	BeforeEach(func() {
@@ -116,18 +114,15 @@ var _ = Describe("ensureRelay", func() {
 		os.Setenv("RELAY_INGRESS_CLASS", "traefik")
 		os.Setenv("RELAY_INGRESS_BASE_PATH", "/relay/exec")
 		os.Setenv("RELAY_INGRESS_ANNOTATIONS", "traefik.ingress.kubernetes.io/router.entrypoints=websecure")
-
-		By("creating the lab namespace")
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
-		Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, ns))).To(Succeed())
-	})
-
-	AfterEach(func() {
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
-		_ = k8sClient.Delete(ctx, ns)
 	})
 
 	It("creates all relay resources", func() {
+		envName := "relay-resources-test"
+		nsName := "rootenv-lab-" + envName
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
+
 		env := &labv1alpha1.LabEnvironment{
 			ObjectMeta: metav1.ObjectMeta{Name: envName},
 			Spec: labv1alpha1.LabEnvironmentSpec{
@@ -188,6 +183,7 @@ var _ = Describe("ensureRelay", func() {
 
 	It("returns error when RELAY_IMAGE is missing", func() {
 		os.Unsetenv("RELAY_IMAGE")
+		envName := "relay-missing-image-test"
 		env := &labv1alpha1.LabEnvironment{
 			ObjectMeta: metav1.ObjectMeta{Name: envName},
 			Spec: labv1alpha1.LabEnvironmentSpec{
@@ -197,7 +193,7 @@ var _ = Describe("ensureRelay", func() {
 			},
 		}
 		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
-		Expect(r.ensureRelay(ctx, env, nsName)).To(MatchError(ContainSubstring("RELAY_IMAGE")))
+		Expect(r.ensureRelay(ctx, env, "rootenv-lab-"+envName)).To(MatchError(ContainSubstring("RELAY_IMAGE")))
 	})
 })
 
@@ -218,21 +214,14 @@ var _ = Describe("apiServerEndpoint", func() {
 })
 
 var _ = Describe("ensureRelayNetworkPolicy", func() {
-	const envName = "np-test-env"
-	const nsName = "rootenv-lab-" + envName
 	ctx := context.Background()
 
-	BeforeEach(func() {
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
-		Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, ns))).To(Succeed())
-	})
-
-	AfterEach(func() {
-		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}})
-		_ = k8sClient.Delete(ctx, &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Namespace: nsName, Name: "networkpolicy-relay-exec"}})
-	})
-
 	It("creates the network policy with correct shape", func() {
+		nsName := "rootenv-lab-np-shape-test"
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
+
 		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 
 		ip, port, err := r.apiServerEndpoint(ctx)
@@ -295,6 +284,11 @@ var _ = Describe("ensureRelayNetworkPolicy", func() {
 	})
 
 	It("is idempotent — second call updates without error", func() {
+		nsName := "rootenv-lab-np-idempotent-test"
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
+
 		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		Expect(r.ensureRelayNetworkPolicy(ctx, nsName)).To(Succeed())
 		Expect(r.ensureRelayNetworkPolicy(ctx, nsName)).To(Succeed())
@@ -302,19 +296,14 @@ var _ = Describe("ensureRelayNetworkPolicy", func() {
 })
 
 var _ = Describe("ensureNetworkPolicy (denyall)", func() {
-	const nsName = "rootenv-lab-denyall-test"
 	ctx := context.Background()
 
-	BeforeEach(func() {
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
-		Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, ns))).To(Succeed())
-	})
-
-	AfterEach(func() {
-		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}})
-	})
-
 	It("creates denyall policy with correct shape", func() {
+		nsName := "rootenv-lab-denyall-shape"
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
+
 		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		Expect(r.ensureNetworkPolicy(ctx, nsName)).To(Succeed())
 
@@ -377,6 +366,11 @@ var _ = Describe("ensureNetworkPolicy (denyall)", func() {
 	})
 
 	It("is idempotent", func() {
+		nsName := "rootenv-lab-denyall-idempotent"
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
+
 		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		Expect(r.ensureNetworkPolicy(ctx, nsName)).To(Succeed())
 		Expect(r.ensureNetworkPolicy(ctx, nsName)).To(Succeed())
