@@ -55,7 +55,10 @@ graph LR
 
 ### Remote
 
-Prerequisites: `opentofy`, `kubectl`.
+Prerequisites:
+- (https://opentofu.org/docs/intro/install/)[`opentofy`]
+- (https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)[`kubectl`]
+- (https://helm.sh/docs/intro/install/)[`helm`]
 
 ```bash
 # Make secrets

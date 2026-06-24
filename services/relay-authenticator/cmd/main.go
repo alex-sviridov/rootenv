@@ -29,9 +29,9 @@ func main() {
 
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
-	pbURL := os.Getenv("INGAUTH_POCKETBASE_URL")
+	pbURL := os.Getenv("RELAUTH_POCKETBASE_URL")
 	if pbURL == "" {
-		slog.Error("INGAUTH_POCKETBASE_URL is required")
+		slog.Error("RELAUTH_POCKETBASE_URL is required")
 		os.Exit(1)
 	}
 	tlsVerify := os.Getenv("INGAUTH_POCKETBASE_TLS_VERIFY") != "false"
