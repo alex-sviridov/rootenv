@@ -72,7 +72,7 @@ jobs:
         working-directory: services/labenv-operator
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck -scan library ./...
+          govulncheck -scan package ./...
       - name: Cache Trivy DB
         uses: actions/cache@v4
         with:

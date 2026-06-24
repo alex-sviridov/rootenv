@@ -181,7 +181,7 @@ var _ = Describe("ensureRelay", func() {
 	})
 
 	It("returns error when RELAY_IMAGE is missing", func() {
-		os.Unsetenv("RELAY_IMAGE")
+		Expect(os.Unsetenv("RELAY_IMAGE")).To(Succeed())
 		envName := "relay-missing-image-test"
 		env := &labv1alpha1.LabEnvironment{
 			ObjectMeta: metav1.ObjectMeta{Name: envName},
@@ -378,10 +378,10 @@ var _ = Describe("ensureNetworkPolicy (denyall)", func() {
 
 var _ = Describe("loadRelayConfig", func() {
 	AfterEach(func() {
-		os.Unsetenv("RELAY_IMAGE")
-		os.Unsetenv("RELAY_INGRESS_CLASS")
-		os.Unsetenv("RELAY_INGRESS_BASE_PATH")
-		os.Unsetenv("RELAY_INGRESS_ANNOTATIONS")
+		Expect(os.Unsetenv("RELAY_IMAGE")).To(Succeed())
+		Expect(os.Unsetenv("RELAY_INGRESS_CLASS")).To(Succeed())
+		Expect(os.Unsetenv("RELAY_INGRESS_BASE_PATH")).To(Succeed())
+		Expect(os.Unsetenv("RELAY_INGRESS_ANNOTATIONS")).To(Succeed())
 	})
 
 	It("returns error when RELAY_IMAGE is unset", func() {
@@ -390,15 +390,15 @@ var _ = Describe("loadRelayConfig", func() {
 	})
 
 	It("uses /relay/exec as default base path", func() {
-		os.Setenv("RELAY_IMAGE", "img:tag")
+		Expect(os.Setenv("RELAY_IMAGE", "img:tag")).To(Succeed())
 		cfg, err := loadRelayConfig()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg.ingressBasePath).To(Equal("/relay/exec"))
 	})
 
 	It("parses multiple annotations from comma-separated string", func() {
-		os.Setenv("RELAY_IMAGE", "img:tag")
-		os.Setenv("RELAY_INGRESS_ANNOTATIONS", "foo=bar,baz=qux,key=val=with=equals")
+		Expect(os.Setenv("RELAY_IMAGE", "img:tag")).To(Succeed())
+		Expect(os.Setenv("RELAY_INGRESS_ANNOTATIONS", "foo=bar,baz=qux,key=val=with=equals")).To(Succeed())
 		cfg, err := loadRelayConfig()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg.ingressAnnotations).To(HaveKeyWithValue("foo", "bar"))

@@ -28,8 +28,8 @@ import (
 )
 
 const (
-	finalizerName       = "labenv.rootenv.io/cleanup"
-	phaseTerminating    = "Terminating"
+	finalizerName    = "labenv.rootenv.io/cleanup"
+	phaseTerminating = "Terminating"
 )
 
 // LabEnvironmentReconciler reconciles a LabEnvironment object
