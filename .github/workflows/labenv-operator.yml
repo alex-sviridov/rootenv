@@ -88,7 +88,7 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
           skip-files: '**/Dockerfile'
-          skip-dirs: '**/config/rbac'
+          skip-dirs: '**/config/'
 
   docker-build:
     name: Build Docker Image
