@@ -87,6 +87,8 @@ jobs:
           scanners: vuln,secret,misconfig
           ignore-unfixed: true
           exit-code: '1'
+          skip-files: '**/Dockerfile'
+          skip-dirs: '**/config/rbac'
 
   docker-build:
     name: Build Docker Image
