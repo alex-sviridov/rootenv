@@ -9,6 +9,15 @@ on:
     paths: [ 'services/labenv-operator/**', '.github/workflows/labenv-operator.yml' ]
     types: [opened, synchronize, reopened]
 
+# Cancel superseded runs on the same branch/PR to save minutes
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege default; jobs that need more elevate locally
+permissions:
+  contents: read
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/labenv-operator
@@ -23,10 +32,17 @@ jobs:
         with:
           go-version: '1.26'
           cache-dependency-path: services/labenv-operator/go.sum
-      - run: go test -v ./...
+      - name: Verify generated code & manifests are up to date
         working-directory: services/labenv-operator
-      - run: go build -v ./...
+        run: |
+          make manifests generate
+          git diff --exit-code
+      - name: Run tests (envtest)
         working-directory: services/labenv-operator
+        run: make test
+      - name: Build
+        working-directory: services/labenv-operator
+        run: make build
 
   lint:
     name: Lint
@@ -40,7 +56,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.12
+          version: v2.6.0
           working-directory: services/labenv-operator
 
   security-scan:
@@ -64,7 +80,7 @@ jobs:
           key: trivy-db-${{ github.run_id }}
           restore-keys: trivy-db-
       - name: Run Trivy Security Scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: fs
           scan-ref: ./services/labenv-operator
@@ -76,6 +92,8 @@ jobs:
     name: Build Docker Image
     runs-on: ubuntu-latest
     needs: [lint, test-and-build, security-scan]
+    # Only run the no-push build path on PRs; on master we go straight to docker-push
+    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
@@ -90,7 +108,7 @@ jobs:
   docker-push:
     name: Push Docker Image
     runs-on: ubuntu-latest
-    needs: docker-build
+    needs: [lint, test-and-build, security-scan]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     permissions:
       contents: read
@@ -109,7 +127,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest
+            type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-,format=short
       - uses: docker/build-push-action@v6
         with:
