@@ -6,6 +6,7 @@ COPY . .
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o relay-exec ./cmd/relay-exec
 
 FROM gcr.io/distroless/static-debian12:nonroot
+USER nonroot
 COPY --from=builder /app/relay-exec /relay-exec
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

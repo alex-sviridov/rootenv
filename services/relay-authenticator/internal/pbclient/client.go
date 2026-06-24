@@ -44,7 +44,7 @@ func (c *Client) ValidateToken(token string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return "", fmt.Errorf("unauthorized")
@@ -82,7 +82,7 @@ func (c *Client) GetAttempt(token, attemptID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusUnauthorized {
 		return "", fmt.Errorf("forbidden or not found (status %d)", resp.StatusCode)

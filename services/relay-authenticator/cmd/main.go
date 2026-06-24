@@ -54,7 +54,7 @@ func main() {
 			http.Error(w, "pocketbase unreachable", http.StatusServiceUnavailable)
 			return
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			http.Error(w, "pocketbase unreachable", http.StatusServiceUnavailable)
 			return

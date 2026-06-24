@@ -69,7 +69,7 @@ func (b *Backend) Serve(ctx context.Context, conn *websocket.Conn, assetName, us
 	// WebSocket → stdin (with resize handling)
 	go func() {
 		defer cancel() // WS disconnect cancels the exec context
-		defer stdinW.Close()
+		defer func() { _ = stdinW.Close() }()
 		defer close(resizeCh)
 		for {
 			_, data, err := conn.Read(ctx)
@@ -100,4 +100,3 @@ func (b *Backend) Serve(ctx context.Context, conn *websocket.Conn, assetName, us
 	}
 	return err
 }
-
