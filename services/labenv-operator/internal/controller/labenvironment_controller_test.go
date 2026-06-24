@@ -411,8 +411,8 @@ var _ = Describe("loadRelayConfig", func() {
 	})
 
 	It("skips malformed annotation tokens (no = sign)", func() {
-		os.Setenv("RELAY_IMAGE", "img:tag")
-		os.Setenv("RELAY_INGRESS_ANNOTATIONS", "good=value,badtoken,=emptykey")
+		Expect(os.Setenv("RELAY_IMAGE", "img:tag")).To(Succeed())
+		Expect(os.Setenv("RELAY_INGRESS_ANNOTATIONS", "good=value,badtoken,=emptykey")).To(Succeed())
 		cfg, err := loadRelayConfig()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg.ingressAnnotations).To(HaveLen(2))
@@ -424,14 +424,14 @@ var _ = Describe("loadRelayConfig", func() {
 	})
 
 	It("leaves ingressClass empty when RELAY_INGRESS_CLASS is unset", func() {
-		os.Setenv("RELAY_IMAGE", "img:tag")
+		Expect(os.Setenv("RELAY_IMAGE", "img:tag")).To(Succeed())
 		cfg, err := loadRelayConfig()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg.ingressClass).To(BeEmpty())
 	})
 
 	It("includes the relay auth middleware annotation by default", func() {
-		os.Setenv("RELAY_IMAGE", "img:tag")
+		Expect(os.Setenv("RELAY_IMAGE", "img:tag")).To(Succeed())
 		cfg, err := loadRelayConfig()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg.ingressAnnotations).To(HaveKeyWithValue(
@@ -446,8 +446,8 @@ var _ = Describe("ensureRelayIngress", func() {
 
 	BeforeEach(func() {
 		DeferCleanup(func() {
-			os.Unsetenv("RELAY_INGRESS_CLASS")
-			os.Unsetenv("RELAY_INGRESS_ANNOTATIONS")
+			Expect(os.Unsetenv("RELAY_INGRESS_CLASS")).To(Succeed())
+			Expect(os.Unsetenv("RELAY_INGRESS_ANNOTATIONS")).To(Succeed())
 		})
 	})
 
@@ -465,7 +465,7 @@ var _ = Describe("ensureRelayIngress", func() {
 			Spec:       labv1alpha1.LabEnvironmentSpec{OwnerId: "usr", LabId: "lab"},
 		}
 
-		os.Setenv("RELAY_INGRESS_CLASS", "traefik")
+		Expect(os.Setenv("RELAY_INGRESS_CLASS", "traefik")).To(Succeed())
 		cfg := relayConfig{ingressBasePath: "/relay/exec", ingressClass: "traefik"}
 		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		Expect(r.ensureRelayIngress(ctx, env, nsName, cfg)).To(Succeed())
