@@ -51,7 +51,7 @@ func loadRelayConfig() (relayConfig, error) {
 		"traefik.ingress.kubernetes.io/router.middlewares": "kube-system-relay-auth-middleware@kubernetescrd",
 	}
 	if raw := os.Getenv("RELAY_INGRESS_ANNOTATIONS"); raw != "" {
-		for _, token := range strings.Split(raw, ",") {
+		for token := range strings.SplitSeq(raw, ",") {
 			k, v, ok := strings.Cut(token, "=")
 			if !ok || strings.TrimSpace(k) == "" {
 				continue

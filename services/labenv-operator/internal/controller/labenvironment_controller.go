@@ -27,7 +27,10 @@ import (
 	labv1alpha1 "github.com/alex-sviridov/rootenv/services/labenv-operator/api/v1alpha1"
 )
 
-const finalizerName = "labenv.rootenv.io/cleanup"
+const (
+	finalizerName       = "labenv.rootenv.io/cleanup"
+	phaseTerminating    = "Terminating"
+)
 
 // LabEnvironmentReconciler reconciles a LabEnvironment object
 type LabEnvironmentReconciler struct {
@@ -115,7 +118,7 @@ func (r *LabEnvironmentReconciler) reconcileCreate(ctx context.Context, env *lab
 			phase = string(pod.Status.Phase)
 			reason = containerReason(&pod)
 			if !pod.DeletionTimestamp.IsZero() {
-				phase = "Terminating"
+				phase = phaseTerminating
 			}
 		}
 		ready := isPodReady(&pod)
@@ -145,10 +148,10 @@ func (r *LabEnvironmentReconciler) reconcileCreate(ctx context.Context, env *lab
 	env.Status.TotalAssets = totalAssets
 	env.Status.ReadyAssets = readyAssets
 	env.Status.Ready = fmt.Sprintf("%d/%d", readyAssets, totalAssets)
-	switch {
-	case readyAssets == totalAssets:
+	switch readyAssets {
+	case totalAssets:
 		env.Status.Phase = "Ready"
-	case readyAssets == 0:
+	case 0:
 		env.Status.Phase = "Pending"
 	default:
 		env.Status.Phase = "Degraded"

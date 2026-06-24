@@ -48,8 +48,8 @@ var _ = Describe("LabEnvironment Controller", func() {
 		labenvironment := &labv1alpha1.LabEnvironment{}
 
 		BeforeEach(func() {
-			os.Setenv("RELAY_IMAGE", "relay-primitive:test")
-			DeferCleanup(func() { os.Unsetenv("RELAY_IMAGE") })
+			Expect(os.Setenv("RELAY_IMAGE", "relay-primitive:test")).To(Succeed())
+			DeferCleanup(func() { Expect(os.Unsetenv("RELAY_IMAGE")).To(Succeed()) })
 
 			By("creating the custom resource for the Kind LabEnvironment")
 			err := k8sClient.Get(ctx, typeNamespacedName, labenvironment)
@@ -105,15 +105,15 @@ var _ = Describe("ensureRelay", func() {
 
 	BeforeEach(func() {
 		DeferCleanup(func() {
-			os.Unsetenv("RELAY_IMAGE")
-			os.Unsetenv("RELAY_INGRESS_CLASS")
-			os.Unsetenv("RELAY_INGRESS_BASE_PATH")
-			os.Unsetenv("RELAY_INGRESS_ANNOTATIONS")
+			Expect(os.Unsetenv("RELAY_IMAGE")).To(Succeed())
+			Expect(os.Unsetenv("RELAY_INGRESS_CLASS")).To(Succeed())
+			Expect(os.Unsetenv("RELAY_INGRESS_BASE_PATH")).To(Succeed())
+			Expect(os.Unsetenv("RELAY_INGRESS_ANNOTATIONS")).To(Succeed())
 		})
-		os.Setenv("RELAY_IMAGE", "relay-exec:test")
-		os.Setenv("RELAY_INGRESS_CLASS", "traefik")
-		os.Setenv("RELAY_INGRESS_BASE_PATH", "/relay/exec")
-		os.Setenv("RELAY_INGRESS_ANNOTATIONS", "traefik.ingress.kubernetes.io/router.entrypoints=websecure")
+		Expect(os.Setenv("RELAY_IMAGE", "relay-exec:test")).To(Succeed())
+		Expect(os.Setenv("RELAY_INGRESS_CLASS", "traefik")).To(Succeed())
+		Expect(os.Setenv("RELAY_INGRESS_BASE_PATH", "/relay/exec")).To(Succeed())
+		Expect(os.Setenv("RELAY_INGRESS_ANNOTATIONS", "traefik.ingress.kubernetes.io/router.entrypoints=websecure")).To(Succeed())
 	})
 
 	It("creates all relay resources", func() {
