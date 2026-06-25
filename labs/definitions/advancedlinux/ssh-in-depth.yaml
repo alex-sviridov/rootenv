@@ -1,0 +1,678 @@
+meta:
+  title: "SSH In Depth: от ключей к PKI"
+  description: Продвинутые концепции SSH для системных администраторов — Certificate Authority, host-сертификаты, ProxyJump, туннелирование и отзыв доступа.
+
+content:
+  - title: "Разведка: картируем инфраструктуру"
+    content: |
+      Вы получили доступ к четырём серверам новой инфраструктуры. Единственная точка входа через браузер — **workstation**. К остальным хостам у вас есть пароль `LabPass123!`, но доступ через веб-терминал закрыт — только SSH.
+
+      | Хост | Роль | Доступ |
+      |------|------|--------|
+      | workstation | рабочая станция администратора | веб + SSH |
+      | bastion | DMZ-шлюз | только SSH |
+      | application | веб-сервер приложения | только SSH |
+      | database | сервер базы данных | только SSH |
+
+      Первый шаг — понять текущее состояние, прежде чем что-то менять.
+
+      ## Изучаем workstation
+
+      ```bash
+      whoami && hostname
+      ls -la ~/.ssh/
+      grep -E "^(PasswordAuthentication|PubkeyAuthentication|TrustedUserCAKeys)" /etc/ssh/sshd_config
+      ```
+
+      **Exercise:** Подключитесь с workstation на каждый из трёх хостов по паролю (`LabPass123!`) и выполните те же проверки. Зафиксируйте: какие методы аутентификации разрешены, есть ли `TrustedUserCAKeys`, есть ли файлы `*-cert.pub` в `/etc/ssh/`.
+
+      ```bash
+      ssh lab@bastion
+      grep -E "^(PasswordAuthentication|PubkeyAuthentication|TrustedUserCAKeys)" /etc/ssh/sshd_config
+      ls /etc/ssh/*cert* 2>/dev/null || echo "сертификатов нет"
+      exit
+      ```
+
+      Повторите для `application` и `database`. После разведки должна быть полная картина: везде включён вход по паролю, сертификатов нет. Именно это мы и исправим.
+
+  - title: "Certificate Authority: создаём корень доверия"
+    content: |
+      ## Почему CA, а не просто ключи
+
+      Классический подход: добавить публичный ключ в `~/.ssh/authorized_keys` на каждом сервере. При 4 серверах и 10 инженерах это 40 записей. При уходе инженера — 40 правок.
+
+      SSH Certificate Authority работает иначе: серверы доверяют не конкретным ключам, а **подписи CA**. Вы создаёте CA один раз, прописываете его публичный ключ на серверах — и дальше просто выдаёте и отзываете сертификаты, не трогая серверы.
+
+      ```
+      CA private key  ──подписывает──► user cert
+      CA public key   ──хранится на──► каждом сервере (TrustedUserCAKeys)
+      sshd            ──проверяет───── подпись на сертификате при входе
+      ```
+
+      ## Создаём CA на workstation
+
+      CA — это обычная пара ed25519-ключей. Единственное отличие в том, как мы её *используем*.
+
+      ```bash
+      # Директория для CA уже создана, права — только для lab
+      ls -la /etc/ssh-ca/
+
+      # Генерируем CA. Пароль на CA-ключ обязателен — в лабе используйте "ca-password"
+      ssh-keygen -t ed25519 -f /etc/ssh-ca/ca -C "lab-infrastructure-ca"
+      ls -la /etc/ssh-ca/
+      ```
+
+      `ca` — приватный ключ, никуда не уходит. `ca.pub` — публичный, его нужно разложить по серверам.
+
+      ## Распространяем ca.pub и настраиваем TrustedUserCAKeys
+
+      Пока работает вход по паролю — используем его.
+
+      ```bash
+      for host in bastion application database; do
+        scp /etc/ssh-ca/ca.pub lab@${host}:/tmp/ca.pub
+        ssh lab@${host} "
+          sudo mkdir -p /etc/ssh-ca
+          sudo mv /tmp/ca.pub /etc/ssh-ca/ca.pub
+          sudo chmod 644 /etc/ssh-ca/ca.pub
+          echo 'TrustedUserCAKeys /etc/ssh-ca/ca.pub' | sudo tee -a /etc/ssh/sshd_config
+          sudo systemctl restart ssh
+        "
+      done
+      ```
+
+      **Exercise:** Проверьте что конфиг применился на каждом хосте:
+
+      ```bash
+      for host in bastion application database; do
+        echo "=== $host ==="
+        ssh lab@${host} "grep TrustedUserCAKeys /etc/ssh/sshd_config && sudo sshd -t && echo 'config OK'"
+      done
+      ```
+
+      Дополнительно: добавьте `TrustedUserCAKeys` и на сам **workstation** — для симметрии, на случай если другие инженеры будут ходить на него по сертификатам.
+
+  - title: "Host Certificates: доверие к серверам без ручной проверки fingerprint"
+    content: |
+      ## Проблема fingerprint-предупреждений
+
+      Каждый раз подключаясь к новому хосту, SSH спрашивает: «Are you sure you want to continue connecting?» Администраторы привыкают говорить "yes" не глядя — это опасная привычка, открывающая дверь для MITM.
+
+      Вместо ручной проверки подпишем **host key** каждого сервера нашим CA. Клиент будет проверять подпись автоматически.
+
+      ```
+      Без host cert:  SSH видит новый fingerprint → предупреждение → ручное подтверждение
+      С host cert:    SSH видит подпись CA → автоматически доверяет
+      ```
+
+      ## Подписываем host keys
+
+      На каждом сервере есть `/etc/ssh/ssh_host_ed25519_key.pub`. Скопируем на workstation, подпишем CA, вернём обратно.
+
+      ```bash
+      mkdir -p /tmp/host-keys
+
+      # Собираем pub keys
+      for host in bastion application database; do
+        scp lab@${host}:/etc/ssh/ssh_host_ed25519_key.pub /tmp/host-keys/${host}_host.pub
+      done
+
+      # Подписываем
+      # -s  — CA-ключ
+      # -I  — identity (имя в логах)
+      # -h  — host certificate (не user)
+      # -n  — принципал: DNS-имя хоста
+      # -V  — период действия (-5m отступ на расхождение часов)
+      for host in bastion application database; do
+        ssh-keygen -s /etc/ssh-ca/ca \
+          -I "${host}-host-cert" \
+          -h \
+          -n "${host}" \
+          -V -5m:+3650d \
+          /tmp/host-keys/${host}_host.pub
+      done
+
+      ls -la /tmp/host-keys/
+      ```
+
+      ```bash
+      # Раскладываем сертификаты обратно
+      for host in bastion application database; do
+        scp /tmp/host-keys/${host}_host-cert.pub lab@${host}:/tmp/
+        ssh lab@${host} "
+          sudo mv /tmp/${host}_host-cert.pub /etc/ssh/ssh_host_ed25519_key-cert.pub
+          sudo chmod 644 /etc/ssh/ssh_host_ed25519_key-cert.pub
+          echo 'HostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub' | sudo tee -a /etc/ssh/sshd_config
+          sudo systemctl restart ssh
+        "
+      done
+      ```
+
+      ## Настраиваем доверие CA на клиенте
+
+      ```bash
+      # Очищаем устаревшие fingerprints
+      > ~/.ssh/known_hosts
+
+      # CA доверенен для всех трёх хостов
+      echo "@cert-authority bastion,application,database $(cat /etc/ssh-ca/ca.pub)" >> ~/.ssh/known_hosts
+      ```
+
+      **Exercise:** Подключитесь к каждому хосту со `StrictHostKeyChecking=yes` и убедитесь что предупреждений нет:
+
+      ```bash
+      for host in bastion application database; do
+        ssh -o StrictHostKeyChecking=yes lab@${host} hostname && echo "$host: OK"
+      done
+      ```
+
+      Для инспекции сертификата: `ssh-keygen -L -f /tmp/host-keys/bastion_host-cert.pub`
+
+  - title: "User Certificates: выдаём, проверяем, закрываем пароли"
+    content: |
+      ## Анатомия user certificate
+
+      User certificate содержит:
+      - **Identity** (`-I`): строка для логов, обычно `user@hostname`
+      - **Principals** (`-n`): список Unix-пользователей, от имени которых разрешён вход
+      - **Validity** (`-V`): период действия
+      - **Подпись CA**: без неё сертификат ничего не стоит
+
+      Sshd при входе проверяет три вещи: подпись CA валидна, сертификат не истёк, principal совпадает с запрошенным именем пользователя.
+
+      ## Подписываем ключ пользователя lab
+
+      ```bash
+      ls -la ~/.ssh/id_ed25519.pub
+
+      # -n lab    — принципал: только пользователь lab
+      # -V +8h    — действителен 8 часов
+      ssh-keygen -s /etc/ssh-ca/ca \
+        -I "lab@workstation" \
+        -n lab \
+        -V +8h \
+        ~/.ssh/id_ed25519.pub
+
+      # Изучаем выданный сертификат
+      ssh-keygen -L -f ~/.ssh/id_ed25519-cert.pub
+      ```
+
+      Обратите внимание на поля `Valid` и `Principals` — именно их проверяет sshd.
+
+      SSH автоматически использует `id_ed25519-cert.pub` вместе с `id_ed25519` если они лежат рядом.
+
+      ```bash
+      # Вход по сертификату — пароль не должен спрашиваться
+      ssh -o PasswordAuthentication=no lab@bastion hostname
+      ssh -o PasswordAuthentication=no lab@application hostname
+      ```
+
+      ## Тестируем отказ: неверный principal
+
+      ```bash
+      ssh-keygen -s /etc/ssh-ca/ca \
+        -I "test-wrong-principal" \
+        -n wronguser \
+        -V +1h \
+        -f /tmp/wrong \
+        ~/.ssh/id_ed25519.pub
+
+      ssh -i ~/.ssh/id_ed25519 \
+          -o CertificateFile=/tmp/wrong-cert.pub \
+          -o PasswordAuthentication=no \
+          lab@bastion
+      # Ожидаем: Permission denied
+      ```
+
+      ## Отключаем вход по паролю
+
+      Сертификаты работают — пора закрыть пароли на всех серверах.
+
+      ```bash
+      for host in bastion application database; do
+        ssh lab@${host} "
+          sudo sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+          sudo systemctl restart ssh
+        "
+      done
+
+      # Локально на workstation
+      sudo sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+      sudo systemctl restart ssh
+      ```
+
+      **Exercise:** Убедитесь что вход по паролю закрыт:
+
+      ```bash
+      ssh -o PasswordAuthentication=yes -o PubkeyAuthentication=no lab@bastion
+      # Ожидаем: Permission denied (publickey)
+      ```
+
+      Дополнительно: создайте сертификат с `-V +1m`, подождите истечения и проверьте что вход отклоняется. Что именно пишет sshd в `/var/log/auth.log` при попытке войти с просроченным сертификатом?
+
+  - title: "~/.ssh/config: кодируем топологию инфраструктуры"
+    content: |
+      ## Зачем config-файл
+
+      Сейчас для входа на `application` нужно помнить о ProxyJump, ключе и параметрах. Config-файл кодирует эти знания раз и навсегда. После настройки `ssh app` работает без флагов.
+
+      Директивы применяются в порядке первого совпадения: первый подходящий `Host`-блок выигрывает, последующие могут добавлять, но не переопределять уже установленные значения.
+
+      ```bash
+      mkdir -p ~/.ssh/cm
+
+      cat > ~/.ssh/config << 'EOF'
+      # Bastion — единственный хост, доступный напрямую
+      Host bastion
+          HostName bastion
+          User lab
+          IdentityFile ~/.ssh/id_ed25519
+          IdentitiesOnly yes
+
+      # Короткие алиасы для внутренних серверов — только через bastion
+      Host app
+          HostName application
+          User lab
+          IdentityFile ~/.ssh/id_ed25519
+          IdentitiesOnly yes
+          ProxyJump bastion
+
+      Host db
+          HostName database
+          User lab
+          IdentityFile ~/.ssh/id_ed25519
+          IdentitiesOnly yes
+          ProxyJump bastion
+
+      # Глобальные дефолты
+      Host *
+          ServerAliveInterval 15
+          ServerAliveCountMax 3
+          ControlMaster auto
+          ControlPath ~/.ssh/cm/%r@%h:%p
+          ControlPersist 10m
+      EOF
+
+      chmod 600 ~/.ssh/config
+      ```
+
+      | Директива | Зачем |
+      |-----------|-------|
+      | `IdentitiesOnly yes` | не перебирать все ключи из агента, использовать только указанный |
+      | `ServerAliveInterval 15` | keepalive — соединение не рвётся при паузах в работе |
+      | `ProxyJump bastion` | прозрачный переход через bastion без копирования ключей на него |
+      | `ControlMaster auto` | мультиплексирование — следующие сессии к тому же хосту идут через уже открытое соединение |
+
+      ## Проверяем
+
+      ```bash
+      # Все три команды работают без паролей и флагов
+      ssh bastion hostname
+      ssh app hostname
+      ssh db hostname
+      ```
+
+      **Exercise:** Проверьте итоговые параметры соединения через `ssh -G`:
+
+      ```bash
+      ssh -G app | grep -E "^(hostname|user|proxyjump|identityfile|identitiesonly|controlmaster)"
+      ```
+
+      Добавьте в конфиг алиас `ws` для workstation (`HostName workstation`). Затем добавьте в блок `app` директиву `LocalForward 8080 localhost:80` и проверьте через `ssh -G app | grep localforward` — директива должна быть в выводе даже без активного соединения.
+
+  - title: "ProxyJump через bastion: безопасный вход во внутреннюю сеть"
+    content: |
+      ## Как работает ProxyJump
+
+      `ProxyJump` создаёт TCP-соединение к конечному хосту прозрачно для пользователя. В отличие от старого `ProxyCommand`, он использует нативный SSH-протокол и не требует `nc` на bastion.
+
+      ```
+      workstation ──SSH──► bastion ──TCP forward──► application
+                                    (нет шелла, нет ключа)
+      ```
+
+      Важно: при `ProxyJump` **приватный ключ никогда не попадает на bastion**. Криптография происходит end-to-end между workstation и application.
+
+      ## AgentForwarding vs ProxyJump
+
+      | | ProxyJump | ForwardAgent |
+      |-|-----------|--------------|
+      | Ключ или агент на bastion | нет | socket агента есть |
+      | Компрометация bastion | только трафик | доступ ко всем хостам пока сессия жива |
+
+      `ForwardAgent` — удобно, но root на bastion может использовать ваш агент для входа на любой сервер от вашего имени.
+
+      **Exercise:** Убедитесь что `application` и `database` недоступны без ProxyJump:
+
+      ```bash
+      # Напрямую — должен быть timeout или Connection refused
+      ssh -o ProxyJump=none -o ConnectTimeout=5 app hostname 2>&1
+      ```
+
+      Затем проверьте что ProxyJump работает с явным флагом (минуя конфиг):
+
+      ```bash
+      ssh -J lab@bastion lab@application hostname
+      ssh -J lab@bastion lab@database hostname
+      ```
+
+      ## Многоуровневый ProxyJump
+
+      Если `database` был бы доступен только с `application`, ProxyJump поддерживает цепочку:
+
+      ```bash
+      ssh -J bastion,application database hostname
+      ```
+
+      Попробуйте эту команду — она пройдёт через два хопа. В конфиге это записывается как `ProxyJump bastion,application`.
+
+  - title: "Port Forwarding: туннели к внутренним сервисам"
+    content: |
+      ## Три вида SSH-туннелей
+
+      | Тип | Флаг | Направление |
+      |-----|------|-------------|
+      | Local | `-L local:host:remote` | порт на workstation → сервис внутри сети |
+      | Remote | `-R remote:host:local` | порт на удалённом хосте → сервис на workstation |
+      | Dynamic | `-D port` | SOCKS5-прокси через SSH-хост |
+
+      ## Local forward: HTTP к application
+
+      На `application` работает HTTP-сервис на порту 80. Сейчас он недоступен с workstation напрямую.
+
+      ```bash
+      # -f — уйти в фон после аутентификации
+      # -N — не выполнять команды, только держать туннель
+      ssh -f -N -L 8080:localhost:80 app
+
+      # Проверяем через туннель
+      curl -s http://localhost:8080
+      ```
+
+      `localhost:80` в `-L 8080:localhost:80` означает: SSH-сервер (application) соединяется с `localhost:80` **на себе**. Это ключевое: destination разрешается со стороны SSH-сервера, не клиента.
+
+      **Exercise:** Туннель к database. На `database` запущен сервис на порту 5432. Пробросьте его двумя способами и сравните:
+
+      ```bash
+      # Способ 1: через bastion, destination — database по имени
+      ssh -f -N -L 5432:database:5432 bastion
+      nc -zv localhost 5432 && echo "туннель работает"
+      kill $(pgrep -f "ssh -f -N -L 5432")
+
+      # Способ 2: напрямую к db (ProxyJump подхватится из конфига)
+      ssh -f -N -L 5432:localhost:5432 db
+      nc -zv localhost 5432 && echo "туннель работает"
+      kill $(pgrep -f "ssh -f -N -L 5432")
+      ```
+
+      В чём разница между двумя способами с точки зрения того, откуда устанавливается TCP-соединение до порта 5432?
+
+      ## Remote forward
+
+      Remote forward — обратная ситуация: порт на удалённом сервере перенаправляется к вам. Полезно для отладки: разработчик может открыть локальный сервис через bastion.
+
+      ```bash
+      # Запускаем тестовый сервис на workstation
+      while true; do printf 'HTTP/1.0 200 OK\r\n\r\nworkstation-service\n' | nc -l -p 3000; done &
+
+      # Remote forward: порт 9090 на bastion → localhost:3000 на workstation
+      ssh -f -N -R 9090:localhost:3000 bastion
+
+      # Проверяем с bastion
+      ssh bastion curl -s http://localhost:9090
+      ```
+
+      ## Dynamic forward: SOCKS5-прокси
+
+      ```bash
+      ssh -f -N -D 1080 bastion
+
+      # DNS тоже резолвится через SSH-хост
+      curl --socks5-hostname localhost:1080 http://application
+      curl --socks5-hostname localhost:1080 http://database:5432
+      ```
+
+      **Exercise:** Остановите все фоновые туннели через `ssh -O stop bastion`. Почему это работает? (Подсказка: посмотрите в `~/.ssh/cm/` — ControlMaster уже настроен в конфиге из предыдущего раздела.)
+
+  - title: "ControlMaster: мультиплексирование SSH-соединений"
+    content: |
+      ## Что такое ControlMaster
+
+      Каждый `ssh` создаёт новое TCP-соединение и заново проходит рукопожатие (~200 мс). При частых подключениях — CI/CD, деплой, скрипты — это заметная задержка.
+
+      ControlMaster позволяет нескольким сессиям делить **одно** соединение: первый `ssh` поднимает мастера, следующие подключаются к нему через Unix-сокет практически мгновенно.
+
+      ControlMaster уже включён в `~/.ssh/config` из предыдущего раздела (`ControlMaster auto`, `ControlPersist 10m`). Сейчас измерим эффект и разберём управление мастером.
+
+      ## Измеряем разницу
+
+      ```bash
+      # Сбрасываем все активные мастеры
+      ssh -O stop bastion 2>/dev/null; ssh -O stop app 2>/dev/null; true
+
+      # Первое соединение — поднимает мастер (TLS handshake + auth)
+      time ssh app hostname
+
+      # Второе — через сокет
+      time ssh app hostname
+
+      # Активные сокеты
+      ls -la ~/.ssh/cm/
+      ```
+
+      ## Управление мастером через -O
+
+      ```bash
+      # Статус
+      ssh -O check app
+
+      # Завершить мастер
+      ssh -O stop app
+
+      # Сокет исчез
+      ls ~/.ssh/cm/
+
+      # Следующее соединение снова поднимает мастер
+      time ssh app hostname
+      ```
+
+      **Exercise:** Откройте две параллельные сессии к `app` в разных вкладках терминала:
+
+      ```bash
+      # Терминал 1
+      ssh app "sleep 60"
+
+      # Терминал 2 — подключается мгновенно через мастер
+      time ssh app hostname
+
+      # Терминал 2 — проверяем сколько сессий мультиплексировано
+      ssh -O check app
+      ```
+
+      Закройте терминал 1 (Ctrl+C). Через сколько времени исчезнет сокет мастера? Почему именно столько?
+
+      Дополнительно: поменяйте `ControlPersist` на `0` и `yes` — поэкспериментируйте и объясните, когда каждое значение нужно на практике. В каких сценариях бессрочный мастер опасен?
+
+  - title: "Выдача и отзыв сертификата: управление доступом devops"
+    content: |
+      ## Сценарий
+
+      В команду приходит новый инженер `devops`. Ему нужен SSH-доступ на `application` — и только туда. Через некоторое время он уходит, доступ нужно немедленно закрыть без правки `authorized_keys`.
+
+      ## Создаём пользователя на application
+
+      ```bash
+      ssh app "
+        sudo useradd -m -s /bin/bash devops
+        sudo mkdir -p /home/devops/.ssh
+        sudo chmod 700 /home/devops/.ssh
+        sudo chown devops:devops /home/devops/.ssh
+      "
+      ```
+
+      ## Генерируем и подписываем ключ devops
+
+      В реальности devops сам генерирует ключ и отдаёт вам pub-файл. Здесь делаем это за него.
+
+      ```bash
+      ssh-keygen -t ed25519 -f /tmp/devops_key -N "" -C "devops engineer"
+
+      # Принципал devops, срок 24 часа
+      ssh-keygen -s /etc/ssh-ca/ca \
+        -I "devops@application" \
+        -n devops \
+        -V +24h \
+        /tmp/devops_key.pub
+
+      ssh-keygen -L -f /tmp/devops_key-cert.pub
+      ```
+
+      **Exercise:** Проверьте вход по выданному сертификату:
+
+      ```bash
+      ssh -i /tmp/devops_key \
+          -o CertificateFile=/tmp/devops_key-cert.pub \
+          devops@application hostname
+      ```
+
+      Затем убедитесь что тот же сертификат не даёт доступа на `bastion` — пользователя `devops` там нет, и принципал не совпадёт.
+
+      ## Отзываем сертификат через KRL
+
+      KRL (Key Revocation List) — бинарный файл с отозванными ключами и сертификатами. Sshd проверяет его при каждом входе.
+
+      ```bash
+      # Создаём пустой KRL
+      ssh-keygen -k -f /etc/ssh-ca/revoked
+
+      # Добавляем сертификат devops (-u — update существующего файла)
+      ssh-keygen -k -u -f /etc/ssh-ca/revoked /tmp/devops_key-cert.pub
+
+      # Проверяем: сертификат должен числиться как revoked
+      ssh-keygen -Q -l -f /etc/ssh-ca/revoked /tmp/devops_key-cert.pub
+      ```
+
+      ```bash
+      # Раскладываем KRL на application и включаем
+      scp /etc/ssh-ca/revoked lab@application:/tmp/revoked
+      ssh app "
+        sudo mv /tmp/revoked /etc/ssh/revoked
+        sudo chmod 644 /etc/ssh/revoked
+        echo 'RevokedKeys /etc/ssh/revoked' | sudo tee -a /etc/ssh/sshd_config
+        sudo systemctl restart ssh
+      "
+      ```
+
+      **Exercise:** Убедитесь что доступ закрыт — `authorized_keys` при этом не менялся:
+
+      ```bash
+      ssh -i /tmp/devops_key \
+          -o CertificateFile=/tmp/devops_key-cert.pub \
+          devops@application hostname
+      # Ожидаем: Permission denied
+      ```
+
+      Дополнительно: KRL умеет отзывать не только конкретный сертификат, но и **все сертификаты с определённым серийным номером** (`-z serial`). Изучите `ssh-keygen -L -f /tmp/devops_key-cert.pub` — найдите серийный номер и добавьте его в KRL отдельной записью. Как бы вы организовали процесс ротации CA если бы приватный ключ CA оказался скомпрометирован?
+
+environment:
+  duration: 150
+  assets:
+    - name: workstation
+      image: ubuntu-sshd
+      platform: container
+      ssh_user: lab
+      cpu: 200m
+      memory: 256Mi
+      disk: 5Gi
+      protocols:
+        - exec
+      setup: |
+        #!/bin/bash
+        set -e
+
+        # Enable password authentication for initial access
+        sed -i '/^PasswordAuthentication/d' /etc/ssh/sshd_config
+        echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
+        echo "lab:LabPass123!" | chpasswd
+
+        # Generate SSH key pair for lab user
+        mkdir -p /home/lab/.ssh
+        chmod 700 /home/lab/.ssh
+        ssh-keygen -t ed25519 -f /home/lab/.ssh/id_ed25519 -N "" -C "lab@workstation"
+        chown -R lab:lab /home/lab/.ssh
+        chmod 600 /home/lab/.ssh/id_ed25519
+        chmod 644 /home/lab/.ssh/id_ed25519.pub
+
+        # CA directory owned by lab
+        mkdir -p /etc/ssh-ca
+        chown lab:lab /etc/ssh-ca
+        chmod 700 /etc/ssh-ca
+
+        # ControlMaster socket directory
+        mkdir -p /home/lab/.ssh/cm
+        chown lab:lab /home/lab/.ssh/cm
+
+        systemctl restart ssh
+
+    - name: bastion
+      image: ubuntu-sshd
+      platform: container
+      ssh_user: lab
+      cpu: 100m
+      memory: 128Mi
+      disk: 2Gi
+      setup: |
+        #!/bin/bash
+        set -e
+
+        sed -i '/^PasswordAuthentication/d' /etc/ssh/sshd_config
+        echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
+        echo "lab:LabPass123!" | chpasswd
+
+        systemctl restart ssh
+
+    - name: application
+      image: ubuntu-sshd
+      platform: container
+      ssh_user: lab
+      cpu: 100m
+      memory: 128Mi
+      disk: 2Gi
+      setup: |
+        #!/bin/bash
+        set -e
+
+        sed -i '/^PasswordAuthentication/d' /etc/ssh/sshd_config
+        echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
+        echo "lab:LabPass123!" | chpasswd
+
+        # Simple HTTP mock on port 80 for port forwarding exercises
+        while true; do
+          printf 'HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\napplication-service\n' | nc -l -p 80 2>/dev/null
+        done &>/dev/null &
+        disown
+
+        systemctl restart ssh
+
+    - name: database
+      image: ubuntu-sshd
+      platform: container
+      ssh_user: lab
+      cpu: 100m
+      memory: 128Mi
+      disk: 2Gi
+      setup: |
+        #!/bin/bash
+        set -e
+
+        sed -i '/^PasswordAuthentication/d' /etc/ssh/sshd_config
+        echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
+        echo "lab:LabPass123!" | chpasswd
+
+        # Simple TCP mock on port 5432 for port forwarding exercises
+        while true; do
+          printf 'db-service-1.0 ready\n' | nc -l -p 5432 2>/dev/null
+        done &>/dev/null &
+        disown
+
+        systemctl restart ssh
