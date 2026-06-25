@@ -1,0 +1,236 @@
+meta:
+  title: Platform Smoke Test
+  description: Verify inter-node networking, internet isolation, and basic filesystem operations across a two-node lab environment.
+
+content:
+  - title: Identify the Nodes
+    content: |
+      Before testing connectivity, establish the identity of each node. Every host exposes its name and network configuration through standard files and tools.
+
+      ## What to look at
+
+      | Source | Command | What it shows |
+      |--------|---------|---------------|
+      | Kernel | `hostname` | Short hostname assigned at boot |
+      | Network | `ip addr show` | All interfaces and their IP addresses |
+      | OS | `cat /etc/os-release` | Distribution name and version |
+      | Uptime | `uptime -p` | How long the node has been running |
+
+      Run the following block on **server-0**:
+
+      ```bash
+      echo "=== Hostname ==="
+      hostname
+
+      echo "=== Network interfaces ==="
+      ip addr show
+
+      echo "=== OS release ==="
+      grep -E '^(NAME|VERSION)=' /etc/os-release
+
+      echo "=== Uptime ==="
+      uptime -p
+      ```
+
+      ## Finding the peer IP
+
+      To ping **server-1** in the next task you'll need its IP address. The simplest way is to resolve its hostname — the lab network registers each node under its asset name:
+
+      ```bash
+      # From server-0
+      getent hosts server-1
+      ```
+
+      The first column is the IPv4 address. Note it down.
+
+      **Exercise:** Run all four commands above on **server-0**, then open a second terminal connected to **server-1** and repeat them there. Record both IP addresses — you will use them in the next two tasks.
+
+  - title: Test Inter-Node Connectivity
+    content: |
+      With both IPs known, verify that the private network between the two nodes is fully operational. Use `ping` for ICMP reachability and `ssh` for application-layer connectivity.
+
+      ## ICMP round-trip
+
+      `ping` sends ICMP Echo Request packets and reports round-trip time (RTT). In a healthy environment you should see:
+      - **0% packet loss**
+      - RTT under 5 ms (containers on the same host are typically < 1 ms)
+
+      ```bash
+      # On server-0 — replace <server-1-ip> with the IP you recorded
+      ping -c 5 <server-1-ip>
+      ```
+
+      Expected output (values will differ):
+
+      ```
+      PING 10.x.x.x (10.x.x.x): 56 data bytes
+      64 bytes from 10.x.x.x: icmp_seq=1 ttl=64 time=0.312 ms
+      ...
+      5 packets transmitted, 5 received, 0% packet loss
+      ```
+
+      **Exercise:** Run the ping from **server-0** to **server-1** and from **server-1** to **server-0**. Both directions must show 0% packet loss.
+
+      ---
+
+      ## SSH connectivity
+
+      Ping confirms the network path exists. SSH confirms that the application layer is also open — the daemon is running, the port is reachable, and authentication works.
+
+      ```bash
+      # On server-0
+      ssh lab@server-1 "hostname && ip addr show eth0 | grep 'inet '"
+      ```
+
+      This single command:
+      1. Opens an SSH session to **server-1**
+      2. Runs two commands inside that session
+      3. Prints the output back in your **server-0** terminal
+
+      > **Tip:** The lab provisions a shared key automatically. If you see a host-key prompt, type `yes`. If you see a password prompt, the key setup did not complete — note it as a failure and continue.
+
+      **Exercise:** Run the SSH command above. Confirm the returned hostname is `server-1` and the IP matches what you recorded earlier.
+
+      **Challenge:** Without opening a new terminal, use a single `ssh` command from **server-0** to count the number of running processes on **server-1** (`ps aux | wc -l`).
+
+  - title: Verify Internet Is Blocked
+    content: |
+      Lab environments are intentionally isolated from the public internet to prevent unintended package downloads, data exfiltration, and network noise during exercises. This task confirms that isolation is in place.
+
+      ## Tools for testing outbound access
+
+      Two complementary tools cover different layers:
+
+      | Tool | Layer | What a timeout means |
+      |------|-------|----------------------|
+      | `ping` | ICMP (L3) | Router drops ICMP or no route to host |
+      | `curl` | HTTP/HTTPS (L7) | TCP connection refused or timed out |
+
+      Always test both — a firewall may pass ICMP but block TCP, or vice versa.
+
+      ## ICMP to a public IP
+
+      ```bash
+      # 8.8.8.8 is Google's public DNS — always up on the real internet
+      ping -c 3 -W 3 8.8.8.8
+      ```
+
+      The `-W 3` flag sets a 3-second per-packet timeout so the command exits quickly.
+
+      Expected result: `100% packet loss` or `Network unreachable`.
+
+      ## HTTP to a public domain
+
+      ```bash
+      curl -m 5 -v https://example.com 2>&1 | head -20
+      ```
+
+      Flags:
+      - `-m 5` — abort after 5 seconds
+      - `-v` — verbose output showing the TCP handshake attempt
+
+      Expected result: `Connection timed out` or `Could not resolve host`.
+
+      **Exercise:** Run both commands on **server-0**. Confirm neither reaches a public endpoint. Then repeat from **server-1** to verify isolation applies to both nodes.
+
+      **Challenge:** What is the difference between `curl: (6) Could not resolve host` and `curl: (28) Connection timed out`? Which one tells you DNS is also blocked?
+
+  - title: Write a Connectivity Report
+    content: |
+      Consolidate the test results into a structured report file. Writing output to a file is a fundamental skill — here you will use shell redirection, command substitution, and `tee` to build `/home/lab/report.txt` incrementally.
+
+      ## Redirection operators
+
+      | Operator | Effect |
+      |----------|--------|
+      | `>` | Write to file, overwrite if exists |
+      | `>>` | Append to file |
+      | `2>&1` | Merge stderr into stdout |
+      | `tee` | Write to file **and** print to console simultaneously |
+
+      ## Building the report
+
+      Run the following block on **server-0** to create the report in one pass:
+
+      ```bash
+      {
+        echo "=== Platform Smoke Test Report ==="
+        echo "Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+        echo "Node: $(hostname)"
+        echo ""
+
+        echo "--- Inter-node ping ---"
+        ping -c 3 -W 3 server-1 2>&1
+
+        echo ""
+        echo "--- Internet isolation (ICMP) ---"
+        ping -c 3 -W 3 8.8.8.8 2>&1
+
+        echo ""
+        echo "--- Internet isolation (HTTP) ---"
+        curl -m 5 -sS https://example.com 2>&1 || echo "curl exited with code $?"
+      } | tee /home/lab/report.txt
+      ```
+
+      The `{ ... }` group runs all commands in sequence inside a subshell; `tee` splits the combined output to both the terminal and the file.
+
+      ## Verify the report
+
+      ```bash
+      echo "--- File exists and is non-empty ---"
+      ls -lh /home/lab/report.txt
+
+      echo "--- Line count ---"
+      wc -l /home/lab/report.txt
+
+      echo "--- Full contents ---"
+      cat /home/lab/report.txt
+      ```
+
+      **Exercise:** Run the report-generation block above, then verify the file using the three commands. The file must exist, be non-empty, and contain results from both the inter-node ping and the internet isolation tests.
+
+      **Challenge:** Append a second section to the report that records the same internet-isolation results from **server-1** using a single `ssh` command from **server-0** — without logging into server-1 manually.
+
+environment:
+  duration: 20
+  assets:
+    - name: server-0
+      image: ubuntu-sshd
+      platform: container
+      ssh_user: lab
+      cpu: 100m
+      memory: 128Mi
+      disk: 5Gi
+      protocols:
+        - exec
+      setup: |
+        LAB_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBjO7utvqf9jfjRa5Fl/q6Dqi/oZWWJ7q0IIrQw6IRES lab-smoketest"
+        LAB_PRIVKEY_B64="LS0tLS1CRUdJTiBPUEVOU1NIIFBSSVZBVEUgS0VZLS0tLS0KYjNCbGJuTnphQzFyWlhrdGRqRUFBQUFBQkc1dmJtVUFBQUFFYm05dVpRQUFBQUFBQUFBQkFBQUFNd0FBQUF0emMyZ3RaVwpReU5UVXhPUUFBQUNBWXp1N3JiNm4vWTM0MFd1UlpmNnVnNm92NkdWbGllNnRDQ0swTU9pRVJFZ0FBQUpEV2k2bE0xb3VwClRBQUFBQXR6YzJndFpXUXlOVFV4T1FBQUFDQVl6dTdyYjZuL1kzNDBXdVJaZjZ1ZzZvdjZHVmxpZTZ0Q0NLME1PaUVSRWcKQUFBRUJaSWpueVhLSm1CcFV0QWpFRDF3RFgveEhDQ3ZxVlN4N3J5Q1lIM1hoQzlCak83dXR2cWY5amZqUmE1RmwvcTZEcQppL29aV1dKN3EwSUlyUXc2SVJFU0FBQUFEV3hoWWkxemJXOXJaWFJsYzNRPQotLS0tLUVORCBPUEVOU1NIIFBSSVZBVEUgS0VZLS0tLS0K"
+        mkdir -p /home/lab/.ssh
+        echo "$LAB_PRIVKEY_B64" | base64 -d > /home/lab/.ssh/id_ed25519
+        echo "$LAB_PUBKEY" >> /home/lab/.ssh/authorized_keys
+        # Disable strict host checking so ssh lab@server-1 works without a prompt
+        cat > /home/lab/.ssh/config <<'EOF'
+Host server-1
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+EOF
+        chmod 700 /home/lab/.ssh
+        chmod 600 /home/lab/.ssh/authorized_keys /home/lab/.ssh/id_ed25519 /home/lab/.ssh/config
+        chown -R lab:lab /home/lab/.ssh
+    - name: server-1
+      image: ubuntu-sshd
+      platform: container
+      ssh_user: lab
+      cpu: 100m
+      memory: 128Mi
+      disk: 5Gi
+      protocols:
+        - exec
+      setup: |
+        LAB_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBjO7utvqf9jfjRa5Fl/q6Dqi/oZWWJ7q0IIrQw6IRES lab-smoketest"
+        mkdir -p /home/lab/.ssh
+        echo "$LAB_PUBKEY" >> /home/lab/.ssh/authorized_keys
+        chmod 700 /home/lab/.ssh
+        chmod 600 /home/lab/.ssh/authorized_keys
+        chown -R lab:lab /home/lab/.ssh

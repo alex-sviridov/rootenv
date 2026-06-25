@@ -1,0 +1,643 @@
+meta:
+  title: "Linux для аналитика: файловая система и работа с логами"
+  description: Исследуем реальный Linux-сервер с работающим приложением — ориентируемся в файловой системе, находим и чистим мусор, извлекаем статистику из логов с помощью grep, awk, sed и sort.
+
+content:
+  - title: "Карта системы: где что живёт"
+    content: |
+      ## Стандарт файловой системы Linux (FHS)
+
+      В Linux каждый файл находится на своём месте не случайно — есть стандарт Filesystem Hierarchy Standard (FHS), которому следует большинство дистрибутивов. Понимание этой карты экономит часы поиска.
+
+      | Каталог | Назначение |
+      |---------|-----------|
+      | `/` | Корень — всё дерево начинается здесь |
+      | `/app` | Кастомные приложения, не установленные через пакетный менеджер |
+      | `/etc` | Конфигурационные файлы (читаемые, не бинарные) |
+      | `/var/log` | Логи сервисов и системы |
+      | `/var/lib` | Изменяемые данные приложений: базы, кэши, состояние |
+      | `/home/<user>` | Домашняя папка пользователя |
+      | `/tmp` | Временные файлы, очищаются при перезагрузке |
+      | `/usr/bin`, `/bin` | Исполняемые файлы |
+
+      На этом сервере запущен сервис **DataStream** — он принимает CSV-файлы с событиями от клиентов по HTTP, агрегирует их и отдаёт отчёты. Приложение не устанавливалось через `apt`, поэтому его код живёт в `/app`.
+
+      ## Исследуем структуру приложения
+
+      Команда `ls -lah` показывает файлы с правами, владельцем, размером и датой. Флаг `-h` делает размеры читаемыми (human-readable), `-a` показывает скрытые файлы.
+
+      ```bash
+      ls -lah /app/datastream/
+      ```
+
+      Обратите внимание на колонку владельца (третья) — файлы принадлежат пользователю `datastream`, а не вам. Это нормально: у каждого сервиса свой системный пользователь.
+
+      ```bash
+      ls -lah /app/datastream/data/
+      ```
+
+      **Упражнение:** Посмотрите содержимое конфигурационного файла сервиса. Найдите в нём, куда DataStream пишет логи и где хранит базу данных.
+
+      ```bash
+      cat /app/datastream/config.yaml
+      ```
+
+      Запомните пути из секций `logging` и `storage` — они понадобятся в следующих заданиях.
+
+      ## Домашние папки: пользователя и сервиса
+
+      У пользователя `datastream` есть своя домашняя папка — `/home/datastream`. Это стандарт: системные пользователи (service accounts) тоже получают `$HOME`, туда попадают ключи SSH, старые скрипты деплоя, и всякий мусор, накопившийся за время эксплуатации.
+
+      Ваша домашняя папка — `/home/lab`. Сокращения `~` и `$HOME` всегда указывают на домашнюю папку текущего пользователя.
+
+      ```bash
+      echo $HOME       # покажет /home/lab
+      pwd              # текущая директория
+      cd ~             # перейти домой
+      ls -lah          # что там есть
+      ```
+
+      **Упражнение:** Перейдите в `/home/datastream` и выведите список файлов включая скрытые (`-a`). Запишите, что там лежит и примерные даты файлов — это пригодится позже.
+
+  - title: "Место на диске: df и du"
+    content: |
+      ## Два инструмента с разными ответами
+
+      Есть два часто путаемых инструмента:
+
+      - **`df`** (disk free) — показывает состояние **файловых систем** (разделов): сколько всего, сколько занято, сколько свободно. Отвечает на вопрос «есть ли место на диске».
+      - **`du`** (disk usage) — показывает, сколько **конкретный каталог или файл** занимает на диске. Отвечает на вопрос «кто съел место».
+
+      Типичная ситуация на сервере: `df` говорит, что диск почти полный, а вы ищете виновника через `du`.
+
+      ## Смотрим общую картину
+
+      ```bash
+      df -h
+      ```
+
+      Флаг `-h` — human-readable. Смотрите на колонки `Use%` и `Avail`. Если `Use%` больше 80–85% — пора принимать меры.
+
+      **Упражнение:** Запустите `df -h` и найдите раздел, на котором смонтирован `/var`. Сколько на нём свободно места?
+
+      ## Ищем, кто занимает место
+
+      Теперь нужно понять, какой каталог виновен. `du -sh` покажет суммарный размер директории (`-s` — summary, `-h` — human-readable).
+
+      ```bash
+      du -sh /app /var /home/*
+      ```
+
+      Это даст картину первого уровня. Чтобы провалиться глубже в подозрительный каталог:
+
+      ```bash
+      du -sh /var/lib/datastream/*
+      ```
+
+      Флаг `--max-depth=1` ограничивает глубину обхода — удобно для больших деревьев:
+
+      ```bash
+      du -h --max-depth=1 /var/lib/datastream/
+      ```
+
+      **Упражнение:** Найдите подкаталог или файл в `/var/lib/datastream/`, который занимает больше всего места. Также проверьте `/home/datastream/` — что там есть тяжёлого?
+
+  - title: "Поиск файлов: find и очистка мусора"
+    content: |
+      ## Команда find
+
+      `find` — мощный инструмент поиска файлов по любым параметрам: имени, расширению, размеру, дате, владельцу.
+
+      Базовый синтаксис: `find <где искать> <условия> <действие>`
+
+      | Ключ | Что делает | Пример |
+      |------|-----------|--------|
+      | `-name "*.tmp"` | По имени/маске | `-name "*.log"` |
+      | `-size +10M` | По размеру (больше 10 МБ) | `-size +100M` |
+      | `-mtime +30` | Не менялся больше 30 дней | `-mtime +7` |
+      | `-type f` | Только файлы (не директории) | `-type d` для директорий |
+      | `-delete` | Удалить найденное | осторожно! |
+
+      ## Ищем мусор по расширению
+
+      На сервере DataStream со временем накопился мусор: временные файлы кэша (`.tmp`), резервные копии базы (`.bak`), старые архивы деплоя.
+
+      Сначала **всегда смотрим** что найдёт команда, прежде чем удалять:
+
+      ```bash
+      find /var/lib/datastream -name "*.tmp" -type f
+      find /var/lib/datastream -name "*.bak" -type f
+      ```
+
+      **Упражнение:** Найдите все `.tmp` и `.bak` файлы в `/var/lib/datastream/`. Сколько их и каков их суммарный размер?
+
+      ```bash
+      find /var/lib/datastream -name "*.tmp" -o -name "*.bak" | xargs du -sh 2>/dev/null
+      ```
+
+      ## Ищем по размеру и давности
+
+      Старые архивы деплоя в домашней папке сервиса тоже хорошие кандидаты на удаление. Ищем файлы тяжелее 5 МБ, которые не трогали больше 30 дней:
+
+      ```bash
+      find /home/datastream -type f -size +5M -mtime +30
+      ```
+
+      **Упражнение:** Расширьте поиск — найдите крупные старые файлы сразу в двух каталогах: `/var/lib/datastream/` и `/home/datastream/`. Составьте полный список того, что можно удалить.
+
+      ## Удаляем
+
+      Убедившись в списке, удаляем. Два способа:
+
+      ```bash
+      # Способ 1 — find с -delete (только если условия точные)
+      find /var/lib/datastream/cache -name "*.tmp" -delete
+
+      # Способ 2 — через xargs rm (можно добавить -i для подтверждения)
+      find /var/lib/datastream -name "*.bak" | xargs rm -v
+      ```
+
+      После удаления проверьте, что место освободилось:
+
+      ```bash
+      df -h
+      du -sh /var/lib/datastream/
+      ```
+
+      **Упражнение:** Удалите все `.bak` файлы из `/var/lib/datastream/` и старые архивы из `/home/datastream/` (файлы старше 30 дней). Убедитесь через `df -h`, что свободного места стало больше.
+
+  - title: "Grep: фильтруем access.log"
+    content: |
+      ## Что такое access.log
+
+      DataStream пишет лог каждого HTTP-запроса в формате Nginx combined log:
+
+      ```
+      185.220.101.42 - - [01/Mar/2024:00:03:17 +0000] "POST /api/upload HTTP/1.1" 200 4823 "-" "python-requests/2.28.0"
+      ```
+
+      Поля слева направо: IP-адрес клиента, прочерки (auth), дата/время, метод+эндпоинт+протокол, HTTP-код ответа, размер ответа в байтах, referrer, user-agent.
+
+      Лог лежит по пути из `config.yaml`:
+
+      ```bash
+      wc -l /var/log/datastream/access.log    # сколько строк в логе
+      head -5 /var/log/datastream/access.log  # смотрим формат
+      ```
+
+      ## Grep: основные флаги
+
+      | Флаг | Значение |
+      |------|---------|
+      | `-i` | игнорировать регистр |
+      | `-v` | инвертировать (строки НЕ содержащие шаблон) |
+      | `-c` | посчитать совпадения вместо вывода |
+      | `-n` | показывать номера строк |
+      | `-E` | расширенные регулярные выражения |
+
+      ## Ищем ошибки
+
+      HTTP 500 — ошибка на стороне сервера. Найдём все такие запросы:
+
+      ```bash
+      grep ' 500 ' /var/log/datastream/access.log
+      ```
+
+      Пробелы вокруг 500 важны — иначе попадут строки где 500 встречается в другом контексте (например, в размере ответа).
+
+      Посчитаем сколько их:
+
+      ```bash
+      grep -c ' 500 ' /var/log/datastream/access.log
+      ```
+
+      **Упражнение:** Найдите все запросы с кодом 404 и 503. Посчитайте количество каждого отдельно. Затем найдите все **не-200** ответы одной командой — используйте флаг `-v` чтобы исключить успешные запросы.
+
+      ## Фильтрация по IP и эндпоинту
+
+      Предположим, нас интересует один подозрительный IP — `185.220.101.42`:
+
+      ```bash
+      grep '185.220.101.42' /var/log/datastream/access.log | head -20
+      ```
+
+      Посмотрим только ошибки от этого IP (цепочка через `|`):
+
+      ```bash
+      grep '185.220.101.42' /var/log/datastream/access.log | grep ' 500 '
+      ```
+
+      **Упражнение:** Найдите все запросы к эндпоинту `/api/upload` которые завершились ошибкой (любой код 4xx или 5xx). Используйте `-E` для регулярного выражения с несколькими кодами: `' 4[0-9][0-9] | 5[0-9][0-9] '`.
+
+  - title: "Awk и sed: извлекаем и трансформируем данные"
+    content: |
+      ## Awk: построчная обработка с полями
+
+      `awk` обрабатывает текст построчно, разбивая каждую строку на поля по разделителю (по умолчанию — пробел). Поля доступны как `$1`, `$2`, `$3`... `$NF` — последнее поле.
+
+      Строка лога:
+      ```
+      185.220.101.42 - - [01/Mar/2024:00:03:17 +0000] "POST /api/upload HTTP/1.1" 200 4823 "-" "python-requests/2.28.0"
+      ```
+
+      | Поле | Значение |
+      |------|---------|
+      | `$1` | IP-адрес |
+      | `$7` | HTTP-код ответа |
+      | `$10` | размер ответа в байтах |
+
+      ## Извлекаем нужные столбцы
+
+      ```bash
+      awk '{print $1, $7, $10}' /var/log/datastream/access.log | head -10
+      ```
+
+      Добавим заголовок и ограничение:
+
+      ```bash
+      awk 'BEGIN{print "IP CODE BYTES"} {print $1, $7, $10}' /var/log/datastream/access.log | head -20
+      ```
+
+      **Упражнение:** Выведите только строки с HTTP-кодом 500 — добавьте условие в awk. В awk условие пишется перед `{...}`:
+
+      ```bash
+      awk '$7 == "500" {print $1, $7, $10}' /var/log/datastream/access.log
+      ```
+
+      Теперь сделайте то же самое для кода 404 самостоятельно.
+
+      ## Агрегация: считаем суммарный трафик
+
+      `awk` умеет накапливать переменные между строками:
+
+      ```bash
+      awk '{sum += $10} END {print "Total bytes:", sum}' /var/log/datastream/access.log
+      ```
+
+      `END{}` выполняется после обработки всех строк.
+
+      **Упражнение:** Посчитайте суммарный объём трафика только по успешным запросам (код 200). Затем найдите суммарный объём ответов с ошибками 500 — это поможет оценить, сколько данных клиенты получили обратно в виде сообщений об ошибках.
+
+      ## Sed: замена и трансформация текста
+
+      `sed` (stream editor) обрабатывает текст построчно применяя команды. Самая частая — замена `s/что/на что/флаги`.
+
+      Маскируем IP-адреса (последний октет → `xxx`) для анонимизации перед передачей:
+
+      ```bash
+      sed 's/\([0-9]\+\.[0-9]\+\.[0-9]\+\)\.[0-9]\+/\1.xxx/g' /var/log/datastream/access.log | head -5
+      ```
+
+      Это сложное выражение — не нужно его запоминать, но важно понять принцип: `\(...\)` захватывает группу, `\1` подставляет её обратно.
+
+      Более простой пример — заменить `ERROR` на `[CRITICAL]` в error.log:
+
+      ```bash
+      sed 's/\[ERROR\]/[CRITICAL]/g' /var/log/datastream/error.log | head -10
+      ```
+
+      **Упражнение:** Создайте очищенную версию access.log в вашей папке отчётов — только строки с ошибками 500, с анонимизированными IP. Используйте цепочку `grep | sed > файл`:
+
+      ```bash
+      grep ' 500 ' /var/log/datastream/access.log \
+        | sed 's/\([0-9]\+\.[0-9]\+\.[0-9]\+\)\.[0-9]\+/\1.xxx/g' \
+        > ~/reports/errors_500_anon.log
+
+      wc -l ~/reports/errors_500_anon.log
+      cat ~/reports/errors_500_anon.log | head -5
+      ```
+
+  - title: "Sort, uniq и финальный конвейер"
+    content: |
+      ## Инструменты финального анализа
+
+      | Команда | Что делает |
+      |---------|-----------|
+      | `sort` | Сортирует строки по алфавиту или числам |
+      | `sort -n` | Числовая сортировка |
+      | `sort -r` | Обратный порядок (по убыванию) |
+      | `sort -k2 -n` | Сортировать по второму полю числово |
+      | `uniq` | Убирает повторяющиеся **соседние** строки |
+      | `uniq -c` | Считает количество повторений |
+      | `cut -d' ' -f1` | Вырезает поле 1 по разделителю пробел |
+      | `head -N` | Оставляет первые N строк |
+
+      Ключевое правило: `uniq` работает только с отсортированными данными — перед `uniq` почти всегда стоит `sort`.
+
+      ## Топ IP по количеству запросов
+
+      Классический конвейер — «кто больше всех стучится»:
+
+      ```bash
+      awk '{print $1}' /var/log/datastream/access.log \
+        | sort \
+        | uniq -c \
+        | sort -rn \
+        | head -5
+      ```
+
+      Разбор по шагам:
+      1. `awk '{print $1}'` — вытащить только IP
+      2. `sort` — отсортировать (нужно для uniq)
+      3. `uniq -c` — посчитать каждый уникальный IP
+      4. `sort -rn` — по убыванию числово
+      5. `head -5` — оставить топ-5
+
+      **Упражнение:** Модифицируйте команду чтобы получить топ-3 IP только среди ошибок 500. Добавьте `grep ' 500 '` в начало конвейера (перед `awk`).
+
+      ## Топ проблемных эндпоинтов
+
+      Поле `$6` в логе — это HTTP-метод+эндпоинт в кавычках: `"POST /api/upload`. Эндпоинт — поле `$7` (после метода):
+
+      ```bash
+      awk '$7 ~ /^[45]/ {print $6}' /var/log/datastream/access.log \
+        | sort | uniq -c | sort -rn | head -10
+      ```
+
+      Здесь `$7 ~ /^[45]/` — условие: код начинается с 4 или 5. `$6` — метод+путь.
+
+      **Упражнение:** Постройте список эндпоинтов (только путь, без метода) отсортированных по числу ошибок 500. Подсказка: используйте `awk '$7 == "500" {print $6}'`, затем через `cut` или второй `awk` обрежьте кавычку и метод чтобы остался только путь.
+
+      ## Финальный конвейер: отчёт в файл
+
+      Соберите итоговый отчёт — топ-5 IP, топ-5 эндпоинтов с ошибками, общее количество 4xx/5xx — и запишите в `~/reports/summary.txt`.
+
+      ```bash
+      {
+        echo "=== TOP 5 IP BY REQUESTS ==="
+        awk '{print $1}' /var/log/datastream/access.log \
+          | sort | uniq -c | sort -rn | head -5
+
+        echo ""
+        echo "=== TOP 5 ENDPOINTS WITH 500 ==="
+        awk '$7 == "500" {print $6}' /var/log/datastream/access.log \
+          | sort | uniq -c | sort -rn | head -5
+
+        echo ""
+        echo "=== ERROR COUNTS BY CODE ==="
+        awk '$7 ~ /^[45]/ {print $7}' /var/log/datastream/access.log \
+          | sort | uniq -c | sort -rn
+      } > ~/reports/summary.txt
+
+      cat ~/reports/summary.txt
+      ```
+
+      **Финальное задание:** Дополните отчёт четвёртой секцией — «TOP 5 IP по суммарному трафику (байт)». Для этого нужно суммировать `$10` (байты) для каждого уникального IP — `awk` с массивом:
+
+      ```bash
+      awk '{bytes[$1] += $10} END {for (ip in bytes) print bytes[ip], ip}' \
+        /var/log/datastream/access.log | sort -rn | head -5
+      ```
+
+      Добавьте эту секцию в `~/reports/summary.txt` и покажите финальный файл командой `cat ~/reports/summary.txt`.
+
+environment:
+  duration: 90
+  assets:
+    - name: server-0
+      image: ubuntu
+      platform: container
+      ssh_user: lab
+      cpu: 200m
+      memory: 256Mi
+      disk: 5Gi
+      protocols:
+        - exec
+      setup: |
+        #!/bin/bash
+        set -e
+
+        # --- Пользователь и структура каталогов ---
+        useradd -m -s /bin/bash datastream 2>/dev/null || true
+        mkdir -p /app/datastream/data
+        mkdir -p /var/log/datastream
+        mkdir -p /var/lib/datastream/cache
+        mkdir -p /home/lab/reports
+
+        # --- Код и конфиг приложения ---
+        cat > /app/datastream/config.yaml << 'EOF'
+        server:
+          host: 0.0.0.0
+          port: 8080
+          workers: 4
+
+        storage:
+          data_dir: /app/datastream/data
+          db_path: /var/lib/datastream/events.db
+          cache_dir: /var/lib/datastream/cache
+
+        logging:
+          access_log: /var/log/datastream/access.log
+          error_log: /var/log/datastream/error.log
+          level: info
+
+        retention:
+          log_days: 30
+          cache_ttl: 3600
+        EOF
+
+        cat > /app/datastream/requirements.txt << 'EOF'
+        flask==2.3.2
+        pandas==2.0.3
+        sqlalchemy==2.0.19
+        gunicorn==21.2.0
+        pyyaml==6.0.1
+        EOF
+
+        cat > /app/datastream/app.py << 'EOF'
+        # DataStream — HTTP event ingestion service
+        # Accepts CSV uploads, aggregates by client_id, writes reports to /var/lib/datastream/
+
+        import yaml
+        from flask import Flask, request, jsonify
+
+        app = Flask(__name__)
+
+        @app.route('/api/upload', methods=['POST'])
+        def upload():
+            pass
+
+        @app.route('/api/status', methods=['GET'])
+        def status():
+            return jsonify({"status": "ok"})
+
+        @app.route('/api/report/<client_id>', methods=['GET'])
+        def report(client_id):
+            pass
+
+        if __name__ == '__main__':
+            app.run()
+        EOF
+
+        # --- CSV-данные ---
+        cat > /app/datastream/data/events_2024_01.csv << 'EOF'
+        timestamp,client_id,event_type,value,region
+        2024-01-15 08:23:11,client_042,purchase,149.99,EU
+        2024-01-15 08:24:03,client_017,pageview,0,US
+        2024-01-15 08:25:47,client_042,purchase,89.50,EU
+        2024-01-15 08:26:12,client_103,signup,0,APAC
+        2024-01-15 08:27:01,client_017,purchase,299.00,US
+        2024-01-15 09:01:44,client_055,pageview,0,EU
+        2024-01-15 09:15:22,client_042,refund,149.99,EU
+        2024-01-15 10:03:09,client_017,purchase,59.90,US
+        2024-01-16 08:00:01,client_103,purchase,199.00,APAC
+        2024-01-16 08:45:33,client_055,purchase,79.00,EU
+        EOF
+
+        cat > /app/datastream/data/events_2024_02.csv << 'EOF'
+        timestamp,client_id,event_type,value,region
+        2024-02-01 07:12:00,client_017,purchase,349.00,US
+        2024-02-01 07:45:11,client_099,signup,0,EU
+        2024-02-02 09:30:22,client_042,purchase,249.99,EU
+        2024-02-03 10:11:05,client_099,purchase,89.00,EU
+        2024-02-05 14:00:00,client_103,refund,199.00,APAC
+        2024-02-07 16:22:44,client_055,purchase,120.00,EU
+        2024-02-10 08:05:33,client_017,purchase,59.90,US
+        EOF
+
+        cat > /app/datastream/data/clients.csv << 'EOF'
+        client_id,name,plan,region,since
+        client_017,Acme Corp,enterprise,US,2022-03-01
+        client_042,BrightData GmbH,pro,EU,2023-01-15
+        client_055,Solaris SAS,starter,EU,2023-07-20
+        client_099,NordMetrics,pro,EU,2024-01-05
+        client_103,AsiaPulse Ltd,enterprise,APAC,2022-11-30
+        EOF
+
+        # --- Генерация access.log ---
+        python3 << 'PYEOF'
+        import random
+        import datetime
+
+        ips = [
+            "185.220.101.42", "93.184.216.34", "198.51.100.17",
+            "203.0.113.5",    "185.220.101.98", "91.108.4.11",
+            "172.16.254.1",   "45.33.32.156",   "162.243.10.151",
+            "104.21.14.177",  "185.220.101.42", "93.184.216.34",
+        ]
+        endpoints_methods = [
+            ("POST", "/api/upload"),   ("POST", "/api/upload"),
+            ("POST", "/api/upload"),   ("GET",  "/api/status"),
+            ("GET",  "/api/status"),   ("GET",  "/api/report/client_042"),
+            ("GET",  "/api/report/client_017"), ("GET", "/api/report/client_103"),
+            ("GET",  "/api/metrics"),  ("GET",  "/favicon.ico"),
+            ("GET",  "/robots.txt"),
+        ]
+        codes_by_endpoint = {
+            "/api/upload":  ([200]*7 + [201]*2 + [400]*2 + [500]*2 + [503]*1),
+            "/api/status":  ([200]*9 + [500]*1),
+            "/api/report/client_042": ([200]*8 + [404]*1 + [500]*1),
+            "/api/report/client_017": ([200]*8 + [404]*1 + [500]*1),
+            "/api/report/client_103": ([200]*7 + [404]*2 + [500]*1),
+            "/api/metrics": ([200]*8 + [403]*2),
+            "/favicon.ico": ([200]*5 + [404]*5),
+            "/robots.txt":  ([200]*9 + [404]*1),
+        }
+        user_agents = [
+            "python-requests/2.28.0", "curl/7.88.1",
+            "Mozilla/5.0 (compatible; DataStream-Client/1.2)",
+            "Go-http-client/1.1",
+        ]
+
+        random.seed(42)
+        start = datetime.datetime(2024, 3, 1, 0, 0, 0)
+        lines = []
+        t = start
+        for i in range(5000):
+            t += datetime.timedelta(seconds=random.randint(5, 120))
+            ip = random.choice(ips)
+            method, endpoint = random.choice(endpoints_methods)
+            pool = codes_by_endpoint.get(endpoint, [200]*8 + [500]*2)
+            code = random.choice(pool)
+            size = random.randint(512, 15000) if code < 400 else random.randint(50, 512)
+            ua = random.choice(user_agents)
+            ts = t.strftime("%d/%b/%Y:%H:%M:%S +0000")
+            lines.append(
+                f'{ip} - - [{ts}] "{method} {endpoint} HTTP/1.1" {code} {size} "-" "{ua}"'
+            )
+
+        with open("/var/log/datastream/access.log", "w") as f:
+            f.write("\n".join(lines) + "\n")
+        PYEOF
+
+        # --- Генерация error.log ---
+        python3 << 'PYEOF'
+        import random
+        import datetime
+
+        random.seed(7)
+        errors = [
+            "Database connection timeout after 30s",
+            "Failed to parse CSV: unexpected column count in row 47",
+            "Client client_042 report generation failed: missing data for 2024-02",
+            "Cache write failed: disk quota exceeded",
+            "Request body too large: 12.4MB received, max 10MB allowed",
+            "Upstream timeout for /api/upload after 60s",
+            "Unhandled exception in report worker PID 1842",
+        ]
+        warnings = [
+            "Slow query detected: 2.3s for report generation client_103",
+            "Cache hit ratio below threshold: 0.42 (expected >0.7)",
+            "Memory usage above 80%: 817MB / 1024MB",
+            "Retry 2/3 for client_103 webhook delivery",
+            "Log file approaching rotation threshold: 480MB",
+            "Worker respawn detected: PID 1839 exited with code 1",
+        ]
+
+        start = datetime.datetime(2024, 3, 1, 0, 5, 0)
+        t = start
+        lines = []
+        for _ in range(450):
+            t += datetime.timedelta(seconds=random.randint(30, 900))
+            level = random.choices(["ERROR", "WARN"], weights=[35, 65])[0]
+            msg = random.choice(errors if level == "ERROR" else warnings)
+            ts = t.strftime("%Y-%m-%d %H:%M:%S")
+            lines.append(f"[{ts}] [{level}] {msg}")
+
+        with open("/var/log/datastream/error.log", "w") as f:
+            f.write("\n".join(lines) + "\n")
+        PYEOF
+
+        # --- Архивные логи (имитация logrotate) ---
+        cp /var/log/datastream/access.log /var/log/datastream/access.log.1
+        gzip -c /var/log/datastream/access.log.1 > /var/log/datastream/access.log.2.gz
+        rm /var/log/datastream/access.log.1
+
+        # --- База данных (stub) ---
+        dd if=/dev/urandom of=/var/lib/datastream/events.db bs=1M count=3 2>/dev/null
+
+        # --- Мусор: кэш-файлы (главный виновник) ---
+        dd if=/dev/zero of=/var/lib/datastream/cache/report_cache_2024_01.tmp bs=1M count=18 2>/dev/null
+        dd if=/dev/zero of=/var/lib/datastream/cache/report_cache_2024_02.tmp bs=1M count=22 2>/dev/null
+        dd if=/dev/zero of=/var/lib/datastream/cache/report_cache_2024_03.tmp bs=1M count=15 2>/dev/null
+
+        # --- Мусор: бэкапы и старый экспорт ---
+        cp /var/lib/datastream/events.db /var/lib/datastream/events.db.bak
+        dd if=/dev/zero of=/var/lib/datastream/old_export_2024_01.tar.gz bs=1M count=28 2>/dev/null
+        touch -d "45 days ago" /var/lib/datastream/old_export_2024_01.tar.gz
+        touch -d "45 days ago" /var/lib/datastream/events.db.bak
+
+        # --- Мусор в домашней папке сервиса ---
+        dd if=/dev/zero of=/home/datastream/deploy_bundle_v1.tar.gz bs=1M count=20 2>/dev/null
+        touch -d "65 days ago" /home/datastream/deploy_bundle_v1.tar.gz
+        cat > /home/datastream/migrate_db_v1.sh << 'EOF'
+        #!/bin/bash
+        # Old migration script from v1 -> v2 schema, no longer needed
+        sqlite3 /var/lib/datastream/events.db "ALTER TABLE events ADD COLUMN region TEXT"
+        EOF
+        touch -d "90 days ago" /home/datastream/migrate_db_v1.sh
+        dd if=/dev/zero of=/home/datastream/core.1839 bs=1M count=8 2>/dev/null
+        touch -d "3 days ago" /home/datastream/core.1839
+
+        # --- Права доступа ---
+        chown -R datastream:datastream /app/datastream /var/log/datastream /var/lib/datastream /home/datastream
+        chmod 755 /app/datastream
+        chmod 644 /app/datastream/config.yaml /app/datastream/requirements.txt
+        chmod 640 /var/log/datastream/access.log /var/log/datastream/error.log
+        chmod 755 /home/datastream
+        chown -R lab:lab /home/lab
+        chmod 755 /home/lab/reports
+
+        # Разрешаем lab читать логи
+        chmod o+r /var/log/datastream/access.log /var/log/datastream/error.log
+        chmod o+x /var/log/datastream
