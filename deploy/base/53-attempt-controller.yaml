@@ -31,7 +31,7 @@ spec:
       containers:
       - name: attempt-controller
         image: attempt-controller
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         resources:
           requests:
             memory: "128Mi"

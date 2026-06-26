@@ -49,7 +49,7 @@ patches:
     patch: |-
       - op: replace
         path: /spec/template/spec/containers/0/imagePullPolicy
-        value: IfNotPresent
+        value: Always
       - op: add
         path: /spec/template/spec/containers/0/env
         value:
@@ -76,7 +76,7 @@ images:
     newTag: latest
   - name: relay-authenticator
     newName: ghcr.io/alex-sviridov/rootenv/relay-authenticator
-    newTag: latest
+    newTag: latest  # relay-authenticator
   - name: labenv-operator
     newName: ghcr.io/alex-sviridov/rootenv/labenv-operator
     newTag: latest

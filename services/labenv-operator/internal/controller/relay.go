@@ -306,6 +306,7 @@ func (r *LabEnvironmentReconciler) ensureRelayIngress(ctx context.Context, env *
 			Namespace: nsName,
 		},
 		Spec: networkingv1.IngressSpec{
+			TLS: []networkingv1.IngressTLS{{}},
 			Rules: []networkingv1.IngressRule{
 				{
 					IngressRuleValue: networkingv1.IngressRuleValue{
