@@ -66,7 +66,7 @@ Binds `relay` ServiceAccount (same namespace) to `relay` Role.
 - Env: `RELAY_NAMESPACE=<nsName>`
 - Resources: requests+limits `cpu: 100m/200m`, `memory: 64Mi/128Mi`
 - ReadinessProbe: `httpGet /` on port 8080
-- `imagePullPolicy: IfNotPresent`
+- `imagePullPolicy: Always`
 
 ### Service
 - ClusterIP (not headless)
