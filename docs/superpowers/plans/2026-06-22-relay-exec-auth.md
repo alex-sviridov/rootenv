@@ -421,7 +421,7 @@ spec:
       containers:
       - name: relay-authenticator
         image: relay-authenticator
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         env:
         - name: RELAUTH_POCKETBASE_URL
           value: http://backend-svc.rootenv-infra.svc.cluster.local:8090

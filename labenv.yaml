@@ -62,7 +62,7 @@ spec:
           capabilities:
             drop: ["ALL"]
         image: relay-primitive:aae5a700ea3d1abb56cbe332d0734dd5feeb87505f172698f62965f6813dd550
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         env:
         - name: RELAY_NAMESPACE
           value: namespace

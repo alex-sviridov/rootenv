@@ -6,6 +6,8 @@ metadata:
 spec:
   forwardAuth:
     address: http://relay-authenticator.rootenv-infra.svc.cluster.local:8080/auth
+    authRequestHeaders:
+      - Cookie
     authResponseHeaders:
       - X-User-Id
       - X-Attempt-Id

@@ -23,7 +23,7 @@ spec:
       containers:
       - name: backend
         image: rootenv-backend
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         ports:
         - containerPort: 8090
         volumeMounts:
