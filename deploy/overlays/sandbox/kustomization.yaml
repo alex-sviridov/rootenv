@@ -76,7 +76,7 @@ images:
     newTag: latest
   - name: relay-authenticator
     newName: ghcr.io/alex-sviridov/rootenv/relay-authenticator
-    newTag: latest  # relay-authenticator
+    newTag: latest
   - name: labenv-operator
     newName: ghcr.io/alex-sviridov/rootenv/labenv-operator
     newTag: latest
