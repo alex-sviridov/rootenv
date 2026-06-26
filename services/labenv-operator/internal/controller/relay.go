@@ -29,11 +29,13 @@ import (
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create
 
+const defaultIngressControllerNS = "kube-system"
+
 type relayConfig struct {
-	image                     string
-	ingressClass              string
-	ingressBasePath           string
-	ingressAnnotations        map[string]string
+	image                      string
+	ingressClass               string
+	ingressBasePath            string
+	ingressAnnotations         map[string]string
 	ingressControllerNamespace string
 }
 
@@ -50,7 +52,7 @@ func loadRelayConfig() (relayConfig, error) {
 
 	ingressControllerNS := os.Getenv("RELAY_INGRESS_CONTROLLER_NAMESPACE")
 	if ingressControllerNS == "" {
-		ingressControllerNS = "kube-system"
+		ingressControllerNS = defaultIngressControllerNS
 	}
 
 	// start with the hardcoded auth middleware — always required
@@ -68,10 +70,10 @@ func loadRelayConfig() (relayConfig, error) {
 	}
 
 	return relayConfig{
-		image:                     image,
-		ingressClass:              os.Getenv("RELAY_INGRESS_CLASS"),
-		ingressBasePath:           basePath,
-		ingressAnnotations:        annotations,
+		image:                      image,
+		ingressClass:               os.Getenv("RELAY_INGRESS_CLASS"),
+		ingressBasePath:            basePath,
+		ingressAnnotations:         annotations,
 		ingressControllerNamespace: ingressControllerNS,
 	}, nil
 }

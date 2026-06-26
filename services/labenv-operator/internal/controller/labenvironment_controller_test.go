@@ -226,7 +226,7 @@ var _ = Describe("ensureRelayNetworkPolicy", func() {
 		ip, port, err := r.apiServerEndpoint(ctx)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(r.ensureRelayNetworkPolicy(ctx, nsName)).To(Succeed())
+		Expect(r.ensureRelayNetworkPolicy(ctx, nsName, relayConfig{ingressControllerNamespace: "kube-system"})).To(Succeed())
 
 		var np networkingv1.NetworkPolicy
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "networkpolicy-relay-exec"}, &np)).To(Succeed())
@@ -289,8 +289,8 @@ var _ = Describe("ensureRelayNetworkPolicy", func() {
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
 
 		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
-		Expect(r.ensureRelayNetworkPolicy(ctx, nsName)).To(Succeed())
-		Expect(r.ensureRelayNetworkPolicy(ctx, nsName)).To(Succeed())
+		Expect(r.ensureRelayNetworkPolicy(ctx, nsName, relayConfig{ingressControllerNamespace: "kube-system"})).To(Succeed())
+		Expect(r.ensureRelayNetworkPolicy(ctx, nsName, relayConfig{ingressControllerNamespace: "kube-system"})).To(Succeed())
 	})
 })
 
