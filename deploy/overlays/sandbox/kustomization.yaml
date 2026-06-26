@@ -5,6 +5,7 @@ resources:
   - ../../base/
 
 patches:
+  - path: ./enable-https.yaml
   - target:
       kind: TLSOption
       name: relay-exec-no-h2
@@ -57,7 +58,7 @@ patches:
           - name: RELAY_INGRESS_CLASS
             value: "traefik"
           - name: RELAY_INGRESS_ANNOTATIONS
-            value: "traefik.ingress.kubernetes.io/router.entrypoints=web"
+            value: "traefik.ingress.kubernetes.io/router.entrypoints=websecure"
           - name: RELAY_INGRESS_BASE_PATH
             value: "/relay/exec"
           - name: RELAY_INGRESS_CONTROLLER_NAMESPACE
