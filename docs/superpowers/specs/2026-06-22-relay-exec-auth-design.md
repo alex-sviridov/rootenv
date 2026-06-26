@@ -69,9 +69,9 @@ Update tests to use cookie + `X-Forwarded-Uri` instead of `Authorization` + `X-A
 New manifest in `rootenv-infra` namespace:
 
 - `Deployment`: `relay-authenticator`, 1 replica, image `relay-authenticator:latest`
-  - Env: `INGAUTH_POCKETBASE_URL` = `http://backend-svc.rootenv-infra.svc.cluster.local:8090`
+  - Env: `RELAUTH_POCKETBASE_URL` = `http://backend-svc.rootenv-infra.svc.cluster.local:8090`
   - Liveness probe: `GET /healthz` — checks the process is alive
-  - Readiness probe: `GET /readyz` — checks PocketBase reachability; add `/readyz` endpoint to `cmd/main.go` that calls `GET <INGAUTH_POCKETBASE_URL>/api/health` and returns 200/503
+  - Readiness probe: `GET /readyz` — checks PocketBase reachability; add `/readyz` endpoint to `cmd/main.go` that calls `GET <RELAUTH_POCKETBASE_URL>/api/health` and returns 200/503
   - Security context: `runAsNonRoot`, `readOnlyRootFilesystem`, drop ALL caps
 - `Service`: `relay-authenticator`, port 8080 → 8080
 - `NetworkPolicy`: allow ingress on port 8080 from `kube-system` (Traefik) only; allow egress to `rootenv-infra` on port 8090 (PocketBase) only
@@ -95,7 +95,7 @@ spec:
 
 ### 5. `services/relay-authenticator/cmd/main.go`
 
-Add `/readyz` endpoint that calls `GET <INGAUTH_POCKETBASE_URL>/api/health`. Returns 200 if PocketBase responds 200, 503 otherwise.
+Add `/readyz` endpoint that calls `GET <RELAUTH_POCKETBASE_URL>/api/health`. Returns 200 if PocketBase responds 200, 503 otherwise.
 
 ### 6. `services/labenv-operator/internal/controller/relay.go`
 

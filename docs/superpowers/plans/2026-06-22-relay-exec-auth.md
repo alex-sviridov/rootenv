@@ -293,9 +293,9 @@ import (
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
-	pbURL := os.Getenv("INGAUTH_POCKETBASE_URL")
+	pbURL := os.Getenv("RELAUTH_POCKETBASE_URL")
 	if pbURL == "" {
-		slog.Error("INGAUTH_POCKETBASE_URL is required")
+		slog.Error("RELAUTH_POCKETBASE_URL is required")
 		os.Exit(1)
 	}
 	tlsVerify := os.Getenv("INGAUTH_POCKETBASE_TLS_VERIFY") != "false"
@@ -423,7 +423,7 @@ spec:
         image: relay-authenticator
         imagePullPolicy: IfNotPresent
         env:
-        - name: INGAUTH_POCKETBASE_URL
+        - name: RELAUTH_POCKETBASE_URL
           value: http://backend-svc.rootenv-infra.svc.cluster.local:8090
         securityContext:
           allowPrivilegeEscalation: false

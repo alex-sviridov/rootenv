@@ -100,7 +100,7 @@ No admin token. Two PocketBase calls per WebSocket upgrade (at handshake time on
 ### Config (env vars)
 
 ```
-INGAUTH_POCKETBASE_URL         — PocketBase base URL
+RELAUTH_POCKETBASE_URL         — PocketBase base URL
 INGAUTH_POCKETBASE_TLS_VERIFY  — default true; set false in dev for self-signed certs
 INGAUTH_PORT                   — default 8080
 ```

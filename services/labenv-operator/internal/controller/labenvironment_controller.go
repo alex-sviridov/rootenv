@@ -319,12 +319,12 @@ func (r *LabEnvironmentReconciler) ensureNetworkPolicy(ctx context.Context, nsNa
 						},
 					}},
 				},
-				// allow incoming from Traefik (kube-system) to relay-exec on port 8080
+				// allow incoming from Traefik to relay-exec on port 8080
 				{
 					From: []networkingv1.NetworkPolicyPeer{{
 						NamespaceSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{
-								"kubernetes.io/metadata.name": "kube-system",
+								"kubernetes.io/metadata.name": defaultIngressControllerNS,
 							},
 						},
 					}},

@@ -1,8 +1,8 @@
 # Rootenv
 
-> Self-service platform for on-demand, isolated Linux learning environments on Kubernetes.
+> Self-hosted platform for on-demand, isolated Linux learning environments on Kubernetes. Runs on your own cluster, light on resources, with no external dependencies — bring your own labs and own your data.
 
-Rootenv provisions ephemeral lab environments — each lab runs in an isolated Kubernetes namespace, accessible through a browser-based SSH terminal. Built for hands-on learning of Linux administration, RHCSA/RHCE preparation, and similar certification tracks.
+Rootenv provisions ephemeral lab environments on demand — each lab runs fully isolated, accessible through a browser-based terminal with built-in task tracking. Drop it onto a k3s cluster, add your own labs, and run a full Linux training platform on hardware you control.
 
 <!-- TODO: add demo.gif here -->
 
@@ -16,14 +16,15 @@ Rootenv provisions ephemeral lab environments — each lab runs in an isolated K
 
 ## Architecture
 
+Rootenv consists of the following services:
 
-Rootenv consists of five services:
-
+- **frontend** — web UI for browsing labs and launching environments
 - **backend** — REST API and lab metadata store (PocketBase)
 - **attempt-controller** — creates `LabEnv` custom objects in Kubernetes when a lab is provisioned, then syncs their status back to the database
 - **labenv-operator** — watches `LabEnv` objects and reconciles the underlying Kubernetes resources (namespace, pods, network policies, etc.)
 - **relay-exec** — WebSocket-to-kubectl-exec bridge enabling browser-based terminal access to lab containers
-- **frontend** — web UI for browsing labs and launching environments
+- **relay-authenticator** - lightweight middleware for authenficationg and authorizing relay access requests
+- **task-control** - ![Static Badge](https://img.shields.io/badge/in_progress-orange) automated task completion tracking
 
 See [docs/architecture.md](docs/architecture.md) for detailed design and trade-offs.
 
@@ -45,7 +46,7 @@ graph LR
 ## Tech stack
 
 - **Kubernetes** — orchestration and isolation primitives (namespaces, NetworkPolicies, RBAC, ResourceQuotas)
-- **Go** — `attempt-controller`, `labenv-operator`, and `relay` services
+- **Go** — all the services
 - **PocketBase** — `backend` (embedded DB + REST API)
 - **Vue.js** — `frontend` (JS)
 - **Skaffold + k3d** — local development workflow
@@ -54,7 +55,10 @@ graph LR
 
 ### Remote
 
-Prerequisites: `opentofy`, `kubectl`.
+Prerequisites:
+- (https://opentofu.org/docs/intro/install/)[`opentofy`]
+- (https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)[`kubectl`]
+- (https://helm.sh/docs/intro/install/)[`helm`]
 
 ```bash
 # Make secrets
@@ -64,8 +68,8 @@ vi scripts/.env
 cp infra/terraform/environments/sandbox/terraform.tfvars.example infra/terraform/environments/sandbox/terraform.tfvars
 vi infra/terraform/environments/sandbox/terraform.tfvars
 
-PWD=password123
-kubectl create secret generic attempt-controller-secrets -n rootenv-infra --from-literal ATTEMPT_CONTROLLER_BACKEND_USERNAME=attempt-controller@example.local --from-literal ATTEMPT_CONTROLLER_BACKEND_PASSWORD=$PWD --dry-run=client -o yaml > deploy/base/50-attempt-controller-secrets.yaml
+PASS=password123
+kubectl create secret generic attempt-controller-secrets -n rootenv-infra --from-literal ATTEMPT_CONTROLLER_BACKEND_USERNAME=attempt-controller@example.local --from-literal ATTEMPT_CONTROLLER_BACKEND_PASSWORD=$PASS --dry-run=client -o yaml > deploy/base/50-attempt-controller-secrets.yaml
 
 # Bootstrap k3s cluster
 
@@ -109,8 +113,8 @@ Prerequisites:
 cp scripts/.env.example scripts/.env
 vi scripts/.env 
 
-PWD=password123
-kubectl create secret generic attempt-controller-secrets -n rootenv-infra --from-literal ATTEMPT_CONTROLLER_BACKEND_USERNAME=attempt-controller@example.local --from-literal ATTEMPT_CONTROLLER_BACKEND_PASSWORD=$PWD --dry-run=client -o yaml > deploy/base/50-attempt-controller-secrets.yaml
+PASS=password123
+kubectl create secret generic attempt-controller-secrets -n rootenv-infra --from-literal ATTEMPT_CONTROLLER_BACKEND_USERNAME=attempt-controller@example.local --from-literal ATTEMPT_CONTROLLER_BACKEND_PASSWORD=$PASS --dry-run=client -o yaml > deploy/base/50-attempt-controller-secrets.yaml
 
 # Create cluster, apply manifests
 make dev-cluster
@@ -144,15 +148,15 @@ make dev   # starts the cluster then runs skaffold dev
 
 ```
 .
-├── services/        # platform services (backend, attempt-controller, labenv-operator, frontend, relay)
+├── services/        # platform services 
 ├── deploy/          # Kubernetes manifests and deployment configs
+├── infra/           # Terraform infrastructure configuration
 ├── labs/            # lab definitions (YAML) and lab base images
-│   ├── definitions/ # YAML descriptors to be loaded into the backend
+│   ├── definitions/ # YAML lab definitions to be loaded into the backend
 │   └── images/      # Dockerfiles for lab base images
 ├── scripts/         # operational scripts
 ├── docs/            # architecture and operational documentation
 ├── skaffold.yaml    # development workflow
-└── scripts/         # management scripts and goodies
 ```
 
 ## Status
