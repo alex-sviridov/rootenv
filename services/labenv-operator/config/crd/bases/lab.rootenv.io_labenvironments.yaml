@@ -80,8 +80,9 @@ spec:
                         (protects the host from disk exhaustion), e.g. "2Gi".
                       type: string
                     image:
-                      description: Image specifies the lab image name; resolved against
-                        the lab-images ConfigMap by labenv-operator.
+                      description: |-
+                        Image specifies the lab image name. labenv-operator resolves it against the lab-images
+                        ConfigMap; if no match is found, the name is used as-is (e.g. a public image like "ubuntu").
                       type: string
                     memory:
                       default: 128Mi

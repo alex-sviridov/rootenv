@@ -28,7 +28,9 @@ const defaultLabImagesDir = "/etc/lab-images"
 // loadLabImageRef resolves the built image reference for a lab asset image
 // name (e.g. "ubuntu-sshd") by reading the file Skaffold's resourceSelector
 // writes into the lab-images ConfigMap, mounted as a volume on the
-// controller-manager pod.
+// controller-manager pod. If no matching file exists, the image name isn't
+// one Skaffold builds for us — fall back to using it as-is, so Kubernetes
+// pulls it from a public registry (e.g. "ubuntu" from Docker Hub).
 func loadLabImageRef(name string) (string, error) {
 	dir := os.Getenv("LAB_IMAGES_DIR")
 	if dir == "" {
@@ -38,6 +40,9 @@ func loadLabImageRef(name string) (string, error) {
 	path := filepath.Join(dir, name)
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return name, nil
+		}
 		return "", fmt.Errorf("resolving lab image %q: reading %s: %w", name, path, err)
 	}
 	return strings.TrimSpace(string(data)), nil

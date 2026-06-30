@@ -19,6 +19,7 @@ sandbox sandbox-platform-deploy sandbox-deploy: export SKAFFOLD_DEFAULT_REPO = $
 	kubectl wait --for=condition=Ready node --all --timeout=90s
 	kubectl apply -f deploy/base/00-namespace-infra.yaml
 	kubectl wait --for=create crd/middlewares.traefik.io --timeout=90s
+	k3d kubeconfig get rootenv > ~/.kube/rootenv-dev
 
 dev-rebuild:
 	skaffold run --cache-artifacts=false
@@ -38,7 +39,7 @@ dev-polling:
 	skaffold dev --cleanup=false --trigger=polling
 
 sandbox:
-	skaffold run -p sandbox
+	skaffold run -p sandbox --cache-artifacts=false
 
 sandbox-platform-deploy:
 	/bin/bash deploy/platform/install.sh

@@ -47,15 +47,24 @@ var _ = Describe("loadLabImageRef", func() {
 		Expect(ref).To(Equal("ubuntu-sshd:abc123"))
 	})
 
-	It("returns an error when no file matches the image name", func() {
-		_, err := loadLabImageRef("does-not-exist")
-		Expect(err).To(MatchError(ContainSubstring("does-not-exist")))
+	It("falls back to the literal image name when no file matches", func() {
+		ref, err := loadLabImageRef("ubuntu")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ref).To(Equal("ubuntu"))
 	})
 
-	It("defaults to /etc/lab-images when LAB_IMAGES_DIR is unset", func() {
+	It("falls back to the literal image name when LAB_IMAGES_DIR is unset and no default file exists", func() {
 		Expect(os.Unsetenv("LAB_IMAGES_DIR")).To(Succeed())
+		ref, err := loadLabImageRef("ubuntu")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ref).To(Equal("ubuntu"))
+	})
+
+	It("returns an error when the lab-images directory exists but the file can't be read for another reason", func() {
+		Expect(os.WriteFile(filepath.Join(dir, "ubuntu-sshd"), []byte("ubuntu-sshd:abc123"), 0644)).To(Succeed())
+		Expect(os.Chmod(filepath.Join(dir, "ubuntu-sshd"), 0000)).To(Succeed())
+
 		_, err := loadLabImageRef("ubuntu-sshd")
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("/etc/lab-images/ubuntu-sshd"))
+		Expect(err).To(MatchError(ContainSubstring("ubuntu-sshd")))
 	})
 })

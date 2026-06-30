@@ -130,21 +130,18 @@ kubectl create secret generic attempt-controller-secrets -n rootenv-infra --from
 cd infra/terraform/environments/sandbox
 tofu init
 tofu apply
+cd -
 
 # Use the provisioned kubeconfig
-
 export KUBECONFIG=/home/alex/.kube/rootenv-sandbox
 
 # Install platform components
-
 make sandbox-platform-deploy
 
 # Deploy app
-
 make sandbox
 
 # Bootstrap users
-
 make dbusers-init
 
 # Upload lab definitions
@@ -172,6 +169,7 @@ kubectl create secret generic attempt-controller-secrets -n rootenv-infra --from
 
 # Provision a local k3d cluster, apply manifests
 make dev-cluster
+export KUBECONFIG=/home/alex/.kube/rootenv-dev
 
 # Open the UI
 open http://localhost/

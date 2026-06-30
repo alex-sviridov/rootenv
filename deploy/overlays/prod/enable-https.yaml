@@ -1,0 +1,15 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: frontend-ingress
+  namespace: rootenv-infra
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backend-ingress
+  namespace: rootenv-infra
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
