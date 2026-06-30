@@ -3,7 +3,7 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
-.PHONY: dev-cluster dev prod-deploy dbusers-init labs-sync labs-build
+.PHONY: dev-cluster dev prod-deploy dbusers-init labs-sync
 
 sandbox sandbox-platform-deploy sandbox-deploy: export SKAFFOLD_KUBECONFIG = $(SANDBOX_KUBECONFIG)
 sandbox sandbox-platform-deploy sandbox-deploy: export SKAFFOLD_DEFAULT_REPO = $(SANDBOX_REPO)
@@ -26,7 +26,7 @@ dev-rebuild:
 .wait-backend:
 	kubectl wait --for=condition=Available deployment/backend -n rootenv-infra --timeout=90s
 
-dev-cluster: .dev-cluster-remove .dev-cluster-create dev-rebuild .wait-backend .dev-dbusers-init .dev-labs-sync labs-build
+dev-cluster: .dev-cluster-remove .dev-cluster-create dev-rebuild .wait-backend .dev-dbusers-init .dev-labs-sync
 
 .dev-dbusers-init:
 	python3 ./scripts/dbusers-init.py
@@ -51,10 +51,6 @@ dbusers-init:
 
 labs-sync:
 	python3 ./scripts/labs-sync.py labs/definitions/
-
-labs-build:
-	docker build -t ubuntu-sshd:latest labs/images/ubuntu-sshd
-	k3d image import ubuntu-sshd:latest -c rootenv
 
 pre-commit:
 	pre-commit run --all-files

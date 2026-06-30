@@ -46,7 +46,7 @@ type LabEnvironmentSpec struct {
 type Asset struct {
 	// Name is a unique identifier for this asset within the lab environment.
 	Name string `json:"name"`
-	// Image specifies the base image to use for this asset, without the registry prefix (registry prefix is set via LABENV_REGISTRY).
+	// Image specifies the lab image name; resolved against the lab-images ConfigMap by labenv-operator.
 	Image string `json:"image"`
 	// CPU limit for this asset, e.g. "500m" for 0.5 CPU cores.
 	// +kubebuilder:default="100m"
