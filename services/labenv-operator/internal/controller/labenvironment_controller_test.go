@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"os"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -51,8 +52,17 @@ var _ = Describe("LabEnvironment Controller", func() {
 			Expect(os.Setenv("RELAY_IMAGE", "relay-primitive:test")).To(Succeed())
 			DeferCleanup(func() { Expect(os.Unsetenv("RELAY_IMAGE")).To(Succeed()) })
 
+			labImagesDir, err := os.MkdirTemp("", "lab-images")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(os.WriteFile(filepath.Join(labImagesDir, "busybox"), []byte("busybox:test"), 0644)).To(Succeed())
+			Expect(os.Setenv("LAB_IMAGES_DIR", labImagesDir)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(os.Unsetenv("LAB_IMAGES_DIR")).To(Succeed())
+				Expect(os.RemoveAll(labImagesDir)).To(Succeed())
+			})
+
 			By("creating the custom resource for the Kind LabEnvironment")
-			err := k8sClient.Get(ctx, typeNamespacedName, labenvironment)
+			err = k8sClient.Get(ctx, typeNamespacedName, labenvironment)
 			if err != nil && errors.IsNotFound(err) {
 				resource := &labv1alpha1.LabEnvironment{
 					ObjectMeta: metav1.ObjectMeta{

@@ -128,7 +128,7 @@ def main():
 
     admin_email = os.environ.get("POCKETBASE_ADMIN_EMAIL") or env.get("POCKETBASE_ADMIN_EMAIL")
     admin_password = os.environ.get("POCKETBASE_ADMIN_PASSWORD") or env.get("POCKETBASE_ADMIN_PASSWORD")
-    backend_svc = (os.environ.get("POCKETBASE_URL") or env.get("POCKETBASE_URL", DEFAULT_BACKEND_URL)).rstrip("/")
+    backend_svc = (os.environ.get("POCKETBASE_URL") or env.get("POCKETBASE_URL", DEFAULT_BACKEND_URL)).strip().rstrip("/")
 
     if not admin_email or not admin_password:
         print(f"ERROR: POCKETBASE_ADMIN_EMAIL / POCKETBASE_ADMIN_PASSWORD missing in {args.env_file}",

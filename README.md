@@ -53,7 +53,7 @@ graph LR
 
 ## Quickstart
 
-### Remote
+### Remote (K3S)
 
 Prerequisites:
 - (https://opentofu.org/docs/intro/install/)[`opentofy`]
@@ -99,7 +99,58 @@ make labs-sync
 
 ```
 
-### Locally
+### Remote development (K3S + Skaffold )
+
+Prerequisites:
+- (https://opentofu.org/docs/intro/install/)[`opentofy`]
+- (https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)[`kubectl`]
+- (https://helm.sh/docs/intro/install/)[`helm`]
+
+```bash
+# Generate github token
+# GitHub -> Settings -> Developer Settings -> Personal Access Tokens
+# Required permissions: write:packages, repo
+echo "TOKEN" | docker login ghcr.io -u alex-sviridov --password-stdin
+# Make skaffold secrets
+cp .env.example .env
+vi .env
+
+# Make secrets
+cp scripts/.env.example scripts/.env
+vi scripts/.env
+
+cp infra/terraform/environments/sandbox/terraform.tfvars.example infra/terraform/environments/sandbox/terraform.tfvars
+vi infra/terraform/environments/sandbox/terraform.tfvars
+
+PASS=password123
+kubectl create secret generic attempt-controller-secrets -n rootenv-infra --from-literal ATTEMPT_CONTROLLER_BACKEND_USERNAME=attempt-controller@example.local --from-literal ATTEMPT_CONTROLLER_BACKEND_PASSWORD=$PASS --dry-run=client -o yaml > deploy/base/50-attempt-controller-secrets.yaml
+
+# Bootstrap k3s cluster
+
+cd infra/terraform/environments/sandbox
+tofu init
+tofu apply
+cd -
+
+# Use the provisioned kubeconfig
+export KUBECONFIG=/home/alex/.kube/rootenv-sandbox
+
+# Install platform components
+make sandbox-platform-deploy
+
+# Deploy app
+make sandbox
+
+# Bootstrap users
+make dbusers-init
+
+# Upload lab definitions
+
+make labs-sync
+
+```
+
+### Local development (K3D + Skaffold)
 
 Prerequisites: 
  - Docker
@@ -116,33 +167,21 @@ vi scripts/.env
 PASS=password123
 kubectl create secret generic attempt-controller-secrets -n rootenv-infra --from-literal ATTEMPT_CONTROLLER_BACKEND_USERNAME=attempt-controller@example.local --from-literal ATTEMPT_CONTROLLER_BACKEND_PASSWORD=$PASS --dry-run=client -o yaml > deploy/base/50-attempt-controller-secrets.yaml
 
-# Create cluster, apply manifests
+# Provision a local k3d cluster, apply manifests
 make dev-cluster
-
-# Start the skaffold for auto applying manifest changes and rebuilding containers
-make dev
-
-# Seed the database: create superuser and service accounts
-make dev-dbusers-init
-
-# Load lab definitions into the backend
-make labs-sync
+export KUBECONFIG=/home/alex/.kube/rootenv-dev
 
 # Open the UI
-open http://localhost:8080
-```
+open http://localhost/
 
-After a cluster restart (e.g. after a reboot), just start it back up — no rebuild needed:
+# For active development with hot apply and hot rebuild
+make dev-polling
 
-```bash
+# After a cluster restart (e.g. after a reboot), just start it back up — no rebuild needed:
+
 make k3d-run
 ```
 
-For active development with hot reload:
-
-```bash
-make dev   # starts the cluster then runs skaffold dev
-```
 
 ## Repository layout
 

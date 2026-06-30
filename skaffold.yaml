@@ -7,7 +7,7 @@ build:
     push: false
     useDockerCLI: true
   artifacts:
-    - image: rootenv-backend
+    - image: backend
       context: services/backend
       docker:
         dockerfile: Dockerfile
@@ -19,18 +19,10 @@ build:
           after:
             - container:
                 command: ["sh", "-c", "kill -HUP 1"]
-    - image: rootenv-frontend
+    - image: frontend
       context: services/frontend
       docker:
-        dockerfile: Dockerfile.dev
-      sync:
-        manual:
-          - src: 'src/**'
-            dest: '/app'
-          - src: 'public/**'
-            dest: '/app'
-          - src: 'index.html'
-            dest: '/app'
+        dockerfile: Dockerfile
     - image: labenv-operator
       context: services/labenv-operator
       docker:
@@ -42,9 +34,13 @@ build:
     - image: relay-exec
       context: services/relay
       docker:
-        dockerfile: cmd/relay-exec/Dockerfile
+        dockerfile: exec/Dockerfile
     - image: relay-authenticator
       context: services/relay-authenticator
+      docker:
+        dockerfile: Dockerfile
+    - image: ubuntu-sshd
+      context: labs/images/ubuntu-sshd
       docker:
         dockerfile: Dockerfile
 deploy:
@@ -54,3 +50,19 @@ manifests:
   kustomize:
     paths:
     - deploy/overlays/dev
+resourceSelector:
+  allow:
+    - groupKind: "ConfigMap"
+      image: [".data.image", ".data.ubuntu-sshd"]
+
+profiles:
+  - name: sandbox
+    build:
+      local:
+        push: true
+    deploy:
+      kubeContext: rootenv-sandbox
+    manifests:
+      kustomize:
+        paths:
+          - deploy/overlays/sandbox 

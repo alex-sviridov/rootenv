@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: relay-exec-image
+  namespace: labenv-operator-system
+data:
+  image: relay-exec:latest

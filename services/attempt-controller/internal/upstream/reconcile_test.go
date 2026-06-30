@@ -242,6 +242,9 @@ func TestReconcileDeleteSetsDecommissioned(t *testing.T) {
 	if w.patch["current_state"] != "decommissioned" {
 		t.Errorf("current_state = %v", w.patch["current_state"])
 	}
+	if w.patch["desired_state"] != "decommissioned" {
+		t.Errorf("desired_state = %v", w.patch["desired_state"])
+	}
 }
 
 func TestReconcileLabEnvEmptyPhaseSkips(t *testing.T) {

@@ -98,7 +98,19 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
-        volumeMounts: []
-      volumes: []
+        env:
+          - name: RELAY_IMAGE
+            valueFrom:
+              configMapKeyRef:
+                name: relay-exec-image
+                key: image
+        volumeMounts:
+          - name: lab-images
+            mountPath: /etc/lab-images
+            readOnly: true
+      volumes:
+        - name: lab-images
+          configMap:
+            name: lab-images
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10

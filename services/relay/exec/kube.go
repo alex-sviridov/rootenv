@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport/spdy"
 	"k8s.io/client-go/tools/remotecommand"

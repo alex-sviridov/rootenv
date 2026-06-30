@@ -5,8 +5,8 @@ resources:
   - ../../base
 
 images:
-  - name: rootenv-frontend
-  - name: rootenv-backend
+  - name: frontend
+  - name: backend
   - name: labenv-operator
   - name: attempt-controller
   - name: relay-exec
@@ -15,19 +15,26 @@ images:
 patches:
   - target:
       kind: Deployment
-      name: labenv-operator-controller-manager
     patch: |-
       - op: replace
         path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Always
+        value: IfNotPresent
+  - target:
+      kind: Deployment
+      name: labenv-operator-controller-manager
+    patch: |-
       - op: add
-        path: /spec/template/spec/containers/0/env
+        path: /spec/template/spec/containers/0/env/-
         value:
-          - name: RELAY_IMAGE
-            value: "relay-exec:72396645ae0376a2e536bff563924a183fb4e15298b92e270635f97a5435358c"
-          - name: RELAY_INGRESS_CLASS
-            value: "traefik"
-          - name: RELAY_INGRESS_ANNOTATIONS
-            value: "traefik.ingress.kubernetes.io/router.entrypoints=web"
-          - name: RELAY_INGRESS_BASE_PATH
-            value: "/relay/exec"
+          name: RELAY_INGRESS_CLASS
+          value: "traefik"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: RELAY_INGRESS_ANNOTATIONS
+          value: "traefik.ingress.kubernetes.io/router.entrypoints=web"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: RELAY_INGRESS_BASE_PATH
+          value: "/relay/exec"

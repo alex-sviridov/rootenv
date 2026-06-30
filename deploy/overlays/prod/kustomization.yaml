@@ -44,6 +44,16 @@ patches:
             matchLabels:
               kubernetes.io/metadata.name: traefik-system
   - target:
+      kind: ConfigMap
+      name: relay-exec-image
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: relay-exec-image
+      data:
+        image: "ghcr.io/alex-sviridov/rootenv/relay-exec:latest"
+  - target:
       kind: Deployment
       name: labenv-operator-controller-manager
     patch: |-
@@ -73,8 +83,17 @@ patches:
 
 images:
   - name: frontend
+    newName: ghcr.io/alex-sviridov/rootenv/frontend
+    newTag: latest
   - name: backend
-  - name: labenv-operator
+    newName: ghcr.io/alex-sviridov/rootenv/backend
+    newTag: latest
   - name: attempt-controller
-  - name: relay-exec
+    newName: ghcr.io/alex-sviridov/rootenv/attempt-controller
+    newTag: latest
   - name: relay-authenticator
+    newName: ghcr.io/alex-sviridov/rootenv/relay-authenticator
+    newTag: latest
+  - name: labenv-operator
+    newName: ghcr.io/alex-sviridov/rootenv/labenv-operator
+    newTag: latest

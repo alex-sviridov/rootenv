@@ -15,9 +15,11 @@
 
 - [ ] frontend
 - [ ] backend
-- [ ] container-manager
+- [ ] labenv-operator
+- [ ] attempt-controller
+- [ ] relay-authenticator
 - [ ] relay
-- [ ] k3s / manifests / namespaces
+- [ ] deploy / infra 
 - [ ] other: 
 
 ## Related issues

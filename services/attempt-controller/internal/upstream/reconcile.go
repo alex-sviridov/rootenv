@@ -79,7 +79,7 @@ func (r *Reconciler) ReconcileDelete(ctx context.Context, obj *unstructured.Unst
 	id := obj.GetName()
 	delete(r.lastRV, id)
 	delete(r.expiresAtWritten, id)
-	patch := map[string]any{"current_state": "decommissioned"}
+	patch := map[string]any{"current_state": "decommissioned", "desired_state": "decommissioned"}
 	if err := r.pb.PatchAttempt(ctx, id, patch); err != nil {
 		log.Printf("upstream: attempt %s: delete patch failed: %v", id, err)
 		return
