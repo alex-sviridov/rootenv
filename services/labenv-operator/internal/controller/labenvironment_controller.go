@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -465,9 +464,9 @@ func (r *LabEnvironmentReconciler) ensurePod(ctx context.Context, env *labv1alph
 		return err
 	}
 
-	image := asset.Image
-	if prefix := os.Getenv("LABENV_REGISTRY"); prefix != "" {
-		image = prefix + "/" + asset.Image
+	image, err := loadLabImageRef(asset.Image)
+	if err != nil {
+		return err
 	}
 
 	pod := corev1.Pod{
