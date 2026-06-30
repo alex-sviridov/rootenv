@@ -39,6 +39,10 @@ build:
       context: services/relay-authenticator
       docker:
         dockerfile: Dockerfile
+    - image: ubuntu-sshd
+      context: labs/images/ubuntu-sshd
+      docker:
+        dockerfile: Dockerfile
 deploy:
   kubectl: {}
   kubeContext: k3d-rootenv
@@ -49,7 +53,7 @@ manifests:
 resourceSelector:
   allow:
     - groupKind: "ConfigMap"
-      image: [".data.image"]
+      image: [".data.image", ".data.ubuntu-sshd"]
 
 profiles:
   - name: sandbox
