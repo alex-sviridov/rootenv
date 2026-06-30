@@ -502,9 +502,10 @@ func (r *LabEnvironmentReconciler) ensurePod(ctx context.Context, env *labv1alph
 			},
 			Containers: []corev1.Container{
 				{
-					Name:    "main",
-					Image:   image,
-					Command: []string{"sleep", "infinity"},
+					Name:            "main",
+					Image:           image,
+					ImagePullPolicy: corev1.PullIfNotPresent,
+					Command:         []string{"sleep", "infinity"},
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
 							corev1.ResourceCPU:              resource.MustParse(asset.CPU),

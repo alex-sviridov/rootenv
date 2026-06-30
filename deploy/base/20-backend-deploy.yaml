@@ -22,7 +22,7 @@ spec:
             claimName: backend-pb-data-pvc
       containers:
       - name: backend
-        image: rootenv-backend
+        image: backend
         imagePullPolicy: Always
         ports:
         - containerPort: 8090

@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: rootenv-frontend
+        image: frontend
         imagePullPolicy: Always
         ports:
         - containerPort: 8080

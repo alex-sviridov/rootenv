@@ -98,6 +98,12 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
+        env:
+          - name: RELAY_IMAGE
+            valueFrom:
+              configMapKeyRef:
+                name: relay-exec-image
+                key: image
         volumeMounts: []
       volumes: []
       serviceAccountName: controller-manager

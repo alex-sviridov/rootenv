@@ -1336,8 +1336,8 @@ In `deploy/overlays/dev/kustomization.yaml`:
 
 ```yaml
 images:
-  - name: rootenv-frontend
-  - name: rootenv-backend
+  - name: frontend
+  - name: backend
   - name: labenv-operator
   - name: attempt-controller
   - name: relay-exec
