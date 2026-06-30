@@ -104,7 +104,13 @@ spec:
               configMapKeyRef:
                 name: relay-exec-image
                 key: image
-        volumeMounts: []
-      volumes: []
+        volumeMounts:
+          - name: lab-images
+            mountPath: /etc/lab-images
+            readOnly: true
+      volumes:
+        - name: lab-images
+          configMap:
+            name: lab-images
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
