@@ -4,14 +4,12 @@ import { DocumentTextIcon } from '@heroicons/vue/24/outline'
 defineProps({
   lab: { type: Object, required: true },
 })
-
-const emit = defineEmits(['open'])
 </script>
 
 <template>
-  <button
-    class="text-left rounded-xl border border-slate-700/60 bg-slate-800/50 p-5 hover:border-indigo-500 hover:bg-slate-800 transition-all group cursor-pointer"
-    @click="emit('open', lab.id)"
+  <a
+    :href="`/labs/${lab.group_id}/${lab.slug}`"
+    class="text-left rounded-xl border border-slate-700/60 bg-slate-800/50 p-5 hover:border-indigo-500 hover:bg-slate-800 transition-all group cursor-pointer block"
   >
     <div class="mb-3">
       <div class="w-10 h-10 rounded-lg bg-slate-700/60 flex items-center justify-center shrink-0">
@@ -24,5 +22,5 @@ const emit = defineEmits(['open'])
     <p class="text-xs text-slate-400 leading-relaxed pt-2">
       {{ lab.description }}
     </p>
-  </button>
+  </a>
 </template>

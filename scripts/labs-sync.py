@@ -223,7 +223,9 @@ def upsert_folder(token, path: Path):
 def upsert_lab(token, path: Path):
     lid = lab_id(path)
     rel = path.relative_to(LABS_DIR)
-    parent = "_".join(rel.with_suffix("").parts[:-1])
+    parts = rel.with_suffix("").parts
+    parent = "_".join(parts[:-1])
+    slug = parts[-1]
 
     with open(path) as f:
         doc = yaml.safe_load(f)
@@ -235,6 +237,7 @@ def upsert_lab(token, path: Path):
         "environment": doc.get("environment", {}),
         "type": "lab",
         "parent": parent,
+        "slug": slug,
     }
 
     upsert_record(token, "labs", lid, record)

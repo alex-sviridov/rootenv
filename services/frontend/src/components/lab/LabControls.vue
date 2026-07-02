@@ -1,6 +1,5 @@
 <script setup>
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
 import { ArrowPathIcon } from '@heroicons/vue/24/outline'
 import { ExclamationTriangleIcon } from '@/config/labStates'
 import { useAttemptsStore } from '@/stores/attempts'
@@ -14,7 +13,6 @@ const props = defineProps({
 })
 const emit = defineEmits(['open-tab'])
 
-const router = useRouter()
 const attempts = useAttemptsStore()
 
 const attemptState = computed(() => attempts.lastAttempt?.current_state ?? null)
@@ -69,10 +67,10 @@ async function refresh() {
           <ExclamationTriangleIcon class="w-3.5 h-3.5 text-amber-400 shrink-0" />
           <span class="text-xs font-medium text-amber-300">Another lab is active</span>
         </div>
-        <button
-          class="w-full text-left text-xs text-slate-400 hover:text-indigo-300 transition-colors truncate"
-          @click="router.push({ name: 'lab', params: { slug: anotherLabRunning.lab } })"
-        >→ {{ anotherLabRunning.lab_name }}</button>
+        <a
+          class="block w-full text-left text-xs text-slate-400 hover:text-indigo-300 transition-colors truncate"
+          :href="`/labs/${anotherLabRunning.lab.replace('_', '/')}`"
+        >→ {{ anotherLabRunning.lab_name }}</a>
       </div>
 
       <!-- Active servers list -->

@@ -4,14 +4,12 @@ import { ListBulletIcon } from '@heroicons/vue/24/outline'
 defineProps({
   group: { type: Object, required: true },
 })
-
-const emit = defineEmits(['select'])
 </script>
 
 <template>
-  <button
-    class="text-left rounded-xl border border-slate-700/60 bg-slate-800/50 p-5 hover:border-indigo-500 hover:bg-slate-800 transition-all group cursor-pointer"
-    @click="emit('select', group.id)"
+  <a
+    :href="`/labs/${group.id}`"
+    class="text-left rounded-xl border border-slate-700/60 bg-slate-800/50 p-5 hover:border-indigo-500 hover:bg-slate-800 transition-all group cursor-pointer block"
   >
     <div class="mb-3">
       <div class="w-10 h-10 rounded-lg bg-indigo-500/15 flex items-center justify-center shrink-0">
@@ -24,5 +22,5 @@ const emit = defineEmits(['select'])
     <p class="text-xs text-slate-400 leading-relaxed">
       {{ group.description }}
     </p>
-  </button>
+  </a>
 </template>

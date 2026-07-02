@@ -842,6 +842,21 @@ migrate((app) => {
           "type": "text"
         },
         {
+          "autogeneratePattern": "",
+          "help": "",
+          "hidden": false,
+          "id": "text2560465762",
+          "max": 0,
+          "min": 0,
+          "name": "slug",
+          "pattern": "",
+          "presentable": false,
+          "primaryKey": false,
+          "required": false,
+          "system": false,
+          "type": "text"
+        },
+        {
           "help": "",
           "hidden": false,
           "id": "select2363381545",
@@ -1138,7 +1153,7 @@ migrate((app) => {
           "autogeneratePattern": "",
           "help": "",
           "hidden": false,
-          "id": "_clone_V0hC",
+          "id": "_clone_CSzu",
           "max": 0,
           "min": 0,
           "name": "title",
@@ -1153,7 +1168,7 @@ migrate((app) => {
           "autogeneratePattern": "",
           "help": "",
           "hidden": false,
-          "id": "_clone_3Sio",
+          "id": "_clone_bX6l",
           "max": 0,
           "min": 0,
           "name": "description",
@@ -1167,7 +1182,7 @@ migrate((app) => {
         {
           "help": "",
           "hidden": false,
-          "id": "_clone_SXy1",
+          "id": "_clone_VN0P",
           "maxSize": 0,
           "name": "content",
           "presentable": false,
@@ -1176,23 +1191,9 @@ migrate((app) => {
           "type": "json"
         },
         {
-          "cascadeDelete": false,
-          "collectionId": "pbc_2691397795",
           "help": "",
           "hidden": false,
-          "id": "_clone_xCzn",
-          "maxSelect": 1,
-          "minSelect": 0,
-          "name": "parent",
-          "presentable": false,
-          "required": false,
-          "system": false,
-          "type": "relation"
-        },
-        {
-          "help": "",
-          "hidden": false,
-          "id": "_clone_bpHL",
+          "id": "_clone_4JMR",
           "maxSelect": 1,
           "name": "type",
           "presentable": false,
@@ -1203,6 +1204,50 @@ migrate((app) => {
             "folder",
             "lab"
           ]
+        },
+        {
+          "autogeneratePattern": "",
+          "help": "",
+          "hidden": false,
+          "id": "_clone_VOzO",
+          "max": 0,
+          "min": 0,
+          "name": "slug",
+          "pattern": "",
+          "presentable": false,
+          "primaryKey": false,
+          "required": false,
+          "system": false,
+          "type": "text"
+        },
+        {
+          "cascadeDelete": false,
+          "collectionId": "pbc_2691397795",
+          "help": "",
+          "hidden": false,
+          "id": "_clone_9MmL",
+          "maxSelect": 1,
+          "minSelect": 0,
+          "name": "group_id",
+          "presentable": false,
+          "required": false,
+          "system": false,
+          "type": "relation"
+        },
+        {
+          "autogeneratePattern": "",
+          "help": "",
+          "hidden": false,
+          "id": "_clone_21UY",
+          "max": 0,
+          "min": 0,
+          "name": "group_title",
+          "pattern": "",
+          "presentable": false,
+          "primaryKey": false,
+          "required": false,
+          "system": false,
+          "type": "text"
         }
       ],
       "id": "pbc_2994682339",
@@ -1212,7 +1257,7 @@ migrate((app) => {
       "system": false,
       "type": "view",
       "updateRule": null,
-      "viewQuery": "SELECT id, title, description, content, parent, type\nFROM labs",
+      "viewQuery": "SELECT\n  l.id, l.title, l.description, l.content, l.type, l.slug,\n  l.parent AS group_id, p.title AS group_title\nFROM labs l\nLEFT JOIN labs p ON p.id = l.parent\n",
       "viewRule": ""
     }
   ];
