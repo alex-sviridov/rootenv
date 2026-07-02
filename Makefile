@@ -3,7 +3,7 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
-.PHONY: dev-cluster dev prod-deploy dbusers-init labs-sync
+.PHONY: dev-cluster dev prod-deploy dbusers-init labs-sync sandbox sandbox-platform-deploy sandbox-deploy pre-commit
 
 sandbox sandbox-platform-deploy sandbox-deploy: export SKAFFOLD_KUBECONFIG = $(SANDBOX_KUBECONFIG)
 sandbox sandbox-platform-deploy sandbox-deploy: export SKAFFOLD_DEFAULT_REPO = $(SANDBOX_REPO)
@@ -37,6 +37,9 @@ dev-cluster: .dev-cluster-remove .dev-cluster-create dev-rebuild .wait-backend .
 
 dev-polling:
 	skaffold dev --cleanup=false --trigger=polling
+
+k3d-run:
+	k3d cluster start rootenv
 
 sandbox:
 	skaffold run -p sandbox --cache-artifacts=false

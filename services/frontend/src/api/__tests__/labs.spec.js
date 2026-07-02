@@ -24,9 +24,9 @@ describe('fetchFolders', () => {
 
     expect(mockCollection).toHaveBeenCalledWith('labs_userview')
     expect(mockGetFullList).toHaveBeenCalledWith({
-      filter: 'type = "folder" && parent = ""',
+      filter: 'type = "folder" && group_id = ""',
       sort: 'title',
-      fields: 'id,title,description',
+      fields: 'id,title,description,type,slug,group_id,group_title',
     })
     expect(result).toEqual(folders)
   })
@@ -46,9 +46,9 @@ describe('fetchLabsInFolder', () => {
 
     expect(mockCollection).toHaveBeenCalledWith('labs_userview')
     expect(mockGetFullList).toHaveBeenCalledWith({
-      filter: 'type = "lab" && parent = "folder-id-1"',
+      filter: 'type = "lab" && group_id = "folder-id-1"',
       sort: 'title',
-      fields: 'id,title,description',
+      fields: 'id,title,description,type,slug,group_id,group_title',
     })
     expect(result).toEqual(labs)
   })

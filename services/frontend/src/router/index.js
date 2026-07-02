@@ -22,7 +22,13 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
-      path: '/lab/:slug',
+      path: '/labs/:group',
+      name: 'labs-group',
+      component: HomeView,
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/labs/:group/:slug',
       name: 'lab',
       component: () => import('../views/LabView.vue'),
       meta: { requiresAuth: true },

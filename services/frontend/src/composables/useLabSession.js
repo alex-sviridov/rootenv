@@ -1,16 +1,13 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useBreadcrumbsStore } from '@/stores/breadcrumbs'
-import { useLabsStore } from '@/stores/labs'
 import { useAttemptsStore } from '@/stores/attempts'
 import { fetchLab } from '@/api/labs'
 import { useTerminalTabs } from '@/composables/useTerminalTabs'
 
 export function useLabSession() {
   const route = useRoute()
-  const router = useRouter()
   const breadcrumbs = useBreadcrumbsStore()
-  const labsStore = useLabsStore()
   const attemptsStore = useAttemptsStore()
 
   const lab = ref(null)
@@ -32,20 +29,17 @@ export function useLabSession() {
     }
   })
 
-  async function initLab(slug) {
+  async function initLab(group, slug) {
     lab.value = null
     error.value = null
     selectedTask.value = 0
     resetTabs()
     try {
-      lab.value = await fetchLab(slug)
+      lab.value = await fetchLab(`${group}_${slug}`)
 
-      const group = labsStore.groups.find(g => g.id === lab.value.parent)
       breadcrumbs.set([
-        { label: 'LinuxLab', action: () => { labsStore.clearGroup(); router.push('/') } },
-        group
-          ? { label: group.title, action: () => { labsStore.selectGroup(group.id); router.push('/') } }
-          : null,
+        { label: 'LinuxLab', to: '/' },
+        lab.value.group_title ? { label: lab.value.group_title, to: `/labs/${group}` } : null,
         { label: lab.value.title },
       ].filter(Boolean))
 
@@ -59,11 +53,9 @@ export function useLabSession() {
     }
   }
 
-  watch(() => route?.params?.slug, (slug) => { if (slug) initLab(slug) })
-
   onMounted(() => {
-    const slug = route?.params?.slug
-    if (slug) initLab(slug)
+    const { group, slug } = route.params
+    if (group && slug) initLab(group, slug)
   })
 
   onUnmounted(async () => {
