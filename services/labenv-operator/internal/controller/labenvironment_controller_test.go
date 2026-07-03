@@ -52,6 +52,9 @@ var _ = Describe("LabEnvironment Controller", func() {
 			Expect(os.Setenv("RELAY_EXEC_IMAGE", "relay-primitive:test")).To(Succeed())
 			DeferCleanup(func() { Expect(os.Unsetenv("RELAY_EXEC_IMAGE")).To(Succeed()) })
 
+			Expect(os.Setenv("RELAY_GRADER_IMAGE", "relay-grader:test")).To(Succeed())
+			DeferCleanup(func() { Expect(os.Unsetenv("RELAY_GRADER_IMAGE")).To(Succeed()) })
+
 			labImagesDir, err := os.MkdirTemp("", "lab-images")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(os.WriteFile(filepath.Join(labImagesDir, "busybox"), []byte("busybox:test"), 0644)).To(Succeed())
@@ -203,6 +206,130 @@ var _ = Describe("ensureRelay", func() {
 		}
 		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		Expect(r.ensureRelay(ctx, env, "rootenv-lab-"+envName)).To(MatchError(ContainSubstring("RELAY_EXEC_IMAGE")))
+	})
+})
+
+var _ = Describe("ensureRelayGrader", func() {
+	ctx := context.Background()
+
+	BeforeEach(func() {
+		DeferCleanup(func() {
+			Expect(os.Unsetenv("RELAY_GRADER_IMAGE")).To(Succeed())
+			Expect(os.Unsetenv("RELAY_GRADER_INGRESS_BASE_PATH")).To(Succeed())
+		})
+		Expect(os.Setenv("RELAY_GRADER_IMAGE", "relay-grader:test")).To(Succeed())
+	})
+
+	It("creates all relay-grader resources", func() {
+		envName := "grader-resources-test"
+		nsName := "rootenv-lab-" + envName
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
+
+		env := &labv1alpha1.LabEnvironment{
+			ObjectMeta: metav1.ObjectMeta{Name: envName},
+			Spec: labv1alpha1.LabEnvironmentSpec{
+				OwnerId: "usr-test",
+				LabId:   "test-lab",
+				Assets:  []labv1alpha1.Asset{{Name: "main", Image: "busybox"}},
+			},
+		}
+
+		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		Expect(r.ensureRelayGrader(ctx, env, nsName)).To(Succeed())
+
+		By("ConfigMap grader-tasks exists with placeholder tasks.json")
+		var cm corev1.ConfigMap
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "grader-tasks"}, &cm)).To(Succeed())
+		Expect(cm.Data).To(HaveKey("tasks.json"))
+		Expect(cm.Data["tasks.json"]).To(ContainSubstring("task1"))
+
+		By("Deployment relay-grader exists with correct image, env, and volume mount")
+		var deploy appsv1.Deployment
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay-grader"}, &deploy)).To(Succeed())
+		Expect(deploy.Spec.Template.Spec.Containers[0].Image).To(Equal("relay-grader:test"))
+		Expect(deploy.Spec.Template.Spec.Containers[0].Env).To(ContainElements(
+			corev1.EnvVar{Name: "RELAY_MY_NAMESPACE", Value: nsName},
+			corev1.EnvVar{Name: "RELAY_MY_ATTEMPT_ID", Value: envName},
+			corev1.EnvVar{Name: "RELAY_MY_OWNER_ID", Value: "usr-test"},
+			corev1.EnvVar{Name: "RELAY_TASKS_FILE", Value: "/etc/grader/tasks.json"},
+		))
+		Expect(deploy.Spec.Template.Spec.Containers[0].VolumeMounts).To(ContainElement(
+			corev1.VolumeMount{Name: "grader-tasks", MountPath: "/etc/grader", ReadOnly: true},
+		))
+		Expect(deploy.Spec.Template.Spec.ServiceAccountName).To(BeEmpty())
+
+		By("Service relay-grader exists")
+		var svc corev1.Service
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay-grader"}, &svc)).To(Succeed())
+		Expect(svc.Spec.Ports[0].Port).To(Equal(int32(8080)))
+		Expect(svc.Spec.Selector).To(HaveKeyWithValue("app", "relay-grader"))
+
+		By("Ingress relay-grader exists with correct path")
+		var ing networkingv1.Ingress
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay-grader"}, &ing)).To(Succeed())
+		Expect(ing.Spec.Rules[0].HTTP.Paths[0].Path).To(Equal("/relay/grade/" + envName))
+		Expect(ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Name).To(Equal("relay-grader"))
+
+		By("NetworkPolicy networkpolicy-relay-grader exists with deny-all egress")
+		var np networkingv1.NetworkPolicy
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "networkpolicy-relay-grader"}, &np)).To(Succeed())
+		Expect(np.Spec.PodSelector.MatchLabels).To(HaveKeyWithValue("app", "relay-grader"))
+		Expect(np.Spec.PolicyTypes).To(ConsistOf(
+			networkingv1.PolicyTypeIngress,
+			networkingv1.PolicyTypeEgress,
+		))
+		Expect(np.Spec.Egress).To(BeEmpty())
+		Expect(np.Spec.Ingress).To(HaveLen(1))
+		Expect(np.Spec.Ingress[0].Ports[0].Port.IntValue()).To(Equal(8080))
+
+		By("ensureRelayGrader is idempotent — second call does not error")
+		Expect(r.ensureRelayGrader(ctx, env, nsName)).To(Succeed())
+	})
+
+	It("returns error when RELAY_GRADER_IMAGE is missing", func() {
+		Expect(os.Unsetenv("RELAY_GRADER_IMAGE")).To(Succeed())
+		envName := "grader-missing-image-test"
+		env := &labv1alpha1.LabEnvironment{
+			ObjectMeta: metav1.ObjectMeta{Name: envName},
+			Spec: labv1alpha1.LabEnvironmentSpec{
+				OwnerId: "usr-test",
+				LabId:   "lab",
+				Assets:  []labv1alpha1.Asset{{Name: "m", Image: "b"}},
+			},
+		}
+		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		Expect(r.ensureRelayGrader(ctx, env, "rootenv-lab-"+envName)).To(MatchError(ContainSubstring("RELAY_GRADER_IMAGE")))
+	})
+})
+
+var _ = Describe("loadGraderConfig", func() {
+	AfterEach(func() {
+		Expect(os.Unsetenv("RELAY_GRADER_IMAGE")).To(Succeed())
+		Expect(os.Unsetenv("RELAY_GRADER_INGRESS_BASE_PATH")).To(Succeed())
+	})
+
+	It("returns error when RELAY_GRADER_IMAGE is unset", func() {
+		_, err := loadGraderConfig()
+		Expect(err).To(MatchError(ContainSubstring("RELAY_GRADER_IMAGE")))
+	})
+
+	It("uses /relay/grade as default base path", func() {
+		Expect(os.Setenv("RELAY_GRADER_IMAGE", "img:tag")).To(Succeed())
+		cfg, err := loadGraderConfig()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.ingressBasePath).To(Equal("/relay/grade"))
+	})
+
+	It("includes the relay auth middleware annotation by default", func() {
+		Expect(os.Setenv("RELAY_GRADER_IMAGE", "img:tag")).To(Succeed())
+		cfg, err := loadGraderConfig()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.ingressAnnotations).To(HaveKeyWithValue(
+			"traefik.ingress.kubernetes.io/router.middlewares",
+			"kube-system-relay-auth-middleware@kubernetescrd",
+		))
 	})
 })
 
