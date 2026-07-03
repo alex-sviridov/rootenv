@@ -42,7 +42,7 @@
 | Modify | `services/frontend/src/components/lab/LabConsole.vue` | Replace SSH panel with exec; accept `attemptId` prop; remove `secrets` gate |
 | Modify | `services/frontend/src/composables/__tests__/useTerminalTabs.spec.js` | Replace `'ssh'` strings with `'exec'` |
 | Modify | `skaffold.yaml` | Replace relay-primitive artifact with relay-exec |
-| Modify | `deploy/overlays/dev/kustomization.yaml` | Update `RELAY_EXEC_IMAGE` and add `RELAY_INGRESS_BASE_PATH` |
+| Modify | `deploy/overlays/dev/kustomization.yaml` | Update `RELAY_EXEC_IMAGE` and add `RELAY_EXEC_INGRESS_BASE_PATH` |
 
 ---
 
@@ -438,7 +438,7 @@ Apply these changes to `services/labenv-operator/internal/controller/relay.go`:
 
 **a) Change default ingress base path** in `loadRelayConfig`:
 ```go
-basePath := os.Getenv("RELAY_INGRESS_BASE_PATH")
+basePath := os.Getenv("RELAY_EXEC_INGRESS_BASE_PATH")
 if basePath == "" {
     basePath = "/relay/exec"
 }
@@ -569,11 +569,11 @@ In `services/labenv-operator/internal/controller/labenvironment_controller_test.
 ```go
 os.Setenv("RELAY_EXEC_IMAGE", "relay-exec:test")
 os.Setenv("RELAY_INGRESS_CLASS", "traefik")
-os.Setenv("RELAY_INGRESS_BASE_PATH", "/relay/exec")
+os.Setenv("RELAY_EXEC_INGRESS_BASE_PATH", "/relay/exec")
 os.Setenv("RELAY_INGRESS_ANNOTATIONS", "traefik.ingress.kubernetes.io/router.entrypoints=websecure")
 ```
 
-**b) In the `DeferCleanup`**, also unset `RELAY_INGRESS_BASE_PATH` (already present, no change needed there since the existing defer clears it).
+**b) In the `DeferCleanup`**, also unset `RELAY_EXEC_INGRESS_BASE_PATH` (already present, no change needed there since the existing defer clears it).
 
 **c) In the `"creates all relay resources"` It block**, update these By assertions:
 
@@ -1306,7 +1306,7 @@ git commit -m "feat(frontend): wire exec relay panel; remove SSH"
 - Modify: `deploy/overlays/dev/kustomization.yaml`
 
 **Interfaces:**
-- Produces: `relay-exec` image built and substituted into operator env var `RELAY_EXEC_IMAGE`; `RELAY_INGRESS_BASE_PATH=/relay/exec` set in operator deployment
+- Produces: `relay-exec` image built and substituted into operator env var `RELAY_EXEC_IMAGE`; `RELAY_EXEC_INGRESS_BASE_PATH=/relay/exec` set in operator deployment
 
 - [ ] **Step 1: Update skaffold.yaml**
 
@@ -1352,7 +1352,7 @@ images:
             value: "traefik"
           - name: RELAY_INGRESS_ANNOTATIONS
             value: "traefik.ingress.kubernetes.io/router.entrypoints=websecure"
-          - name: RELAY_INGRESS_BASE_PATH
+          - name: RELAY_EXEC_INGRESS_BASE_PATH
             value: "/relay/exec"
 ```
 
@@ -1399,4 +1399,4 @@ git commit -m "chore: switch build artifact from relay-primitive to relay-exec"
 | `LabConsole` uses `exec: ExecTerminalPanel`; no `secrets` gate | Task 6 |
 | Terminal tabs tests: `'ssh'` → `'exec'` | Task 6 |
 | Skaffold switches artifact to `relay-exec` | Task 7 |
-| Dev overlay `RELAY_EXEC_IMAGE=relay-exec`, `RELAY_INGRESS_BASE_PATH=/relay/exec` | Task 7 |
+| Dev overlay `RELAY_EXEC_IMAGE=relay-exec`, `RELAY_EXEC_INGRESS_BASE_PATH=/relay/exec` | Task 7 |

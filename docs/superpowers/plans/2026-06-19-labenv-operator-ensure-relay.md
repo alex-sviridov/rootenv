@@ -73,7 +73,7 @@ func loadRelayConfig() (relayConfig, error) {
 		return relayConfig{}, fmt.Errorf("RELAY_EXEC_IMAGE env var is required")
 	}
 
-	basePath := os.Getenv("RELAY_INGRESS_BASE_PATH")
+	basePath := os.Getenv("RELAY_EXEC_INGRESS_BASE_PATH")
 	if basePath == "" {
 		basePath = "/relay"
 	}
@@ -454,7 +454,7 @@ var _ = Describe("ensureRelay", func() {
 	BeforeEach(func() {
 		t.Setenv("RELAY_EXEC_IMAGE", "relay-primitive:test")
 		t.Setenv("RELAY_INGRESS_CLASS", "traefik")
-		t.Setenv("RELAY_INGRESS_BASE_PATH", "/relay")
+		t.Setenv("RELAY_EXEC_INGRESS_BASE_PATH", "/relay")
 		t.Setenv("RELAY_INGRESS_ANNOTATIONS", "traefik.ingress.kubernetes.io/router.entrypoints=websecure")
 
 		By("creating the lab namespace")
@@ -542,12 +542,12 @@ BeforeEach(func() {
     DeferCleanup(func() {
         os.Unsetenv("RELAY_EXEC_IMAGE")
         os.Unsetenv("RELAY_INGRESS_CLASS")
-        os.Unsetenv("RELAY_INGRESS_BASE_PATH")
+        os.Unsetenv("RELAY_EXEC_INGRESS_BASE_PATH")
         os.Unsetenv("RELAY_INGRESS_ANNOTATIONS")
     })
     os.Setenv("RELAY_EXEC_IMAGE", "relay-primitive:test")
     os.Setenv("RELAY_INGRESS_CLASS", "traefik")
-    os.Setenv("RELAY_INGRESS_BASE_PATH", "/relay")
+    os.Setenv("RELAY_EXEC_INGRESS_BASE_PATH", "/relay")
     os.Setenv("RELAY_INGRESS_ANNOTATIONS", "traefik.ingress.kubernetes.io/router.entrypoints=websecure")
     // ...
 })

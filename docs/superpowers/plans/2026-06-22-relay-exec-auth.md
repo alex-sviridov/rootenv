@@ -671,7 +671,7 @@ func loadRelayConfig() (relayConfig, error) {
 		return relayConfig{}, fmt.Errorf("RELAY_EXEC_IMAGE env var is required")
 	}
 
-	basePath := os.Getenv("RELAY_INGRESS_BASE_PATH")
+	basePath := os.Getenv("RELAY_EXEC_INGRESS_BASE_PATH")
 	if basePath == "" {
 		basePath = "/relay/exec"
 	}

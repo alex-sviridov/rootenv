@@ -37,7 +37,7 @@ Add `SkipAuth bool` field to `Handler`. When true:
 
 ### `loadRelayConfig`
 
-`RELAY_INGRESS_BASE_PATH` default changes from `/relay` → `/relay/exec`.
+`RELAY_EXEC_INGRESS_BASE_PATH` default changes from `/relay` → `/relay/exec`.
 
 ### `ensureRelayDeployment`
 
@@ -61,7 +61,7 @@ No structural change — path is already `cfg.ingressBasePath + "/" + env.Name`.
 ### Dev overlay (`deploy/overlays/dev/kustomization.yaml`)
 
 - `RELAY_EXEC_IMAGE` value: `relay-primitive:<digest>` → `relay-exec:latest` (Skaffold will resolve the digest)
-- `RELAY_INGRESS_BASE_PATH`: not set (default `/relay/exec` is correct)
+- `RELAY_EXEC_INGRESS_BASE_PATH`: not set (default `/relay/exec` is correct)
 
 ---
 

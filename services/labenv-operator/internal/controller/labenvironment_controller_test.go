@@ -117,12 +117,12 @@ var _ = Describe("ensureRelay", func() {
 		DeferCleanup(func() {
 			Expect(os.Unsetenv("RELAY_EXEC_IMAGE")).To(Succeed())
 			Expect(os.Unsetenv("RELAY_INGRESS_CLASS")).To(Succeed())
-			Expect(os.Unsetenv("RELAY_INGRESS_BASE_PATH")).To(Succeed())
+			Expect(os.Unsetenv("RELAY_EXEC_INGRESS_BASE_PATH")).To(Succeed())
 			Expect(os.Unsetenv("RELAY_INGRESS_ANNOTATIONS")).To(Succeed())
 		})
 		Expect(os.Setenv("RELAY_EXEC_IMAGE", "relay-exec:test")).To(Succeed())
 		Expect(os.Setenv("RELAY_INGRESS_CLASS", "traefik")).To(Succeed())
-		Expect(os.Setenv("RELAY_INGRESS_BASE_PATH", "/relay/exec")).To(Succeed())
+		Expect(os.Setenv("RELAY_EXEC_INGRESS_BASE_PATH", "/relay/exec")).To(Succeed())
 		Expect(os.Setenv("RELAY_INGRESS_ANNOTATIONS", "traefik.ingress.kubernetes.io/router.entrypoints=websecure")).To(Succeed())
 	})
 
@@ -390,7 +390,7 @@ var _ = Describe("loadRelayConfig", func() {
 	AfterEach(func() {
 		Expect(os.Unsetenv("RELAY_EXEC_IMAGE")).To(Succeed())
 		Expect(os.Unsetenv("RELAY_INGRESS_CLASS")).To(Succeed())
-		Expect(os.Unsetenv("RELAY_INGRESS_BASE_PATH")).To(Succeed())
+		Expect(os.Unsetenv("RELAY_EXEC_INGRESS_BASE_PATH")).To(Succeed())
 		Expect(os.Unsetenv("RELAY_INGRESS_ANNOTATIONS")).To(Succeed())
 	})
 
