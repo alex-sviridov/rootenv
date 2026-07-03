@@ -13,7 +13,7 @@
 - Module path: `github.com/alex-sviridov/rootenv/services/labenv-operator`
 - All work is inside `services/labenv-operator/`
 - Create-once pattern only — no update/patch on reconcile
-- `RELAY_IMAGE` env var is required; return error from `ensureRelay` if missing
+- `RELAY_EXEC_IMAGE` env var is required; return error from `ensureRelay` if missing
 - `RELAY_NAMESPACE` env var in the Deployment is set to `nsName` (the lab namespace)
 - No commits until explicitly requested by the user
 
@@ -68,9 +68,9 @@ type relayConfig struct {
 }
 
 func loadRelayConfig() (relayConfig, error) {
-	image := os.Getenv("RELAY_IMAGE")
+	image := os.Getenv("RELAY_EXEC_IMAGE")
 	if image == "" {
-		return relayConfig{}, fmt.Errorf("RELAY_IMAGE env var is required")
+		return relayConfig{}, fmt.Errorf("RELAY_EXEC_IMAGE env var is required")
 	}
 
 	basePath := os.Getenv("RELAY_INGRESS_BASE_PATH")
@@ -452,7 +452,7 @@ var _ = Describe("ensureRelay", func() {
 	ctx := context.Background()
 
 	BeforeEach(func() {
-		t.Setenv("RELAY_IMAGE", "relay-primitive:test")
+		t.Setenv("RELAY_EXEC_IMAGE", "relay-primitive:test")
 		t.Setenv("RELAY_INGRESS_CLASS", "traefik")
 		t.Setenv("RELAY_INGRESS_BASE_PATH", "/relay")
 		t.Setenv("RELAY_INGRESS_ANNOTATIONS", "traefik.ingress.kubernetes.io/router.entrypoints=websecure")
@@ -523,14 +523,14 @@ var _ = Describe("ensureRelay", func() {
 		Expect(r.ensureRelay(ctx, env, nsName)).To(Succeed())
 	})
 
-	It("returns error when RELAY_IMAGE is missing", func() {
-		t.Setenv("RELAY_IMAGE", "")
+	It("returns error when RELAY_EXEC_IMAGE is missing", func() {
+		t.Setenv("RELAY_EXEC_IMAGE", "")
 		env := &labv1alpha1.LabEnvironment{
 			ObjectMeta: metav1.ObjectMeta{Name: envName},
 			Spec:       labv1alpha1.LabEnvironmentSpec{OwnerId: "usr-test", LabId: "lab", Assets: []labv1alpha1.Asset{{Name: "m", Image: "b"}}},
 		}
 		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
-		Expect(r.ensureRelay(ctx, env, nsName)).To(MatchError(ContainSubstring("RELAY_IMAGE")))
+		Expect(r.ensureRelay(ctx, env, nsName)).To(MatchError(ContainSubstring("RELAY_EXEC_IMAGE")))
 	})
 })
 ```
@@ -540,12 +540,12 @@ var _ = Describe("ensureRelay", func() {
 ```go
 BeforeEach(func() {
     DeferCleanup(func() {
-        os.Unsetenv("RELAY_IMAGE")
+        os.Unsetenv("RELAY_EXEC_IMAGE")
         os.Unsetenv("RELAY_INGRESS_CLASS")
         os.Unsetenv("RELAY_INGRESS_BASE_PATH")
         os.Unsetenv("RELAY_INGRESS_ANNOTATIONS")
     })
-    os.Setenv("RELAY_IMAGE", "relay-primitive:test")
+    os.Setenv("RELAY_EXEC_IMAGE", "relay-primitive:test")
     os.Setenv("RELAY_INGRESS_CLASS", "traefik")
     os.Setenv("RELAY_INGRESS_BASE_PATH", "/relay")
     os.Setenv("RELAY_INGRESS_ANNOTATIONS", "traefik.ingress.kubernetes.io/router.entrypoints=websecure")
@@ -555,8 +555,8 @@ BeforeEach(func() {
 
 And in the "returns error" test:
 ```go
-It("returns error when RELAY_IMAGE is missing", func() {
-    os.Unsetenv("RELAY_IMAGE")
+It("returns error when RELAY_EXEC_IMAGE is missing", func() {
+    os.Unsetenv("RELAY_EXEC_IMAGE")
     // ...
 })
 ```

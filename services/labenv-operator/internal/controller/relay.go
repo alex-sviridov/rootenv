@@ -40,9 +40,9 @@ type relayConfig struct {
 }
 
 func loadRelayConfig() (relayConfig, error) {
-	image := os.Getenv("RELAY_IMAGE")
+	image := os.Getenv("RELAY_EXEC_IMAGE")
 	if image == "" {
-		return relayConfig{}, fmt.Errorf("RELAY_IMAGE env var is required")
+		return relayConfig{}, fmt.Errorf("RELAY_EXEC_IMAGE env var is required")
 	}
 
 	basePath := os.Getenv("RELAY_INGRESS_BASE_PATH")

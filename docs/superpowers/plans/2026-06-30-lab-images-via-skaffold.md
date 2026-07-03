@@ -12,7 +12,7 @@
 
 - Directory name under `labs/images/` = Skaffold artifact name = the value lab YAMLs use for `Asset.Image` (spec section 1).
 - Skaffold `resourceSelector.allow[].image` pointers must be static — one explicit JSON pointer per ConfigMap key, no wildcards (spec section 2).
-- `lab-images` ConfigMap lives in the `labenv-operator-system` namespace (spec section 2), same namespace as `relay-exec-image`.
+- `lab-images` ConfigMap lives in the `labenv-operator-system` namespace (spec section 2), same namespace as `relay-images`.
 - Operator looks up the resolved ref by reading a file at `/etc/lab-images/<asset.Image>`; if the file doesn't exist, pod creation fails with a clear error — no silent fallback to the literal asset name (spec section 3).
 - `LABENV_REGISTRY` env var and its string-concat logic are removed entirely (spec section 3).
 - `make labs-build` and its invocation from `dev-cluster` are removed; Skaffold's default profile (`local.push: false`) already loads images into the k3d cluster's containerd (spec section 4).
@@ -190,7 +190,7 @@ Note the function already declares `err error` via `:=` later at `r.Create(ctx, 
 
 Run: `cd services/labenv-operator && go build ./... 2>&1`
 
-If it complains `"os" imported and not used` in `labenvironment_controller.go`, check whether `os` is still used elsewhere in that file (`grep -n "os\." services/labenv-operator/internal/controller/labenvironment_controller.go`). Remove the `"os"` import line only if it's now unused in that specific file — do not touch `relay.go`'s import, which still uses `os.Getenv` for `RELAY_IMAGE`.
+If it complains `"os" imported and not used` in `labenvironment_controller.go`, check whether `os` is still used elsewhere in that file (`grep -n "os\." services/labenv-operator/internal/controller/labenvironment_controller.go`). Remove the `"os"` import line only if it's now unused in that specific file — do not touch `relay.go`'s import, which still uses `os.Getenv` for `RELAY_EXEC_IMAGE`.
 
 - [ ] **Step 7: Run the full operator test suite**
 
@@ -204,8 +204,8 @@ If the top-level `Describe("LabEnvironment Controller" ...)` test (`labenvironme
 
 ```go
 			BeforeEach(func() {
-				Expect(os.Setenv("RELAY_IMAGE", "relay-primitive:test")).To(Succeed())
-				DeferCleanup(func() { Expect(os.Unsetenv("RELAY_IMAGE")).To(Succeed()) })
+				Expect(os.Setenv("RELAY_EXEC_IMAGE", "relay-primitive:test")).To(Succeed())
+				DeferCleanup(func() { Expect(os.Unsetenv("RELAY_EXEC_IMAGE")).To(Succeed()) })
 
 				labImagesDir, err := os.MkdirTemp("", "lab-images")
 				Expect(err).NotTo(HaveOccurred())
@@ -249,10 +249,10 @@ Read `services/labenv-operator/config/manager/manager.yaml:90-111` first to conf
 
 ```yaml
         env:
-          - name: RELAY_IMAGE
+          - name: RELAY_EXEC_IMAGE
             valueFrom:
               configMapKeyRef:
-                name: relay-exec-image
+                name: relay-images
                 key: image
         volumeMounts: []
       volumes: []
@@ -262,10 +262,10 @@ to:
 
 ```yaml
         env:
-          - name: RELAY_IMAGE
+          - name: RELAY_EXEC_IMAGE
             valueFrom:
               configMapKeyRef:
-                name: relay-exec-image
+                name: relay-images
                 key: image
         volumeMounts:
           - name: lab-images
@@ -305,11 +305,11 @@ git commit -m "feat(labenv-operator): mount lab-images ConfigMap on controller-m
 **Interfaces:**
 - Produces: a `lab-images` ConfigMap in namespace `labenv-operator-system` with key `ubuntu-sshd: ubuntu-sshd:latest`, matching what Task 2's volume mount expects and what Task 4's `resourceSelector` pointer will target.
 
-This follows the exact pattern of `deploy/base/55-relay-exec-image.yaml`, generalized to one key per lab image (today, just `ubuntu-sshd`).
+This follows the exact pattern of `deploy/base/55-relay-images.yaml`, generalized to one key per lab image (today, just `ubuntu-sshd`).
 
 - [ ] **Step 1: Create the ConfigMap manifest**
 
-Read `deploy/base/55-relay-exec-image.yaml` first to confirm the existing pattern (namespace, naming), then create `deploy/base/56-lab-images.yaml`:
+Read `deploy/base/55-relay-images.yaml` first to confirm the existing pattern (namespace, naming), then create `deploy/base/56-lab-images.yaml`:
 
 ```yaml
 apiVersion: v1
@@ -323,7 +323,7 @@ data:
 
 - [ ] **Step 2: Add it to the base kustomization resources list**
 
-Read `deploy/base/kustomization.yaml` first to confirm current resource ordering, then add `56-lab-images.yaml` immediately after `55-relay-exec-image.yaml`:
+Read `deploy/base/kustomization.yaml` first to confirm current resource ordering, then add `56-lab-images.yaml` immediately after `55-relay-images.yaml`:
 
 ```yaml
 resources:
@@ -337,7 +337,7 @@ resources:
   - 40-backend-ingress.yaml
   - 49-frontend-ingress.yaml
   - ../../services/labenv-operator/config/default
-  - 55-relay-exec-image.yaml
+  - 55-relay-images.yaml
   - 56-lab-images.yaml
   - 50-attempt-controller-secrets.yaml
   - 51-attempt-controller-serviceaccount.yaml

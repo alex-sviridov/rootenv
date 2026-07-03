@@ -12,7 +12,7 @@ Wire up `relay-exec` end-to-end: one relay-exec pod per lab namespace, reachable
 1. **Relay** — add `SkipAuth` to `relaybase.Handler`; update `cmd/relay-exec/main.go`
 2. **Operator** — switch deployment from `relay-primitive` to `relay-exec`; update ingress path, network policy, env vars
 3. **Frontend** — remove SSH; add exec composable and panel; fix `secrets` bug; wire `attemptId` through
-4. **Skaffold + dev overlay** — switch artifact and `RELAY_IMAGE`
+4. **Skaffold + dev overlay** — switch artifact and `RELAY_EXEC_IMAGE`
 
 ---
 
@@ -60,7 +60,7 @@ No structural change — path is already `cfg.ingressBasePath + "/" + env.Name`.
 
 ### Dev overlay (`deploy/overlays/dev/kustomization.yaml`)
 
-- `RELAY_IMAGE` value: `relay-primitive:<digest>` → `relay-exec:latest` (Skaffold will resolve the digest)
+- `RELAY_EXEC_IMAGE` value: `relay-primitive:<digest>` → `relay-exec:latest` (Skaffold will resolve the digest)
 - `RELAY_INGRESS_BASE_PATH`: not set (default `/relay/exec` is correct)
 
 ---

@@ -49,8 +49,8 @@ var _ = Describe("LabEnvironment Controller", func() {
 		labenvironment := &labv1alpha1.LabEnvironment{}
 
 		BeforeEach(func() {
-			Expect(os.Setenv("RELAY_IMAGE", "relay-primitive:test")).To(Succeed())
-			DeferCleanup(func() { Expect(os.Unsetenv("RELAY_IMAGE")).To(Succeed()) })
+			Expect(os.Setenv("RELAY_EXEC_IMAGE", "relay-primitive:test")).To(Succeed())
+			DeferCleanup(func() { Expect(os.Unsetenv("RELAY_EXEC_IMAGE")).To(Succeed()) })
 
 			labImagesDir, err := os.MkdirTemp("", "lab-images")
 			Expect(err).NotTo(HaveOccurred())
@@ -115,12 +115,12 @@ var _ = Describe("ensureRelay", func() {
 
 	BeforeEach(func() {
 		DeferCleanup(func() {
-			Expect(os.Unsetenv("RELAY_IMAGE")).To(Succeed())
+			Expect(os.Unsetenv("RELAY_EXEC_IMAGE")).To(Succeed())
 			Expect(os.Unsetenv("RELAY_INGRESS_CLASS")).To(Succeed())
 			Expect(os.Unsetenv("RELAY_INGRESS_BASE_PATH")).To(Succeed())
 			Expect(os.Unsetenv("RELAY_INGRESS_ANNOTATIONS")).To(Succeed())
 		})
-		Expect(os.Setenv("RELAY_IMAGE", "relay-exec:test")).To(Succeed())
+		Expect(os.Setenv("RELAY_EXEC_IMAGE", "relay-exec:test")).To(Succeed())
 		Expect(os.Setenv("RELAY_INGRESS_CLASS", "traefik")).To(Succeed())
 		Expect(os.Setenv("RELAY_INGRESS_BASE_PATH", "/relay/exec")).To(Succeed())
 		Expect(os.Setenv("RELAY_INGRESS_ANNOTATIONS", "traefik.ingress.kubernetes.io/router.entrypoints=websecure")).To(Succeed())
@@ -190,8 +190,8 @@ var _ = Describe("ensureRelay", func() {
 		Expect(r.ensureRelay(ctx, env, nsName)).To(Succeed())
 	})
 
-	It("returns error when RELAY_IMAGE is missing", func() {
-		Expect(os.Unsetenv("RELAY_IMAGE")).To(Succeed())
+	It("returns error when RELAY_EXEC_IMAGE is missing", func() {
+		Expect(os.Unsetenv("RELAY_EXEC_IMAGE")).To(Succeed())
 		envName := "relay-missing-image-test"
 		env := &labv1alpha1.LabEnvironment{
 			ObjectMeta: metav1.ObjectMeta{Name: envName},
@@ -202,7 +202,7 @@ var _ = Describe("ensureRelay", func() {
 			},
 		}
 		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
-		Expect(r.ensureRelay(ctx, env, "rootenv-lab-"+envName)).To(MatchError(ContainSubstring("RELAY_IMAGE")))
+		Expect(r.ensureRelay(ctx, env, "rootenv-lab-"+envName)).To(MatchError(ContainSubstring("RELAY_EXEC_IMAGE")))
 	})
 })
 
@@ -388,26 +388,26 @@ var _ = Describe("ensureNetworkPolicy (denyall)", func() {
 
 var _ = Describe("loadRelayConfig", func() {
 	AfterEach(func() {
-		Expect(os.Unsetenv("RELAY_IMAGE")).To(Succeed())
+		Expect(os.Unsetenv("RELAY_EXEC_IMAGE")).To(Succeed())
 		Expect(os.Unsetenv("RELAY_INGRESS_CLASS")).To(Succeed())
 		Expect(os.Unsetenv("RELAY_INGRESS_BASE_PATH")).To(Succeed())
 		Expect(os.Unsetenv("RELAY_INGRESS_ANNOTATIONS")).To(Succeed())
 	})
 
-	It("returns error when RELAY_IMAGE is unset", func() {
+	It("returns error when RELAY_EXEC_IMAGE is unset", func() {
 		_, err := loadRelayConfig()
-		Expect(err).To(MatchError(ContainSubstring("RELAY_IMAGE")))
+		Expect(err).To(MatchError(ContainSubstring("RELAY_EXEC_IMAGE")))
 	})
 
 	It("uses /relay/exec as default base path", func() {
-		Expect(os.Setenv("RELAY_IMAGE", "img:tag")).To(Succeed())
+		Expect(os.Setenv("RELAY_EXEC_IMAGE", "img:tag")).To(Succeed())
 		cfg, err := loadRelayConfig()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg.ingressBasePath).To(Equal("/relay/exec"))
 	})
 
 	It("parses multiple annotations from comma-separated string", func() {
-		Expect(os.Setenv("RELAY_IMAGE", "img:tag")).To(Succeed())
+		Expect(os.Setenv("RELAY_EXEC_IMAGE", "img:tag")).To(Succeed())
 		Expect(os.Setenv("RELAY_INGRESS_ANNOTATIONS", "foo=bar,baz=qux,key=val=with=equals")).To(Succeed())
 		cfg, err := loadRelayConfig()
 		Expect(err).NotTo(HaveOccurred())
@@ -421,7 +421,7 @@ var _ = Describe("loadRelayConfig", func() {
 	})
 
 	It("skips malformed annotation tokens (no = sign)", func() {
-		Expect(os.Setenv("RELAY_IMAGE", "img:tag")).To(Succeed())
+		Expect(os.Setenv("RELAY_EXEC_IMAGE", "img:tag")).To(Succeed())
 		Expect(os.Setenv("RELAY_INGRESS_ANNOTATIONS", "good=value,badtoken,=emptykey")).To(Succeed())
 		cfg, err := loadRelayConfig()
 		Expect(err).NotTo(HaveOccurred())
@@ -434,14 +434,14 @@ var _ = Describe("loadRelayConfig", func() {
 	})
 
 	It("leaves ingressClass empty when RELAY_INGRESS_CLASS is unset", func() {
-		Expect(os.Setenv("RELAY_IMAGE", "img:tag")).To(Succeed())
+		Expect(os.Setenv("RELAY_EXEC_IMAGE", "img:tag")).To(Succeed())
 		cfg, err := loadRelayConfig()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg.ingressClass).To(BeEmpty())
 	})
 
 	It("includes the relay auth middleware annotation by default", func() {
-		Expect(os.Setenv("RELAY_IMAGE", "img:tag")).To(Succeed())
+		Expect(os.Setenv("RELAY_EXEC_IMAGE", "img:tag")).To(Succeed())
 		cfg, err := loadRelayConfig()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg.ingressAnnotations).To(HaveKeyWithValue(

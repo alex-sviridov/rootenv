@@ -45,12 +45,12 @@ patches:
               kubernetes.io/metadata.name: traefik-system
   - target:
       kind: ConfigMap
-      name: relay-exec-image
+      name: relay-images
     patch: |-
       apiVersion: v1
       kind: ConfigMap
       metadata:
-        name: relay-exec-image
+        name: relay-images
       data:
         image: "ghcr.io/alex-sviridov/rootenv/relay-exec:latest"
   - target:

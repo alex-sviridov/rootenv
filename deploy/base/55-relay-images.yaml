@@ -1,7 +1,8 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: relay-exec-image
+  name: relay-images
   namespace: labenv-operator-system
 data:
-  image: relay-exec:latest
+  exec: relay-exec:latest
+  grader: relay-grader:latest

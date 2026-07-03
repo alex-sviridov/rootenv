@@ -22,9 +22,9 @@ by Skaffold as `artifacts:` and consumed via two patterns:
   manifest at apply time.
 - Pods created dynamically by `labenv-operator` (which Skaffold can't see or
   rewrite): the resolved ref is round-tripped through a ConfigMap. Skaffold's
-  `resourceSelector` rewrites `relay-exec-image`'s `data.image` field at
+  `resourceSelector` rewrites `relay-images`'s `data.image` field at
   deploy time (matching by artifact name), and the operator deployment reads
-  it into the `RELAY_IMAGE` env var via `configMapKeyRef`.
+  it into the `RELAY_EXEC_IMAGE` env var via `configMapKeyRef`.
 
 Lab images need the second pattern, generalized: there isn't one well-known
 image (`relay-exec`) but an open-ended set, one per `labs/images/*`
@@ -66,12 +66,12 @@ data:
 
 `skaffold.yaml`'s `resourceSelector.allow` gets one JSON-pointer per key
 (`.data.ubuntu-sshd`, etc.) alongside the existing `.data.image` pointer used
-for `relay-exec-image`. Skaffold requires static pointers — this list grows
+for `relay-images`. Skaffold requires static pointers — this list grows
 in lockstep with the artifact list whenever a new lab image is added.
 
 ### 3. Operator reads the ConfigMap as a mounted volume
 
-Unlike `RELAY_IMAGE` (one well-known env var for one well-known image), the
+Unlike `RELAY_EXEC_IMAGE` (one well-known env var for one well-known image), the
 operator needs to look up an arbitrary key (`asset.Image`) at runtime, so an
 env var per image doesn't scale. Mount the `lab-images` ConfigMap as a volume
 on the controller-manager deployment (e.g. at `/etc/lab-images/`), where each

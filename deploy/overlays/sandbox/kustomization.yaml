@@ -77,4 +77,5 @@ images:
   - name: labenv-operator
   - name: attempt-controller
   - name: relay-exec
+  - name: relay-grader
   - name: relay-authenticator
