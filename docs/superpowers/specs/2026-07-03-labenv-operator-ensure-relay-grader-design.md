@@ -14,9 +14,11 @@ Real task content (lab YAML → PocketBase → attempt-controller → CRD → `t
 
 `services/labenv-operator/config/manager/manager.yaml` already references a `RELAY_GRADER_IMAGE` env var sourced from the `relay-images` ConfigMap, but the key is misspelled `grafer` (ConfigMap actually defines `grader`, per `deploy/base/55-relay-images.yaml`). This design fixes that typo to `grader` — without it, `RELAY_GRADER_IMAGE` never resolves and the operator container fails to start.
 
-## New File Content
+## New File
 
-All grader logic added to the existing `services/labenv-operator/internal/controller/relay.go` (same file as `ensureRelay`), as a fully independent function set — `ensureRelayGrader` does not call or depend on any `ensureRelay*` function, and vice versa.
+`services/labenv-operator/internal/controller/grader.go` — package `controller`, new file alongside `relay.go`.
+
+All grader logic lives here, mirroring how `relay.go` isolates relay-exec logic. `ensureRelayGrader` does not call or depend on any `ensureRelay*` function in `relay.go`, and vice versa.
 
 ## Resources Created (all in `nsName`)
 
