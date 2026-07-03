@@ -99,6 +99,9 @@ func (r *LabEnvironmentReconciler) reconcileCreate(ctx context.Context, env *lab
 	if err := r.ensureRelay(ctx, env, nsName); err != nil {
 		return ctrl.Result{}, err
 	}
+	if err := r.ensureRelayGrader(ctx, env, nsName); err != nil {
+		return ctrl.Result{}, err
+	}
 	// get asset status
 	notReadyMsg := []string{}
 	env.Status.Assets = nil
