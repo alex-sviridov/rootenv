@@ -27,15 +27,9 @@ Per-environment sidecar (bootstrap; not yet wired into the labenv operator) that
 **URL:** `/relay/grade/<attemptID>/`  
 **Healthz:** `/healthz`
 
-### relay-ssh
-
-SSH-based relay — the only component with direct SSH access to lab VMs. Proxies terminal I/O over an SSH session.
-
-**Healthz:** `/relay/ssh/healthz`
-
 ## WebSocket protocol
 
-relay-exec and relay-ssh share the same framing convention for messages from the client:
+relay-exec uses the following framing convention for messages from the client:
 
 | First byte | Meaning        | Payload                                     |
 |------------|----------------|---------------------------------------------|
@@ -59,7 +53,6 @@ relay/
   grader/         # task loading (LoadTasks) + Backend (grade report over WS)
   cmd/
     relay-exec/   # relay-exec binary
-    relay-ssh/    # relay-ssh binary
     relay-grader/ # relay-grader binary
 ```
 
