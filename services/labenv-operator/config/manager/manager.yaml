@@ -108,7 +108,7 @@ spec:
             valueFrom:
               configMapKeyRef:
                 name: relay-images
-                key: grafer
+                key: grader
         volumeMounts:
           - name: lab-images
             mountPath: /etc/lab-images
