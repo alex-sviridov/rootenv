@@ -61,6 +61,25 @@ func TestHandler_success(t *testing.T) {
 	}
 }
 
+func TestHandler_success_grade_path(t *testing.T) {
+	pb := &fakePB{userID: "usr_abc"}
+	h := auth.NewHandler(pb)
+
+	req := makeReq("tok123", "/relay/grade/atm_123/")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("want 200, got %d", w.Code)
+	}
+	if w.Header().Get("X-User-Id") != "usr_abc" {
+		t.Errorf("want X-User-Id usr_abc, got %q", w.Header().Get("X-User-Id"))
+	}
+	if w.Header().Get("X-Attempt-Id") != "atm_123" {
+		t.Errorf("want X-Attempt-Id atm_123, got %q", w.Header().Get("X-Attempt-Id"))
+	}
+}
+
 func TestHandler_success_no_trailing_segment(t *testing.T) {
 	// URI with exactly three segments: /relay/exec/<id>
 	pb := &fakePB{userID: "usr_abc"}
@@ -111,9 +130,11 @@ func TestHandler_unparseable_uri(t *testing.T) {
 	}{
 		{"wrong prefix", "/not/the/right/pattern/"},
 		{"only relay", "/relay/"},
-		{"exec missing", "/relay/notexec/atm_123/"},
-		{"empty attempt id", "/relay/exec//server-0/"},
+		{"unknown relay type", "/relay/notexec/atm_123/"},
+		{"empty attempt id (exec)", "/relay/exec//server-0/"},
+		{"empty attempt id (grade)", "/relay/grade//"},
 		{"exec in wrong position", "/foo/exec/atm_123/"},
+		{"grade in wrong position", "/foo/grade/atm_123/"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

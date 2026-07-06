@@ -21,12 +21,12 @@ func NewHandler(pb PocketBase) *Handler {
 }
 
 // parseAttemptID extracts the attempt ID from X-Forwarded-Uri.
-// Expected pattern: /relay/exec/<attemptId>/...
-// Validates the fixed prefix so an "exec" segment elsewhere in the path is ignored.
+// Expected pattern: /relay/<exec|grade>/<attemptId>/...
+// Validates the fixed prefix so an "exec"/"grade" segment elsewhere in the path is ignored.
 func parseAttemptID(uri string) (string, bool) {
-	// Strip leading slash so SplitN gives ["relay","exec","<id>",...].
+	// Strip leading slash so SplitN gives ["relay","exec"|"grade","<id>",...].
 	parts := strings.SplitN(strings.TrimPrefix(uri, "/"), "/", 4)
-	if len(parts) < 3 || parts[0] != "relay" || parts[1] != "exec" || parts[2] == "" {
+	if len(parts) < 3 || parts[0] != "relay" || (parts[1] != "exec" && parts[1] != "grade") || parts[2] == "" {
 		return "", false
 	}
 	return parts[2], true
