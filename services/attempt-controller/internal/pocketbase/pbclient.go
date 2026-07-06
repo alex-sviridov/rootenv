@@ -43,18 +43,25 @@ type AttemptRecord struct {
 	Expand             struct {
 		Lab struct {
 			Environment json.RawMessage `json:"environment"`
+			Exercises   json.RawMessage `json:"exercises"`
 		} `json:"lab"`
 	} `json:"expand"`
 }
 
 // ToAttempt converts the PocketBase JSON record into the controller's domain
-// type. Environment JSON is parsed here; if parsing fails the returned error
-// describes a malformed or missing environment field.
+// type. Environment and Exercises JSON are parsed here; if parsing fails the
+// returned error describes a malformed or missing field.
 func (r AttemptRecord) ToAttempt() (downstream.Attempt, error) {
 	var env downstream.EnvironmentSpec
 	if len(r.Expand.Lab.Environment) > 0 {
 		if err := json.Unmarshal(r.Expand.Lab.Environment, &env); err != nil {
 			return downstream.Attempt{}, fmt.Errorf("attempt %s: parse environment: %w", r.ID, err)
+		}
+	}
+	var exercises []downstream.Exercise
+	if len(r.Expand.Lab.Exercises) > 0 {
+		if err := json.Unmarshal(r.Expand.Lab.Exercises, &exercises); err != nil {
+			return downstream.Attempt{}, fmt.Errorf("attempt %s: parse exercises: %w", r.ID, err)
 		}
 	}
 	return downstream.Attempt{
@@ -64,6 +71,7 @@ func (r AttemptRecord) ToAttempt() (downstream.Attempt, error) {
 		LabID:        r.Lab,
 		DesiredState: r.DesiredState,
 		Environment:  env,
+		Exercises:    exercises,
 	}, nil
 }
 
