@@ -74,3 +74,25 @@ func TestLoadTasks_invalid_type(t *testing.T) {
 		t.Fatal("expected error for invalid type, got nil")
 	}
 }
+
+func TestLoadTasks_asset_field_present(t *testing.T) {
+	path := writeTasksFile(t, `[{"id": "task1", "type": "term", "template": "echo hi", "asset": "server-0"}]`)
+	tasks, err := grader.LoadTasks(path)
+	if err != nil {
+		t.Fatalf("LoadTasks failed: %v", err)
+	}
+	if tasks[0].Asset != "server-0" {
+		t.Errorf("Asset = %q, want %q", tasks[0].Asset, "server-0")
+	}
+}
+
+func TestLoadTasks_asset_field_absent(t *testing.T) {
+	path := writeTasksFile(t, `[{"id": "task1", "type": "term", "template": "echo hi"}]`)
+	tasks, err := grader.LoadTasks(path)
+	if err != nil {
+		t.Fatalf("LoadTasks failed: %v", err)
+	}
+	if tasks[0].Asset != "" {
+		t.Errorf("Asset = %q, want empty", tasks[0].Asset)
+	}
+}

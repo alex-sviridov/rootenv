@@ -11,6 +11,7 @@ type Task struct {
 	ID       string `json:"id"`
 	Type     string `json:"type"`
 	Template string `json:"template"`
+	Asset    string `json:"asset,omitempty"`
 }
 
 // LoadTasks reads and validates the tasks.json file at path.
