@@ -166,6 +166,10 @@ func (r *LabEnvironmentReconciler) ensureRelayGraderDeployment(ctx context.Conte
 								{Name: "RELAY_MY_ATTEMPT_ID", Value: env.Name},
 								{Name: "RELAY_MY_OWNER_ID", Value: env.Spec.OwnerId},
 								{Name: "RELAY_TASKS_FILE", Value: "/etc/grader/tasks.json"},
+								{Name: "RELAY_GRADER_INTERNAL_PORT", Value: "8081"},
+							},
+							Ports: []corev1.ContainerPort{
+								{ContainerPort: 8081},
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
@@ -235,7 +239,8 @@ func (r *LabEnvironmentReconciler) ensureRelayGraderService(ctx context.Context,
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{"app": "relay-grader"},
 			Ports: []corev1.ServicePort{
-				{Port: 8080, TargetPort: intstr.FromInt32(8080)},
+				{Name: "http", Port: 8080, TargetPort: intstr.FromInt32(8080)},
+				{Name: "internal", Port: 8081, TargetPort: intstr.FromInt32(8081)},
 			},
 		},
 	}
@@ -305,6 +310,7 @@ func (r *LabEnvironmentReconciler) ensureRelayGraderNetworkPolicy(ctx context.Co
 
 	tcp := corev1.ProtocolTCP
 	wsPort := intstr.FromInt32(8080)
+	internalPort := intstr.FromInt32(8081)
 
 	np := networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
@@ -330,6 +336,16 @@ func (r *LabEnvironmentReconciler) ensureRelayGraderNetworkPolicy(ctx context.Co
 					}},
 					Ports: []networkingv1.NetworkPolicyPort{
 						{Protocol: &tcp, Port: &wsPort},
+					},
+				},
+				{
+					From: []networkingv1.NetworkPolicyPeer{{
+						PodSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"app": "relay-exec"},
+						},
+					}},
+					Ports: []networkingv1.NetworkPolicyPort{
+						{Protocol: &tcp, Port: &internalPort},
 					},
 				},
 			},

@@ -228,6 +228,7 @@ func (r *LabEnvironmentReconciler) ensureRelayDeployment(ctx context.Context, en
 								{Name: "RELAY_MY_NAMESPACE", Value: nsName},
 								{Name: "RELAY_MY_ATTEMPT_ID", Value: env.Name},
 								{Name: "RELAY_MY_OWNER_ID", Value: env.Spec.OwnerId},
+								{Name: "RELAY_GRADER_ADDR", Value: "relay-grader:8081"},
 							},
 							SecurityContext: &corev1.SecurityContext{
 								AllowPrivilegeEscalation: ptr.To(false),
@@ -380,6 +381,7 @@ func (r *LabEnvironmentReconciler) ensureRelayNetworkPolicy(ctx context.Context,
 
 	tcp := corev1.ProtocolTCP
 	wsPort := intstr.FromInt32(8080)
+	graderPortVal := intstr.FromInt32(8081)
 
 	notRelayExec := metav1.LabelSelectorRequirement{
 		Key:      "app",
@@ -438,6 +440,17 @@ func (r *LabEnvironmentReconciler) ensureRelayNetworkPolicy(ctx context.Context,
 					}},
 					Ports: []networkingv1.NetworkPolicyPort{
 						{Protocol: &tcp, Port: &apiPortVal},
+					},
+				},
+				// reach relay-grader's internal port to forward terminal output
+				{
+					To: []networkingv1.NetworkPolicyPeer{{
+						PodSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"app": "relay-grader"},
+						},
+					}},
+					Ports: []networkingv1.NetworkPolicyPort{
+						{Protocol: &tcp, Port: &graderPortVal},
 					},
 				},
 			},

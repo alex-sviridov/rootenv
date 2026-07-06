@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -172,6 +173,9 @@ var _ = Describe("ensureRelay", func() {
 			corev1.EnvVar{Name: "RELAY_MY_ATTEMPT_ID", Value: envName},
 			corev1.EnvVar{Name: "RELAY_MY_OWNER_ID", Value: "usr-test"},
 		))
+		Expect(deploy.Spec.Template.Spec.Containers[0].Env).To(ContainElement(
+			corev1.EnvVar{Name: "RELAY_GRADER_ADDR", Value: "relay-grader:8081"},
+		))
 
 		By("Service relay exists")
 		var svc corev1.Service
@@ -268,6 +272,12 @@ var _ = Describe("ensureRelayGrader", func() {
 			corev1.EnvVar{Name: "RELAY_MY_OWNER_ID", Value: "usr-test"},
 			corev1.EnvVar{Name: "RELAY_TASKS_FILE", Value: "/etc/grader/tasks.json"},
 		))
+		Expect(deploy.Spec.Template.Spec.Containers[0].Env).To(ContainElement(
+			corev1.EnvVar{Name: "RELAY_GRADER_INTERNAL_PORT", Value: "8081"},
+		))
+		Expect(deploy.Spec.Template.Spec.Containers[0].Ports).To(ContainElement(
+			corev1.ContainerPort{ContainerPort: 8081, Protocol: corev1.ProtocolTCP},
+		))
 		Expect(deploy.Spec.Template.Spec.Containers[0].VolumeMounts).To(ContainElement(
 			corev1.VolumeMount{Name: "grader-tasks", MountPath: "/etc/grader", ReadOnly: true},
 		))
@@ -278,6 +288,11 @@ var _ = Describe("ensureRelayGrader", func() {
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay-grader"}, &svc)).To(Succeed())
 		Expect(svc.Spec.Ports[0].Port).To(Equal(int32(8080)))
 		Expect(svc.Spec.Selector).To(HaveKeyWithValue("app", "relay-grader"))
+
+		By("Service relay-grader exposes the internal forwarder port")
+		Expect(svc.Spec.Ports).To(ContainElement(
+			corev1.ServicePort{Name: "internal", Protocol: corev1.ProtocolTCP, Port: 8081, TargetPort: intstr.FromInt32(8081)},
+		))
 
 		By("Ingress relay-grader exists with correct path")
 		var ing networkingv1.Ingress
@@ -294,8 +309,21 @@ var _ = Describe("ensureRelayGrader", func() {
 			networkingv1.PolicyTypeEgress,
 		))
 		Expect(np.Spec.Egress).To(BeEmpty())
-		Expect(np.Spec.Ingress).To(HaveLen(1))
+		Expect(np.Spec.Ingress).To(HaveLen(2))
 		Expect(np.Spec.Ingress[0].Ports[0].Port.IntValue()).To(Equal(8080))
+
+		By("NetworkPolicy allows ingress from relay-exec pods on the internal port")
+		var foundExecRule bool
+		for _, rule := range np.Spec.Ingress {
+			for _, peer := range rule.From {
+				if peer.PodSelector != nil && peer.PodSelector.MatchLabels["app"] == "relay-exec" {
+					Expect(rule.Ports).To(HaveLen(1))
+					Expect(rule.Ports[0].Port.IntValue()).To(Equal(8081))
+					foundExecRule = true
+				}
+			}
+		}
+		Expect(foundExecRule).To(BeTrue(), "expected ingress rule allowing relay-exec pods on port 8081")
 
 		By("ensureRelayGrader is idempotent — second call does not error")
 		Expect(r.ensureRelayGrader(ctx, env, nsName)).To(Succeed())
@@ -454,6 +482,19 @@ var _ = Describe("ensureRelayNetworkPolicy", func() {
 			}
 		}
 		Expect(foundAPIRule).To(BeTrue(), "expected egress rule with ipBlock %s/32 port %d", ip, port)
+
+		By("egress allows reaching relay-grader on port 8081")
+		var foundGraderRule bool
+		for _, rule := range np.Spec.Egress {
+			for _, peer := range rule.To {
+				if peer.PodSelector != nil && peer.PodSelector.MatchLabels["app"] == "relay-grader" {
+					Expect(rule.Ports).To(HaveLen(1))
+					Expect(rule.Ports[0].Port.IntValue()).To(Equal(8081))
+					foundGraderRule = true
+				}
+			}
+		}
+		Expect(foundGraderRule).To(BeTrue(), "expected egress rule allowing relay-grader on port 8081")
 	})
 
 	It("is idempotent — second call updates without error", func() {
