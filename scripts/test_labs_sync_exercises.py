@@ -1,5 +1,5 @@
 import pytest
-from labs_sync_exercises import parse_exercise_block
+from labs_sync_exercises import parse_exercise_block, extract_exercises
 
 
 def test_parse_exercise_block_basic():
@@ -70,3 +70,61 @@ def test_parse_exercise_block_missing_template():
     body = "description: d\ntype: term\n"
     with pytest.raises(ValueError, match="template"):
         parse_exercise_block(body)
+
+
+def _task(content_md):
+    return {"title": "t", "content": content_md}
+
+
+def test_extract_exercises_single_task_single_exercise():
+    content = [_task(
+        "Some intro text.\n\n"
+        "```exercise\n"
+        "description: d1\n"
+        "type: term\n"
+        "template:\n"
+        "echo hi\n"
+        "```\n"
+    )]
+    result = extract_exercises(content)
+    assert result == [{
+        "id": "1.1", "description": "d1", "type": "term",
+        "asset": None, "template": "echo hi",
+    }]
+
+
+def test_extract_exercises_numbering_across_tasks_and_multiple_per_task():
+    content = [
+        _task(
+            "```exercise\ndescription: d1\ntype: term\ntemplate:\necho a\n```\n"
+            "middle text\n"
+            "```exercise\ndescription: d2\ntype: term\ntemplate:\necho b\n```\n"
+        ),
+        _task(
+            "```exercise\ndescription: d3\ntype: term\ntemplate:\necho c\n```\n"
+        ),
+    ]
+    result = extract_exercises(content)
+    ids = [e["id"] for e in result]
+    assert ids == ["1.1", "1.2", "2.1"]
+
+
+def test_extract_exercises_no_exercises_in_task():
+    content = [_task("Just prose, no exercise blocks.\n")]
+    assert extract_exercises(content) == []
+
+
+def test_extract_exercises_ignores_other_fenced_blocks():
+    content = [_task(
+        "```bash\necho not an exercise\n```\n"
+        "```exercise\ndescription: d\ntype: term\ntemplate:\necho hi\n```\n"
+    )]
+    result = extract_exercises(content)
+    assert len(result) == 1
+    assert result[0]["id"] == "1.1"
+
+
+def test_extract_exercises_invalid_block_raises_with_position():
+    content = [_task("```exercise\ntype: term\ntemplate:\necho hi\n```\n")]
+    with pytest.raises(ValueError, match="task 1"):
+        extract_exercises(content)

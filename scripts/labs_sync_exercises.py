@@ -1,6 +1,9 @@
 """Extraction, validation, and rewriting of ```exercise blocks in lab task markdown."""
 
+import re
+
 _LABELS = ("description", "type", "asset")
+_FENCE_RE = re.compile(r'```exercise\n(.*?)\n```', re.DOTALL)
 
 
 def parse_exercise_block(body: str) -> dict:
@@ -42,3 +45,21 @@ def parse_exercise_block(body: str) -> dict:
         "asset": fields["asset"] or None,
         "template": "\n".join(template_lines).rstrip("\n"),
     }
+
+
+def extract_exercises(content: list[dict]) -> list[dict]:
+    """Extract all ```exercise blocks across a lab's content (task) list,
+    computing ids as "<task#>.<exercise#>" (both 1-indexed, exercise number
+    resets per task).
+    """
+    exercises = []
+    for task_num, task in enumerate(content, start=1):
+        body_text = task.get("content", "") or ""
+        for exercise_num, match in enumerate(_FENCE_RE.finditer(body_text), start=1):
+            try:
+                parsed = parse_exercise_block(match.group(1))
+            except ValueError as e:
+                raise ValueError(f"task {task_num}, exercise {exercise_num}: {e}") from e
+            parsed["id"] = f"{task_num}.{exercise_num}"
+            exercises.append(parsed)
+    return exercises
