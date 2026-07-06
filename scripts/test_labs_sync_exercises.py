@@ -1,4 +1,9 @@
+import importlib.util
+
 import pytest
+import yaml as _yaml
+from pathlib import Path
+
 from labs_sync_exercises import parse_exercise_block, extract_exercises, validate_exercise_assets, rewrite_content_with_placeholders
 
 
@@ -170,3 +175,63 @@ def test_rewrite_content_with_placeholders_does_not_mutate_input():
     content = [_task(original_body)]
     rewrite_content_with_placeholders(content)
     assert content[0]["content"] == original_body
+
+
+def _load_labs_sync():
+    """Load scripts/labs-sync.py as a module (its filename isn't a valid
+    Python identifier, so it can't be imported normally)."""
+    spec = importlib.util.spec_from_file_location("labs_sync", Path(__file__).parent / "labs-sync.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_labs_sync_validate_lab_reports_exercise_errors(tmp_path):
+    labs_sync = _load_labs_sync()
+
+    labs_dir = tmp_path / "labs"
+    labs_dir.mkdir()
+    lab_file = labs_dir / "mylab.yaml"
+    lab_file.write_text(_yaml.dump({
+        "meta": {"title": "My Lab"},
+        "content": [{"title": "Task 1", "content": "```exercise\ntype: term\ntemplate:\necho hi\n```\n"}],
+        "environment": {"assets": [{"name": "server-0"}]},
+    }))
+
+    labs_sync.LABS_DIR = labs_dir
+    ok = labs_sync.validate_lab(lab_file)
+    assert ok is False
+
+
+def test_labs_sync_validate_lab_reports_unknown_asset(tmp_path):
+    labs_sync = _load_labs_sync()
+
+    labs_dir = tmp_path / "labs"
+    labs_dir.mkdir()
+    lab_file = labs_dir / "mylab.yaml"
+    lab_file.write_text(_yaml.dump({
+        "meta": {"title": "My Lab"},
+        "content": [{"title": "Task 1", "content": "```exercise\ndescription: d\ntype: term\nasset: server-9\ntemplate:\necho hi\n```\n"}],
+        "environment": {"assets": [{"name": "server-0"}]},
+    }))
+
+    labs_sync.LABS_DIR = labs_dir
+    ok = labs_sync.validate_lab(lab_file)
+    assert ok is False
+
+
+def test_labs_sync_validate_lab_passes_with_valid_exercise(tmp_path):
+    labs_sync = _load_labs_sync()
+
+    labs_dir = tmp_path / "labs"
+    labs_dir.mkdir()
+    lab_file = labs_dir / "mylab.yaml"
+    lab_file.write_text(_yaml.dump({
+        "meta": {"title": "My Lab"},
+        "content": [{"title": "Task 1", "content": "```exercise\ndescription: d\ntype: term\nasset: server-0\ntemplate:\necho hi\n```\n"}],
+        "environment": {"assets": [{"name": "server-0"}]},
+    }))
+
+    labs_sync.LABS_DIR = labs_dir
+    ok = labs_sync.validate_lab(lab_file)
+    assert ok is True
