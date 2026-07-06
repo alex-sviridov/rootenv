@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -19,8 +20,6 @@ import (
 )
 
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create
-
-const graderTasksPlaceholder = `[{"id": "task1", "type": "term", "template": "echo hi"}]`
 
 type graderConfig struct {
 	image                      string
@@ -65,7 +64,7 @@ func (r *LabEnvironmentReconciler) ensureRelayGrader(ctx context.Context, env *l
 		return err
 	}
 
-	if err := r.ensureGraderTasksConfigMap(ctx, nsName); err != nil {
+	if err := r.ensureGraderTasksConfigMap(ctx, env, nsName); err != nil {
 		return err
 	}
 	if err := r.ensureRelayGraderDeployment(ctx, env, nsName, cfg); err != nil {
@@ -83,7 +82,7 @@ func (r *LabEnvironmentReconciler) ensureRelayGrader(ctx context.Context, env *l
 	return nil
 }
 
-func (r *LabEnvironmentReconciler) ensureGraderTasksConfigMap(ctx context.Context, nsName string) error {
+func (r *LabEnvironmentReconciler) ensureGraderTasksConfigMap(ctx context.Context, env *labv1alpha1.LabEnvironment, nsName string) error {
 	var existing corev1.ConfigMap
 	err := r.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "grader-tasks"}, &existing)
 	if err == nil {
@@ -92,13 +91,34 @@ func (r *LabEnvironmentReconciler) ensureGraderTasksConfigMap(ctx context.Contex
 	if !apierrors.IsNotFound(err) {
 		return err
 	}
+
+	type graderTask struct {
+		ID       string `json:"id"`
+		Type     string `json:"type"`
+		Template string `json:"template"`
+		Asset    string `json:"asset,omitempty"`
+	}
+	tasks := make([]graderTask, 0, len(env.Spec.Exercises))
+	for _, ex := range env.Spec.Exercises {
+		tasks = append(tasks, graderTask{
+			ID:       ex.ID,
+			Type:     ex.Type,
+			Template: ex.Template,
+			Asset:    ex.Asset,
+		})
+	}
+	tasksJSON, err := json.Marshal(tasks)
+	if err != nil {
+		return fmt.Errorf("marshal grader tasks: %w", err)
+	}
+
 	cm := corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "grader-tasks",
 			Namespace: nsName,
 		},
 		Data: map[string]string{
-			"tasks.json": graderTasksPlaceholder,
+			"tasks.json": string(tasksJSON),
 		},
 	}
 	return client.IgnoreAlreadyExists(r.Create(ctx, &cm))

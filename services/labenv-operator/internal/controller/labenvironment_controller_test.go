@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 
@@ -233,17 +234,29 @@ var _ = Describe("ensureRelayGrader", func() {
 				OwnerId: "usr-test",
 				LabId:   "test-lab",
 				Assets:  []labv1alpha1.Asset{{Name: "main", Image: "busybox"}},
+				Exercises: []labv1alpha1.Exercise{
+					{ID: "1.1", Description: "Create a file", Type: "term", Asset: "main", Template: "test -f /tmp/x"},
+					{ID: "1.2", Description: "No asset filter", Type: "term", Template: "echo hi"},
+				},
 			},
 		}
 
 		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		Expect(r.ensureRelayGrader(ctx, env, nsName)).To(Succeed())
 
-		By("ConfigMap grader-tasks exists with placeholder tasks.json")
+		By("ConfigMap grader-tasks exists with tasks.json derived from spec.exercises")
 		var cm corev1.ConfigMap
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "grader-tasks"}, &cm)).To(Succeed())
 		Expect(cm.Data).To(HaveKey("tasks.json"))
-		Expect(cm.Data["tasks.json"]).To(ContainSubstring("task1"))
+		var tasks []map[string]any
+		Expect(json.Unmarshal([]byte(cm.Data["tasks.json"]), &tasks)).To(Succeed())
+		Expect(tasks).To(HaveLen(2))
+		Expect(tasks[0]["id"]).To(Equal("1.1"))
+		Expect(tasks[0]["type"]).To(Equal("term"))
+		Expect(tasks[0]["template"]).To(Equal("test -f /tmp/x"))
+		Expect(tasks[0]["asset"]).To(Equal("main"))
+		Expect(tasks[0]).NotTo(HaveKey("description"))
+		Expect(tasks[1]).NotTo(HaveKey("asset"))
 
 		By("Deployment relay-grader exists with correct image, env, and volume mount")
 		var deploy appsv1.Deployment
@@ -301,6 +314,30 @@ var _ = Describe("ensureRelayGrader", func() {
 		}
 		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		Expect(r.ensureRelayGrader(ctx, env, "rootenv-lab-"+envName)).To(MatchError(ContainSubstring("RELAY_GRADER_IMAGE")))
+	})
+
+	It("writes an empty tasks.json array when spec.exercises is empty", func() {
+		envName := "grader-empty-exercises-test"
+		nsName := "rootenv-lab-" + envName
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
+
+		env := &labv1alpha1.LabEnvironment{
+			ObjectMeta: metav1.ObjectMeta{Name: envName},
+			Spec: labv1alpha1.LabEnvironmentSpec{
+				OwnerId: "usr-test",
+				LabId:   "test-lab",
+				Assets:  []labv1alpha1.Asset{{Name: "main", Image: "busybox"}},
+			},
+		}
+
+		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		Expect(r.ensureRelayGrader(ctx, env, nsName)).To(Succeed())
+
+		var cm corev1.ConfigMap
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "grader-tasks"}, &cm)).To(Succeed())
+		Expect(cm.Data["tasks.json"]).To(Equal("[]"))
 	})
 })
 
