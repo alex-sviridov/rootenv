@@ -27,9 +27,11 @@ beforeEach(() => {
   MockWebSocket.lastInstance = null
   vi.stubGlobal('WebSocket', MockWebSocket)
   vi.stubGlobal('location', { protocol: 'http:', host: 'localhost:8080' })
+  vi.useFakeTimers()
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
@@ -135,5 +137,76 @@ describe('useGraderConnection', () => {
     MockWebSocket.lastInstance.readyState = MockWebSocket.OPEN
     close()
     expect(() => close()).not.toThrow()
+  })
+
+  it('reconnects 5 seconds after an unexpected close', () => {
+    const { connect } = useGraderConnection('atm_123')
+    connect()
+    const firstSocket = MockWebSocket.lastInstance
+    firstSocket.onclose({ code: 1006, reason: '' })
+
+    expect(MockWebSocket.lastInstance).toBe(firstSocket) // no new socket yet
+
+    vi.advanceTimersByTime(5000)
+
+    expect(MockWebSocket.lastInstance).not.toBe(firstSocket)
+    expect(MockWebSocket.lastInstance.url).toBe('ws://localhost:8080/relay/grade/atm_123/')
+  })
+
+  it('does not reconnect after an explicit close()', () => {
+    const { connect, close } = useGraderConnection('atm_123')
+    connect()
+    const firstSocket = MockWebSocket.lastInstance
+    firstSocket.readyState = MockWebSocket.OPEN
+    close()
+    firstSocket.onclose({ code: 1000, reason: 'session ended' })
+
+    vi.advanceTimersByTime(10000)
+
+    expect(MockWebSocket.lastInstance).toBe(firstSocket)
+  })
+
+  it('keeps retrying every 5 seconds if reconnect attempts keep closing', () => {
+    const { connect } = useGraderConnection('atm_123')
+    connect()
+    const firstSocket = MockWebSocket.lastInstance
+    firstSocket.onclose({ code: 1006, reason: '' })
+
+    vi.advanceTimersByTime(5000)
+    const secondSocket = MockWebSocket.lastInstance
+    expect(secondSocket).not.toBe(firstSocket)
+
+    secondSocket.onclose({ code: 1006, reason: '' })
+    vi.advanceTimersByTime(5000)
+    const thirdSocket = MockWebSocket.lastInstance
+    expect(thirdSocket).not.toBe(secondSocket)
+  })
+
+  it('does not schedule a reconnect twice for the same close event', () => {
+    const { connect } = useGraderConnection('atm_123')
+    connect()
+    const firstSocket = MockWebSocket.lastInstance
+    firstSocket.onclose({ code: 1006, reason: '' })
+    firstSocket.onerror()
+
+    vi.advanceTimersByTime(5000)
+
+    // only one reconnect should have happened, not two
+    expect(MockWebSocket.lastInstance).not.toBe(firstSocket)
+    const secondSocket = MockWebSocket.lastInstance
+    vi.advanceTimersByTime(1)
+    expect(MockWebSocket.lastInstance).toBe(secondSocket)
+  })
+
+  it('close() cancels a pending scheduled reconnect', () => {
+    const { connect, close } = useGraderConnection('atm_123')
+    connect()
+    const firstSocket = MockWebSocket.lastInstance
+    firstSocket.onclose({ code: 1006, reason: '' })
+    close()
+
+    vi.advanceTimersByTime(10000)
+
+    expect(MockWebSocket.lastInstance).toBe(firstSocket)
   })
 })
