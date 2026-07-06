@@ -45,9 +45,7 @@ func (b *assetBuffer) Ingest(chunk []byte) bool {
 		return false
 	}
 
-	for _, line := range complete {
-		b.lines = append(b.lines, line)
-	}
+	b.lines = append(b.lines, complete...)
 	if overflow := len(b.lines) - ringCapacity; overflow > 0 {
 		b.lines = b.lines[overflow:]
 	}
