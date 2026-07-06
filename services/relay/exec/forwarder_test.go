@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"net"
+	"runtime"
 	"testing"
 	"time"
 
@@ -43,6 +44,34 @@ func TestForwarder_Send_noop_when_addr_empty(t *testing.T) {
 	case <-done:
 	case <-time.After(1 * time.Second):
 		t.Fatal("Send blocked with empty addr — no-op forwarder must return immediately")
+	}
+}
+
+func TestForwarder_Close_waits_for_background_goroutine_to_exit(t *testing.T) {
+	before := runtime.NumGoroutine()
+
+	// 10.255.255.1 is a non-routable address: net.DialTimeout will sit
+	// blocked for the full 5s timeout instead of failing fast, so Close()
+	// is very likely called while run() is inside DialTimeout.
+	f := relayexec.NewForwarder("10.255.255.1:81", nil)
+
+	// Give run() a moment to enter its first DialTimeout call.
+	time.Sleep(50 * time.Millisecond)
+
+	f.Close()
+
+	// If Close() returned without waiting for run() to exit, the extra
+	// goroutine could still be blocked in DialTimeout right now. Poll
+	// briefly for the goroutine count to settle back to its pre-test level
+	// to confirm run() has actually stopped, rather than trusting a single
+	// racy snapshot.
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for runtime.NumGoroutine() > before && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	after := runtime.NumGoroutine()
+	if after > before {
+		t.Fatalf("goroutine count did not return to baseline after Close(): before=%d after=%d — run() may still be running", before, after)
 	}
 }
 

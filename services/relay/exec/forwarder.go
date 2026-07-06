@@ -27,6 +27,7 @@ type Forwarder struct {
 
 	closeOnce sync.Once
 	done      chan struct{}
+	wg        sync.WaitGroup
 }
 
 // NewForwarder starts a background connection/reconnect loop to addr. If addr
@@ -44,6 +45,7 @@ func NewForwarder(addr string, log *slog.Logger) *Forwarder {
 		done: make(chan struct{}),
 	}
 	if addr != "" {
+		f.wg.Add(1)
 		go f.run()
 	}
 	return f
@@ -63,12 +65,17 @@ func (f *Forwarder) Send(asset string, data []byte) {
 	}
 }
 
-// Close stops the background reconnect loop.
+// Close stops the background reconnect loop and blocks until it has actually
+// exited. Note: an in-flight net.DialTimeout call inside run() is not
+// interrupted — Close() waits for it to return (up to its own timeout) rather
+// than aborting it, but run() will not perform any further work afterward.
 func (f *Forwarder) Close() {
 	f.closeOnce.Do(func() { close(f.done) })
+	f.wg.Wait()
 }
 
 func (f *Forwarder) run() {
+	defer f.wg.Done()
 	backoff := 500 * time.Millisecond
 	const maxBackoff = 10 * time.Second
 
