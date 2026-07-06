@@ -1,5 +1,5 @@
 import pytest
-from labs_sync_exercises import parse_exercise_block, extract_exercises
+from labs_sync_exercises import parse_exercise_block, extract_exercises, validate_exercise_assets, rewrite_content_with_placeholders
 
 
 def test_parse_exercise_block_basic():
@@ -128,3 +128,45 @@ def test_extract_exercises_invalid_block_raises_with_position():
     content = [_task("```exercise\ntype: term\ntemplate:\necho hi\n```\n")]
     with pytest.raises(ValueError, match="task 1"):
         extract_exercises(content)
+
+
+def test_validate_exercise_assets_all_valid():
+    exercises = [{"id": "1.1", "asset": "server-0"}, {"id": "1.2", "asset": None}]
+    errors = validate_exercise_assets(exercises, {"server-0", "server-1"})
+    assert errors == []
+
+
+def test_validate_exercise_assets_unknown_asset():
+    exercises = [{"id": "1.1", "asset": "server-9"}]
+    errors = validate_exercise_assets(exercises, {"server-0"})
+    assert len(errors) == 1
+    assert "1.1" in errors[0]
+    assert "server-9" in errors[0]
+
+
+def test_rewrite_content_with_placeholders_strips_type_and_template():
+    content = [_task(
+        "intro\n\n"
+        "```exercise\n"
+        "description: Create /tmp/labfile\n"
+        "type: term\n"
+        "template:\n"
+        "test -O /tmp/labfile\n"
+        "```\n"
+        "outro\n"
+    )]
+    rewritten = rewrite_content_with_placeholders(content)
+    assert len(rewritten) == 1
+    body = rewritten[0]["content"]
+    assert "type:" not in body
+    assert "template:" not in body
+    assert "test -O /tmp/labfile" not in body
+    assert "```exercise\nid: 1.1\ndescription: Create /tmp/labfile\n```" in body
+    assert "intro" in body and "outro" in body
+
+
+def test_rewrite_content_with_placeholders_does_not_mutate_input():
+    original_body = "```exercise\ndescription: d\ntype: term\ntemplate:\necho hi\n```\n"
+    content = [_task(original_body)]
+    rewrite_content_with_placeholders(content)
+    assert content[0]["content"] == original_body

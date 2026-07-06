@@ -1,6 +1,7 @@
 """Extraction, validation, and rewriting of ```exercise blocks in lab task markdown."""
 
 import re
+import copy
 
 _LABELS = ("description", "type", "asset")
 _FENCE_RE = re.compile(r'```exercise\n(.*?)\n```', re.DOTALL)
@@ -63,3 +64,34 @@ def extract_exercises(content: list[dict]) -> list[dict]:
             parsed["id"] = f"{task_num}.{exercise_num}"
             exercises.append(parsed)
     return exercises
+
+
+def validate_exercise_assets(exercises: list[dict], asset_names: set[str]) -> list[str]:
+    """Check each exercise's `asset` (if set) against the lab's known asset
+    names. Returns a list of error strings; empty if everything is valid.
+    """
+    errors = []
+    for ex in exercises:
+        asset = ex.get("asset")
+        if asset and asset not in asset_names:
+            errors.append(f"exercise {ex['id']}: asset '{asset}' not found in environment.assets")
+    return errors
+
+
+def rewrite_content_with_placeholders(content: list[dict]) -> list[dict]:
+    """Return a copy of `content` with every exercise block's body replaced
+    by a stripped placeholder containing only id and description.
+    """
+    rewritten = copy.deepcopy(content)
+    for task_num, task in enumerate(rewritten, start=1):
+        body_text = task.get("content", "") or ""
+        counter = [0]
+
+        def _replace_for_task(match, task_num=task_num, counter=counter):
+            counter[0] += 1
+            parsed = parse_exercise_block(match.group(1))
+            exercise_id = f"{task_num}.{counter[0]}"
+            return f"```exercise\nid: {exercise_id}\ndescription: {parsed['description']}\n```"
+
+        task["content"] = _FENCE_RE.sub(_replace_for_task, body_text)
+    return rewritten
