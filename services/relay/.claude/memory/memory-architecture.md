@@ -22,3 +22,11 @@ _Record non-obvious structural details, invariants, and design constraints here 
 **Resize channel:** capacity 1; extra frames are dropped silently (last resize wins during a burst). This matches relay-ssh behavior.
 
 **File layout:** `exec/backend.go` — `Execer` interface + `Backend.Serve`; `exec/kube.go` — `KubeExecer` (real k8s), `podExecURL`, `chanSizeQueue`.
+
+## relay-exec Forwarder goroutine model
+
+`exec.Backend.Serve`'s existing stdout→WS goroutine gained one more call per chunk: `b.Forwarder.Send(assetName, buf[:n])`, right after the `conn.Write` to the browser. No new goroutine in `Serve` itself.
+
+`Forwarder` (in `exec/forwarder.go`) owns its own background goroutine (started in `NewForwarder`, only if `addr != ""`) that dials relay-grader's internal port, drains a buffered channel (cap 256) into the connection, and reconnects with exponential backoff (500ms → 10s cap) on any write/dial failure. `Send` is a non-blocking channel send with a `default: drop` case — this is the sole mechanism keeping relay-exec's hot path safe from grader unavailability.
+
+**Critical invariant:** `Forwarder.Send` must never be changed to a blocking send or to retry synchronously — doing so would let a stuck/slow relay-grader stall real terminal sessions.

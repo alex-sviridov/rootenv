@@ -61,3 +61,12 @@ _Record decisions here as they are made — include what was decided, why, and w
 - **Nginx strip-prefix:** `/relay/` proxied as `proxy_pass http://relay/` — nginx strips the prefix, so relay handlers are rooted at `/` (e.g., `/healthz`, future `/{serverid}/`).
 - **WebSocket timeout:** `proxy_read_timeout 3600s` on the `/relay/` block to keep long-lived WS connections alive.
 - **Graceful shutdown:** 30-second drain window on `SIGINT`/`SIGTERM`.
+
+## relay-grader — Live Grading (exec→grader forwarding)
+
+- **Two listeners in relay-grader:** the existing HTTP mux (port 8080: frontend WS + healthz) is untouched; grading input arrives on a second, plain-TCP listener (`ServeInternalListener`, port 8081) with its own accept loop — kept separate so the frontend-facing auth/handler code (`relaybase.Handler`) needed no changes.
+- **No auth on the internal link:** trust boundary is NetworkPolicy only (pods labeled `app: relay-exec` in-namespace), matching the existing exec→apiserver pattern rather than inventing a new token scheme for an internal-only hop.
+- **`NewBackend` constructor added:** compiles all task regexes once (`sync.Once`-guarded `init()`), skips (logs + never matches) any task with an invalid regex instead of failing the whole grader — one bad lab definition must not take down grading for other tasks.
+- **Ring buffer size fixed at 10 lines** (`ringCapacity` constant in `grader/lines.go`), per-asset, ANSI-stripped before line-splitting (stripping first avoids a rare case where an escape sequence's bytes could be mistaken for a newline boundary).
+- **Sticky grades:** a task's grade only ever transitions `false → true`; matching is skipped entirely for already-passed tasks (saves recomputation, and prevents a task from "un-passing" if matching text scrolls out of the 10-line window).
+- **Broadcast on change only:** `Serve` now registers/deregisters each connected client in a `map[*websocket.Conn]struct{}`; a grade change triggers a full-map broadcast to every registered client, not just the one that triggered it (multiple browser tabs on the same attempt all see updates).
