@@ -16,6 +16,14 @@ content:
 
       **Task:** List the permissions of `/etc/shadow` and explain why it has those permissions.
 
+      ```exercise
+      description: List the permissions of /etc/shadow
+      type: term
+      asset: server-0
+      template:
+      [-r][-w-][-x-][-r][-w-][-x-][-r][-w-][-x-].*\betc/shadow\b
+      ```
+
   - title: Change File Ownership
     content: |
       The `chown` command changes file owner and group.
@@ -33,6 +41,14 @@ content:
 
       **Task:** Create a file `/tmp/labfile`, then change its owner to `bob` and group to `wheel`.
 
+      ```exercise
+      description: Create /tmp/labfile owned by bob:wheel
+      type: term
+      asset: server-0
+      template:
+      chown\s+bob:wheel\s+/tmp/labfile
+      ```
+
   - title: Set Permissions with chmod
     content: |
       Use `chmod` with symbolic or octal notation to set permissions.
@@ -49,6 +65,14 @@ content:
       ```
 
       **Task:** Set `/tmp/labfile` to `750` (owner: rwx, group: r-x, others: ---).
+
+      ```exercise
+      description: Set /tmp/labfile permissions to 750
+      type: term
+      asset: server-0
+      template:
+      chmod\s+750\s+/tmp/labfile
+      ```
 
   - title: Special Permission Bits
     content: |
@@ -71,6 +95,14 @@ content:
 
       **Task:** Create `/tmp/shared`, set permissions to `1775` (sticky + rwxrwxr-x), and verify.
 
+      ```exercise
+      description: Create /tmp/shared with mode 1775
+      type: term
+      asset: server-0
+      template:
+      chmod\s+1775\s+/tmp/shared
+      ```
+
   - title: Default Permissions with umask
     content: |
       `umask` defines which permission bits are *removed* from new files and directories.
@@ -90,6 +122,14 @@ content:
       ```
 
       **Task:** Set `umask 027`, create `/tmp/umasktest`, confirm it has `640` permissions.
+
+      ```exercise
+      description: Set umask to 027 and create /tmp/umasktest
+      type: term
+      asset: server-0
+      template:
+      umask\s+027
+      ```
 
 environment:
   duration: 90
