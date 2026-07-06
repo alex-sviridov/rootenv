@@ -57,7 +57,10 @@ manifests:
 resourceSelector:
   allow:
     - groupKind: "ConfigMap"
-      image: [".data.image", ".data.ubuntu-sshd"]
+      image: 
+        - ".data.exec"
+        - ".data.grader"
+        - ".data.ubuntu-sshd"
 
 profiles:
   - name: sandbox

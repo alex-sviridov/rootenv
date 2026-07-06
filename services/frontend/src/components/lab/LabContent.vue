@@ -23,7 +23,17 @@ marked.use({
       if (lang !== 'exercise') return false
       const [block] = parseExerciseBlocks('```exercise\n' + text + '\n```')
       if (!block) return false
-      return `<div class="exercise-badge" data-exercise-id="${escapeHtml(block.id)}"><span class="dot" /><span class="desc">${escapeHtml(block.description)}</span></div>`
+      return `<div class="exercise-card relative flex items-center gap-3 w-full mb-4 pl-5 pr-4 py-3 rounded-lg border border-slate-700 bg-slate-800 overflow-hidden transition-colors" data-exercise-id="${escapeHtml(block.id)}">
+        <span class="accent-bar absolute inset-y-0 left-0 w-1 bg-indigo-500"></span>
+        <span class="status-icon relative flex items-center justify-center w-5 h-5 shrink-0">
+          <span class="icon-circle absolute inset-0 rounded-full border-2 border-slate-500"></span>
+          <svg class="icon-check w-5 h-5 text-white opacity-0 scale-50 transition-all" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 10.5L8.5 14L15 6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="flex flex-col gap-0.5 min-w-0">
+          <span class="eyebrow text-xs font-semibold text-indigo-400 uppercase tracking-wide">Exercise</span>
+          <span class="desc text-sm text-slate-300">${escapeHtml(block.description)}</span>
+        </span>
+      </div>`
     },
   },
 })
@@ -40,7 +50,36 @@ function applyGrades() {
   if (!contentEl.value) return
   contentEl.value.querySelectorAll('[data-exercise-id]').forEach((el) => {
     const id = el.getAttribute('data-exercise-id')
-    el.classList.toggle('passed', props.grades[id] === true)
+    const passed = props.grades[id] === true
+
+    el.classList.toggle('passed', passed)
+    el.classList.toggle('bg-slate-800', !passed)
+    el.classList.toggle('border-slate-700', !passed)
+    el.classList.toggle('bg-green-500/10', passed)
+    el.classList.toggle('border-green-500/40', passed)
+
+    const circle = el.querySelector('.icon-circle')
+    circle?.classList.toggle('border-slate-500', !passed)
+    circle?.classList.toggle('border-transparent', passed)
+    circle?.classList.toggle('bg-green-500', passed)
+
+    const check = el.querySelector('.icon-check')
+    check?.classList.toggle('opacity-0', !passed)
+    check?.classList.toggle('scale-50', !passed)
+    check?.classList.toggle('opacity-100', passed)
+    check?.classList.toggle('scale-100', passed)
+
+    const desc = el.querySelector('.desc')
+    desc?.classList.toggle('text-slate-300', !passed)
+    desc?.classList.toggle('text-slate-100', passed)
+
+    const accentBar = el.querySelector('.accent-bar')
+    accentBar?.classList.toggle('bg-indigo-500', !passed)
+    accentBar?.classList.toggle('bg-green-500', passed)
+
+    const eyebrow = el.querySelector('.eyebrow')
+    eyebrow?.classList.toggle('text-indigo-400', !passed)
+    eyebrow?.classList.toggle('text-green-400', passed)
   })
 }
 
@@ -127,30 +166,4 @@ watch([html, () => props.grades], applyGrades, { deep: true, flush: 'post' })
   margin: 1.5em 0;
 }
 
-.prose :deep(.exercise-badge) {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5em;
-  padding: 0.35em 0.75em;
-  border-radius: 999px;
-  background: #1e293b;
-  margin-bottom: 1em;
-}
-.prose :deep(.exercise-badge .dot) {
-  width: 0.5em;
-  height: 0.5em;
-  border-radius: 50%;
-  background: #64748b;
-  flex-shrink: 0;
-}
-.prose :deep(.exercise-badge .desc) {
-  color: #cbd5e1;
-  font-size: 0.875rem;
-}
-.prose :deep(.exercise-badge.passed) {
-  background: rgba(74, 222, 128, 0.15);
-}
-.prose :deep(.exercise-badge.passed .dot) {
-  background: #4ade80;
-}
 </style>

@@ -15,6 +15,14 @@ function exerciseSummary(task) {
   const passed = ids.filter((id) => props.grades[id] === true).length
   return { passed, total: ids.length }
 }
+
+const CIRCLE_RADIUS = 7
+const CIRCLE_CIRCUMFERENCE = 2 * Math.PI * CIRCLE_RADIUS
+
+function progressOffset(summary) {
+  const ratio = summary.total === 0 ? 0 : summary.passed / summary.total
+  return CIRCLE_CIRCUMFERENCE * (1 - ratio)
+}
 </script>
 
 <template>
@@ -35,11 +43,35 @@ function exerciseSummary(task) {
         <span class="flex-1 truncate">{{ task.title }}</span>
         <span
           v-if="exerciseSummary(task)"
-          class="text-xs font-medium shrink-0"
-          :class="exerciseSummary(task).passed === exerciseSummary(task).total
-            ? 'text-green-400'
-            : 'text-slate-500'"
-        >{{ exerciseSummary(task).passed }}/{{ exerciseSummary(task).total }}</span>
+          class="shrink-0"
+          :title="`${exerciseSummary(task).passed}/${exerciseSummary(task).total} exercises passed`"
+        >
+          <svg width="18" height="18" viewBox="0 0 18 18" class="-rotate-90">
+            <circle
+              cx="9"
+              cy="9"
+              :r="CIRCLE_RADIUS"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              class="text-slate-700"
+            />
+            <circle
+              cx="9"
+              cy="9"
+              :r="CIRCLE_RADIUS"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              :stroke-dasharray="CIRCLE_CIRCUMFERENCE"
+              :stroke-dashoffset="progressOffset(exerciseSummary(task))"
+              :class="exerciseSummary(task).passed === exerciseSummary(task).total
+                ? 'text-green-400'
+                : 'text-indigo-400'"
+            />
+          </svg>
+        </span>
       </button>
     </div>
   </div>
