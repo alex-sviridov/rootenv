@@ -11,7 +11,7 @@ import LabConsole from '@/components/lab/LabConsole.vue'
 const {
   lab, selectedTask, currentTask, error,
   tabs, activeTabId, limitError, openTab, selectTab, closeTab, moveTab,
-  attemptId,
+  attemptId, grades,
 } = useLabSession()
 
 const userStore = useUserStore()
@@ -113,12 +113,12 @@ onUnmounted(() => {
   <div v-else ref="flexContainer" class="flex h-full overflow-hidden">
 
     <aside class="w-64 shrink-0 border-r border-slate-800 flex flex-col overflow-hidden">
-      <LabNavigation :tasks="labTasks" :selected-task="selectedTask" @select-task="selectedTask = $event" />
+      <LabNavigation :tasks="labTasks" :selected-task="selectedTask" :grades="grades" @select-task="selectedTask = $event" />
       <LabControls :lab-id="labId" :lab-name="labName" @open-tab="({ server, protocol }) => openTab(server, protocol)" />
     </aside>
 
     <div v-show="contentVisible" class="overflow-hidden" :style="contentStyle">
-      <LabContent :task="currentTask" />
+      <LabContent :task="currentTask" :grades="grades" />
     </div>
 
     <!-- divider: outer handles hover; inner bar handles drag -->
