@@ -15,11 +15,18 @@ type Execer interface {
 	Exec(ctx context.Context, namespace, podName string, stdin io.Reader, stdout, stderr io.Writer, resize <-chan remotecommand.TerminalSize) error
 }
 
+// forwarder abstracts Forwarder.Send so Backend can be tested without a real
+// network connection. *Forwarder satisfies this interface.
+type forwarder interface {
+	Send(asset string, data []byte)
+}
+
 // Backend implements relaybase.Backend using kubectl exec.
 // assetName == pod name — the operator ensures this invariant.
 type Backend struct {
 	Namespace string
 	Execer    Execer
+	Forwarder forwarder    // optional; nil means grading is disabled for this instance
 	Log       *slog.Logger // defaults to slog.Default() if nil
 }
 
@@ -58,6 +65,9 @@ func (b *Backend) Serve(ctx context.Context, conn *websocket.Conn, assetName, us
 			if n > 0 {
 				if werr := conn.Write(ctx, websocket.MessageBinary, buf[:n]); werr != nil {
 					return
+				}
+				if b.Forwarder != nil {
+					b.Forwarder.Send(assetName, buf[:n])
 				}
 			}
 			if err != nil {
