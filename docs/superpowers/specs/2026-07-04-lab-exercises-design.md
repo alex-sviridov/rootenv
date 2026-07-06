@@ -25,8 +25,7 @@ description: Create /tmp/labfile owned by bob
 type: term
 asset: server-0
 template:
-test -O /tmp/labfile
-test -G /tmp/labfile
+chown\s+bob\s+/tmp/labfile
 ```
 ````
 
@@ -35,7 +34,8 @@ Rules:
 - `description` and `type` are required. `type` must currently be `"term"` (matches `grader.LoadTasks`'s existing constraint) — always written explicitly, no default.
 - `asset` is optional. When present, it must match a `name` in that lab's `environment.assets`. When omitted, the grader does not filter by terminal (checks apply lab-wide).
 - Field order is not fixed — the parser scans for the `description:`, `type:`, `asset:`, `template:` labels rather than assuming position.
-- `template:` is always the last field. Everything after that line, up to the closing fence, is the template body verbatim — this is how multi-line templates (multi-command shell scripts) are supported without needing YAML block-scalar syntax.
+- For `type: term`, `template` is a regular expression matched against the user's full terminal scrollback (stdin/stdout as displayed) — not a shell command the grader executes. It is satisfied once the pattern appears anywhere in the terminal's output history.
+- `template:` is always the last field. Everything after that line, up to the closing fence, is the template body verbatim — this is how multi-line templates (e.g. a regex spanning several lines) are supported without needing YAML block-scalar syntax.
 - A task's markdown may contain zero, one, or several exercise blocks.
 - Because it's a standard fenced code block, it renders as inert code if ever displayed unprocessed.
 

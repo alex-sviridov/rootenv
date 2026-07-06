@@ -80,7 +80,8 @@ type Exercise struct {
 	// Asset optionally scopes this exercise's check to one asset's terminal.
 	// Empty means the grader does not filter by terminal.
 	Asset string `json:"asset,omitempty"`
-	// Template is the shell check the grader runs to determine completion.
+	// Template is a regular expression matched against the terminal's output
+	// history (for type "term"); satisfied once it matches anywhere in the scrollback.
 	Template string `json:"template"`
 }
 
