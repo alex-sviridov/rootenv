@@ -107,6 +107,14 @@ describe('useGraderConnection', () => {
     expect(grades.value).toEqual({ '1.1': true })
   })
 
+  it('does not throw and leaves grades unchanged on malformed JSON message', () => {
+    const { connect, grades } = useGraderConnection('atm_123')
+    connect()
+    MockWebSocket.lastInstance.onmessage({ data: JSON.stringify({ '1.1': true }) })
+    expect(() => MockWebSocket.lastInstance.onmessage({ data: 'not valid json{' })).not.toThrow()
+    expect(grades.value).toEqual({ '1.1': true })
+  })
+
   it('close() closes the socket with code 1000 when open', () => {
     const { connect, close } = useGraderConnection('atm_123')
     connect()

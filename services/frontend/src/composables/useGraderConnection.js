@@ -16,7 +16,11 @@ export function useGraderConnection(attemptId) {
     }
 
     ws.onmessage = (e) => {
-      grades.value = JSON.parse(e.data)
+      try {
+        grades.value = JSON.parse(e.data)
+      } catch {
+        // malformed frame — freeze at last known grades, same as onclose/onerror
+      }
     }
 
     ws.onclose = () => {
