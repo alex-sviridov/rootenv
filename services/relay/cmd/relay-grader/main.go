@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +19,7 @@ import (
 
 type config struct {
 	port           string
+	internalPort   string
 	namespace      string
 	attemptID      string
 	ownerID        string
@@ -61,6 +63,11 @@ func loadConfig() (config, bool) {
 		port = "8080"
 	}
 
+	internalPort := os.Getenv("RELAY_GRADER_INTERNAL_PORT")
+	if internalPort == "" {
+		internalPort = "8081"
+	}
+
 	var origins []string
 	if raw := os.Getenv("RELAY_ALLOWED_ORIGINS"); raw != "" {
 		for _, o := range strings.Split(raw, ",") {
@@ -72,6 +79,7 @@ func loadConfig() (config, bool) {
 
 	return config{
 		port:           port,
+		internalPort:   internalPort,
 		namespace:      namespace,
 		attemptID:      attemptID,
 		ownerID:        ownerID,
@@ -104,15 +112,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	backend := grader.Backend{
-		Tasks: tasks,
-		Log:   slog.Default().With("namespace", cfg.namespace),
-	}
+	backend := grader.NewBackend(tasks, slog.Default().With("namespace", cfg.namespace))
 	limiter := relaybase.NewConnLimiter(16)
 
 	var wg sync.WaitGroup
 	handler := &relaybase.Handler{
-		Backend:        &backend,
+		Backend:        backend,
 		Limiter:        limiter,
 		AttemptID:      cfg.attemptID,
 		OwnerID:        cfg.ownerID,
@@ -137,11 +142,22 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	slog.Info("relay-grader starting", "port", cfg.port, "skip_auth", cfg.skipAuth, "attempt_id", cfg.attemptID, "namespace", cfg.namespace, "tasks", len(tasks))
+	slog.Info("relay-grader starting", "port", cfg.port, "internal_port", cfg.internalPort, "skip_auth", cfg.skipAuth, "attempt_id", cfg.attemptID, "namespace", cfg.namespace, "tasks", len(tasks))
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("server error", "err", err)
 			os.Exit(1)
+		}
+	}()
+
+	internalLn, err := net.Listen("tcp", ":"+cfg.internalPort)
+	if err != nil {
+		slog.Error("failed to listen on internal port", "err", err, "port", cfg.internalPort)
+		os.Exit(1)
+	}
+	go func() {
+		if err := grader.ServeInternalListener(ctx, internalLn, backend, slog.Default()); err != nil {
+			slog.Error("internal listener error", "err", err)
 		}
 	}()
 
