@@ -65,18 +65,7 @@ func (b *Backend) Grades() map[string]bool {
 	b.init()
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	out := make(map[string]bool, len(b.grades))
-	for id := range b.regexes {
-		out[id] = b.grades[id]
-	}
-	// Tasks with invalid regex never appear in b.regexes; still report them
-	// as false so the frontend sees an entry for every task.
-	for _, task := range b.Tasks {
-		if _, ok := out[task.ID]; !ok {
-			out[task.ID] = false
-		}
-	}
-	return out
+	return b.gradesLocked()
 }
 
 // Ingest reassembles chunk into asset's line buffer and re-runs matching for
@@ -130,7 +119,10 @@ func (b *Backend) Ingest(asset string, chunk []byte) {
 }
 
 // broadcastLocked sends the current grade map to every connected client.
-// Caller must hold b.mu.
+// Caller must hold b.mu. Relies on one relay-grader instance per lab
+// attempt (never shared across users) — a stalled client's blocking
+// conn.Write here only degrades that same attempt's other connections,
+// never another user's.
 func (b *Backend) broadcastLocked() {
 	payload, err := json.Marshal(b.gradesLocked())
 	if err != nil {
