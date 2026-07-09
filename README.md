@@ -24,23 +24,29 @@ Rootenv consists of the following services:
 - **labenv-operator** — watches `LabEnv` objects and reconciles the underlying Kubernetes resources (namespace, pods, network policies, etc.)
 - **relay-exec** — WebSocket-to-kubectl-exec bridge enabling browser-based terminal access to lab containers
 - **relay-authenticator** - lightweight middleware for authenficationg and authorizing relay access requests
-- **task-control** - ![Static Badge](https://img.shields.io/badge/in_progress-orange) automated task completion tracking
+- **relay-grader** - automated task completion tracking
 
 See [docs/architecture.md](docs/architecture.md) for detailed design and trade-offs.
 
 ```mermaid
-graph LR
-    User[User Browser] -->|HTTPS| Frontend
-    Frontend -->|REST| Backend
-    Backend -->|provision request| AC[attempt-controller]
-    AC -->|create LabEnv CR| K8s[Kubernetes API]
-    K8s -->|LabEnv status| AC
-    AC -->|sync state| Backend
-    K8s --> LO[labenv-operator]
-    LO -->|create namespace, pods, policies| K8s
-    K8s --> Lab[Lab Pod]
-    User -->|WebSocket| Relay
-    Relay -->|kubectl exec| Lab
+flowchart LR
+
+User[User Browser] --> Frontend
+
+Frontend --REST--> Backend
+Backend[(Backend)] --> attempt-controller
+attempt-controller --> Kubernetes_API
+Kubernetes_API --> labenv-operator
+labenv-operator --reconcile--> Isolated_Namespace
+
+subgraph Isolated_Namespace
+direction TB
+relay-exec --k8s exec--> assets@{ shape: procs, label: "Lab Pods\n(assets)"}
+relay-exec --terminal\noutput--> relay-grader
+end
+
+Frontend --[WebSocket]\nterminal--> relay-exec
+relay-grader --[WebSocket]\nassertion\nresults--> Frontend
 ```
 
 ## Tech stack
