@@ -80,7 +80,7 @@ func TestForwarder_delivers_to_listening_server(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	received := make(chan string, 1)
 	go func() {
