@@ -15,7 +15,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -202,7 +201,7 @@ func (r *LabEnvironmentReconciler) ensureRelayDeployment(ctx context.Context, en
 			Labels:    map[string]string{"app": "relay-exec"},
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: ptr.To(int32(1)),
+			Replicas: new(int32(1)),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{"app": "relay-exec"},
 			},
@@ -213,8 +212,8 @@ func (r *LabEnvironmentReconciler) ensureRelayDeployment(ctx context.Context, en
 				Spec: corev1.PodSpec{
 					ServiceAccountName: "relay",
 					SecurityContext: &corev1.PodSecurityContext{
-						RunAsNonRoot: ptr.To(true),
-						RunAsUser:    ptr.To(int64(10001)),
+						RunAsNonRoot: new(true),
+						RunAsUser:    new(int64(10001)),
 						SeccompProfile: &corev1.SeccompProfile{
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
@@ -231,8 +230,8 @@ func (r *LabEnvironmentReconciler) ensureRelayDeployment(ctx context.Context, en
 								{Name: "RELAY_GRADER_ADDR", Value: "relay-grader:8081"},
 							},
 							SecurityContext: &corev1.SecurityContext{
-								AllowPrivilegeEscalation: ptr.To(false),
-								ReadOnlyRootFilesystem:   ptr.To(true),
+								AllowPrivilegeEscalation: new(false),
+								ReadOnlyRootFilesystem:   new(true),
 								Capabilities: &corev1.Capabilities{
 									Drop: []corev1.Capability{"ALL"},
 								},

@@ -14,7 +14,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -495,7 +494,7 @@ func (r *LabEnvironmentReconciler) ensurePod(ctx context.Context, env *labv1alph
 			HostNetwork:                  false,
 			HostPID:                      false,
 			HostIPC:                      false,
-			AutomountServiceAccountToken: ptr.To(false),
+			AutomountServiceAccountToken: new(false),
 			// SecurityContext with SeccompProfile set to RuntimeDefault applies the default seccomp profile to all containers in the pod, providing a baseline level of security.
 			SecurityContext: &corev1.PodSecurityContext{
 				SeccompProfile: &corev1.SeccompProfile{
