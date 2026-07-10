@@ -491,7 +491,7 @@ func (r *LabEnvironmentReconciler) ensurePod(ctx context.Context, env *labv1alph
 			// Never: pod is not restarted on failure; a crashed lab is recreated, not revived
 			RestartPolicy: corev1.RestartPolicyNever,
 			// hostUsers: false maps container root to an unprivileged UID on the host
-			HostUsers:                    ptr.To(false),
+			HostUsers:                    new(false),
 			HostNetwork:                  false,
 			HostPID:                      false,
 			HostIPC:                      false,
