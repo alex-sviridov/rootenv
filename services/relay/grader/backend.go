@@ -50,7 +50,9 @@ func (b *Backend) init() {
 		b.grades = make(map[string]bool, len(b.Tasks))
 		b.clients = make(map[*websocket.Conn]struct{})
 		for _, task := range b.Tasks {
-			re, err := regexp.Compile(task.Template)
+			// (?s) so `.` spans the newlines joining buffered lines, letting a
+			// template match content across multiple lines of terminal output.
+			re, err := regexp.Compile("(?s)" + task.Template)
 			if err != nil {
 				b.logger().Error("invalid task template regex, task will never pass", "task_id", task.ID, "err", err)
 				continue

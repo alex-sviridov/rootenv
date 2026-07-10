@@ -42,6 +42,14 @@ content:
       cat /app/datastream/config.yaml
       ```
 
+      ```exercise
+      description: Просмотреть содержимое /app/datastream/config.yaml
+      type: term
+      asset: server-0
+      template:
+      access_log: /var/log/datastream/access\.log
+      ```
+
       Запомните пути из секций `logging` и `storage` — они понадобятся в следующих заданиях.
 
       ## Домашние папки: пользователя и сервиса
@@ -59,8 +67,18 @@ content:
 
       **Упражнение:** Перейдите в `/home/datastream` и выведите список файлов включая скрытые (`-a`). Запишите, что там лежит и примерные даты файлов — это пригодится позже.
 
+      ```exercise
+      description: Вывести содержимое /home/datastream включая скрытые файлы
+      type: term
+      asset: server-0
+      template:
+      \.bashrc
+      ```
+
   - title: "Место на диске: df и du"
     content: |
+      Вам пишут в чат: «DataStream еле дышит, кажется диск почти забит — разберись, что происходит». Прежде чем чинить, нужно понять масштаб проблемы.
+
       ## Два инструмента с разными ответами
 
       Есть два часто путаемых инструмента:
@@ -79,6 +97,14 @@ content:
       Флаг `-h` — human-readable. Смотрите на колонки `Use%` и `Avail`. Если `Use%` больше 80–85% — пора принимать меры.
 
       **Упражнение:** Запустите `df -h` и найдите раздел, на котором смонтирован `/var`. Сколько на нём свободно места?
+
+      ```exercise
+      description: Проверить свободное место на разделах через df
+      type: term
+      asset: server-0
+      template:
+      df\s+(-\w*h\w*|--human-readable)
+      ```
 
       ## Ищем, кто занимает место
 
@@ -101,6 +127,14 @@ content:
       ```
 
       **Упражнение:** Найдите подкаталог или файл в `/var/lib/datastream/`, который занимает больше всего места. Также проверьте `/home/datastream/` — что там есть тяжёлого?
+
+      ```exercise
+      description: Оценить размеры подкаталогов /var/lib/datastream
+      type: term
+      asset: server-0
+      template:
+      du.*/var/lib/datastream
+      ```
 
   - title: "Поиск файлов: find и очистка мусора"
     content: |
@@ -131,8 +165,20 @@ content:
 
       **Упражнение:** Найдите все `.tmp` и `.bak` файлы в `/var/lib/datastream/`. Сколько их и каков их суммарный размер?
 
-      ```bash
-      find /var/lib/datastream -name "*.tmp" -o -name "*.bak" | xargs du -sh 2>/dev/null
+      ```exercise
+      description: Найти .tmp файлы в /var/lib/datastream
+      type: term
+      asset: server-0
+      template:
+      /var/lib/datastream/.+\.tmp
+      ```
+
+      ```exercise
+      description: Найти .bak файлы в /var/lib/datastream
+      type: term
+      asset: server-0
+      template:
+      /var/lib/datastream/.+\.bak
       ```
 
       ## Ищем по размеру и давности
@@ -143,7 +189,18 @@ content:
       find /home/datastream -type f -size +5M -mtime +30
       ```
 
+      Для поиска в нескольких папках сразу можно указать их через пробел:
+
       **Упражнение:** Расширьте поиск — найдите крупные старые файлы сразу в двух каталогах: `/var/lib/datastream/` и `/home/datastream/`. Составьте полный список того, что можно удалить.
+
+      ```exercise
+      description: Найти крупные старые файлы в /var/lib/datastream и /home/datastream одной командой
+      type: term
+      asset: server-0
+      template:
+      find.*
+      /home/datastream/deploy_bundle_v1.tar.gz
+      ```
 
       ## Удаляем
 
@@ -164,13 +221,266 @@ content:
       du -sh /var/lib/datastream/
       ```
 
-      **Упражнение:** Удалите все `.bak` файлы из `/var/lib/datastream/` и старые архивы из `/home/datastream/` (файлы старше 30 дней). Убедитесь через `df -h`, что свободного места стало больше.
+      **Упражнение:** Главный виновник — кэш-файлы `.tmp` в `/var/lib/datastream/cache/` (десятки мегабайт). Удалите их. Затем удалите `.bak` файлы и старый архив `old_export_2024_01.tar.gz` из `/var/lib/datastream/`, а также старые архивы из `/home/datastream/` (файлы старше 30 дней). Убедитесь через `df -h`, что свободного места стало больше.
+
+      ```exercise
+      description: Удалить .tmp кэш-файлы из /var/lib/datastream
+      type: term
+      asset: server-0
+      template:
+      (find\s+.*var/lib/datastream.*(-name|-iname)\s+.?\*\.tmp.*(-delete|xargs\s+rm)|rm\s+.*var/lib/datastream.*\.tmp)
+      ```
+
+      ```exercise
+      description: Удалить .bak файлы из /var/lib/datastream
+      type: term
+      asset: server-0
+      template:
+      (find\s+.*var/lib/datastream.*(-name|-iname)\s+.?\*\.bak.*(-delete|xargs\s+rm)|rm\s+.*var/lib/datastream.*\.bak)
+      ```
+
+      ```exercise
+      description: Удалить старый архив old_export_2024_01.tar.gz из /var/lib/datastream
+      type: term
+      asset: server-0
+      template:
+      (find\s+.*var/lib/datastream.*-mtime\s+\+\d+.*(-delete|xargs\s+rm)|rm\s+.*var/lib/datastream.*old_export)
+      ```
+
+      ```exercise
+      description: Удалить старые архивы (>30 дней) из /home/datastream
+      type: term
+      asset: server-0
+      template:
+      (find\s+.*home/datastream.*-mtime\s+\+\d+.*(-delete|xargs\s+rm)|rm\s+.*home/datastream)
+      ```
+
+      ```exercise
+      description: Проверить свободное место после удаления
+      type: term
+      asset: server-0
+      template:
+      df\s+(-\w*h\w*|--human-readable)
+      ```
+
+      Итог: было занято под сотню мегабайт мусора — кэш, бэкапы, забытые архивы. Освобождённое место снова видно в `df -h`.
+
+  - title: "CSV: данные без базы"
+    content: |
+      ## CSV — самый простой формат обмена данными
+
+      Диск расчищен — теперь можно заняться тем, ради чего вы вообще на этом сервере: данными. Параллельно с access.log DataStream складывает сырые события в CSV-файлы — путь виден в `config.yaml` из первой задачи, секция `storage.data_dir`.
+
+      CSV (Comma-Separated Values) — простой текстовый формат: одна строка = одна запись, поля разделены запятой, первая строка — заголовок с именами колонок.
+
+      ```bash
+      ls -lah /app/datastream/data/
+      ```
+
+      Три файла: `events_2024_01.csv`, `events_2024_02.csv` — события клиентов по месяцам, `clients.csv` — справочник клиентов (имя, тариф, регион).
+
+      ## Смотрим формат и считаем строки
+
+      ```bash
+      head -5 /app/datastream/data/events_2024_01.csv
+      wc -l /app/datastream/data/events_2024_01.csv
+      ```
+
+      `wc -l` посчитает и строку заголовка — реальных событий на одну меньше.
+
+      **Упражнение:** Посчитайте, сколько строк (включая заголовок) в `events_2024_01.csv` и в `events_2024_02.csv`.
+
+      ```exercise
+      description: Посчитать строки в events_2024_01.csv и events_2024_02.csv
+      type: term
+      asset: server-0
+      template:
+      wc\s+-l[\s\S]*(events_2024_01\.csv[\s\S]*events_2024_02\.csv|events_2024_02\.csv[\s\S]*events_2024_01\.csv)
+      ```
+
+      ## Вырезаем колонку
+
+      `cut -d',' -f2` вырезает второе поле, разделённое запятой. Тот же результат даёт `awk -F, '{print $2}'`.
+
+      ```bash
+      cut -d',' -f2 /app/datastream/data/events_2024_01.csv
+      ```
+
+      **Упражнение:** Выведите список уникальных `client_id`, которые встречаются в `events_2024_01.csv`. Вырежьте колонку и отсортируйте через `sort -u` (сразу уникальные отсортированные значения, без отдельного `uniq`).
+
+      ```exercise
+      description: Список уникальных client_id за январь
+      type: term
+      asset: server-0
+      template:
+      (cut\s+-d\s*\S+\s+-f\s*2|awk\s+-F\s*,).*events_2024_01\.csv.*\|\s*sort\s+-u
+      ```
+
+      ## Фильтруем по значению поля
+
+      `awk -F,` задаёт разделитель полей — запятую вместо пробела по умолчанию. Условие пишется перед `{...}`, как раньше в access.log:
+
+      ```bash
+      awk -F, '$3 == "purchase" {print}' /app/datastream/data/events_2024_02.csv
+      ```
+
+      **Упражнение:** Найдите все строки с `event_type` равным `purchase` в `events_2024_02.csv`.
+
+      ```exercise
+      description: Найти purchase-события в events_2024_02.csv
+      type: term
+      asset: server-0
+      template:
+      awk\s+-F\s*,.*\$3\s*==\s*["']?purchase["']?.*events_2024_02\.csv
+      ```
+
+      ## Склеиваем файлы — осторожно с заголовком
+
+      Классическая ошибка при склейке CSV: если просто `cat` два файла с одинаковыми колонками, заголовок продублируется — строка `timestamp,client_id,event_type,value,region` из второго файла попадёт в данные как обычная запись.
+
+      ```bash
+      cat /app/datastream/data/events_2024_01.csv /app/datastream/data/events_2024_02.csv | head -3
+      # ...а где-то в середине результата вылезет строка заголовка — это не событие
+      ```
+
+      Решение — оставить заголовок только от первого файла, а у второго отрезать первую строку через `tail -n +2`:
+
+      ```bash
+      (head -1 /app/datastream/data/events_2024_01.csv; \
+       tail -n +2 /app/datastream/data/events_2024_01.csv; \
+       tail -n +2 /app/datastream/data/events_2024_02.csv) > ~/reports/events_combined.csv
+      ```
+
+      **Упражнение:** Соберите оба месяца в `~/reports/events_combined.csv` с одним заголовком — без дублей.
+
+      ```exercise
+      description: Собрать events_combined.csv без дублирования заголовка
+      type: term
+      asset: server-0
+      template:
+      (tail\s+-n\s*\+2|awk\s+.*(FNR|NR\s*==\s*1)|sed\s+.*1d).*>\s*.*reports/events_combined\.csv
+      ```
+
+      Теперь у вас под рукой `clients.csv` — справочник с тарифом и регионом клиента. Узнать тариф одного клиента можно через `grep client_042 clients.csv`. Но если нужно посчитать выручку по тарифам сразу для всех клиентов — сопоставлять вручную построчно уже больно. Для таких задач есть настоящая база данных.
+
+  - title: "SQLite: запросы к реальной базе"
+    content: |
+      ## Когда одной таблицы мало
+
+      CSV отлично подходит, пока данные помещаются в один файл и не нужно ничего связывать. DataStream параллельно хранит те же события в настоящей базе — SQLite, файл `/var/lib/datastream/events.db` (путь снова из `config.yaml`, секция `storage.db_path`).
+
+      SQLite — СУБД, которая живёт в одном файле, без отдельного сервера. Утилита `sqlite3` умеет и открывать интерактивную сессию, и выполнять один SQL-запрос сразу из командной строки — вторым способом удобнее пользоваться для одноразовых вопросов в терминале:
+
+      ```bash
+      sqlite3 /var/lib/datastream/events.db "SELECT 1;"
+      ```
+
+      ## Смотрим структуру
+
+      Интерактивная сессия (`sqlite3 /var/lib/datastream/events.db`, затем `.tables`, `.schema events`, выход — `.quit`) удобна для разведки. Дальше в задаче используем однострочный вызов `sqlite3 <файл> "<SQL>"` — так проще один раз получить готовый ответ.
+
+      ```bash
+      sqlite3 /var/lib/datastream/events.db ".tables"
+      sqlite3 /var/lib/datastream/events.db ".schema events"
+      ```
+
+      **Упражнение:** Посмотрите схему таблицы `events` — какие у неё колонки?
+
+      ```exercise
+      description: Посмотреть схему таблицы events
+      type: term
+      asset: server-0
+      template:
+      (?i)sqlite3.*events\.db.*\.schema\s+events
+      ```
+
+      ## SELECT с условием
+
+      Обычный SQL: `SELECT колонки FROM таблица WHERE условие;`.
+
+      ```bash
+      sqlite3 /var/lib/datastream/events.db "SELECT * FROM events WHERE client_id = 'client_042';"
+      ```
+
+      **Упражнение:** Выведите все события клиента `client_017`.
+
+      ```exercise
+      description: Выбрать все события client_017
+      type: term
+      asset: server-0
+      template:
+      (?i)SELECT.*FROM\s+events.*WHERE.*client_017
+      ```
+
+      ## Агрегация: GROUP BY
+
+      `SUM(value)` суммирует колонку, `GROUP BY client_id` считает сумму отдельно для каждого клиента:
+
+      ```bash
+      sqlite3 /var/lib/datastream/events.db \
+        "SELECT client_id, SUM(value) FROM events WHERE event_type = 'purchase' GROUP BY client_id;"
+      ```
+
+      Обратите внимание: в таблице есть и `refund` — тоже с положительным `value`, как и `purchase`. Этот запрос их не учитывает (фильтр `event_type = 'purchase'`), но если бы считали «чистую» выручку, рефанды нужно было бы вычитать отдельно — типичная ловушка при работе с реальными данными.
+
+      **Упражнение:** Посчитайте суммарную выручку от `purchase`-событий по каждому клиенту.
+
+      ```exercise
+      description: Сумма purchase по client_id через GROUP BY
+      type: term
+      asset: server-0
+      template:
+      (?i)SELECT.*SUM\s*\(\s*value\s*\).*FROM\s+events.*purchase.*GROUP\s+BY\s+client_id
+      ```
+
+      ## JOIN: связываем таблицы
+
+      В `events` есть только `client_id`, а тариф и регион клиента — в таблице `clients`. `JOIN` связывает две таблицы по общему полю:
+
+      ```bash
+      sqlite3 /var/lib/datastream/events.db \
+        "SELECT c.plan, SUM(e.value) FROM events e JOIN clients c ON e.client_id = c.client_id WHERE e.event_type = 'purchase' GROUP BY c.plan;"
+      ```
+
+      Это тот самый отчёт, который в прошлой задаче пришлось бы сшивать вручную по `clients.csv`, — здесь одна команда.
+
+      **Упражнение:** Постройте отчёт по выручке `purchase`-событий, сгруппированной по тарифу (`plan`) клиента, через `JOIN` таблиц `events` и `clients`.
+
+      ```exercise
+      description: Выручка purchase по тарифу через JOIN events и clients
+      type: term
+      asset: server-0
+      template:
+      (?i)SUM.*JOIN.*GROUP\s+BY.*plan
+      ```
+
+      ## Сохраняем отчёт
+
+      Флаги `-header -csv` заставляют `sqlite3` вывести результат как CSV с заголовком — удобно сразу перенаправить в файл:
+
+      ```bash
+      sqlite3 -header -csv /var/lib/datastream/events.db \
+        "SELECT c.plan, SUM(e.value) AS revenue FROM events e JOIN clients c ON e.client_id = c.client_id WHERE e.event_type = 'purchase' GROUP BY c.plan;" \
+        > ~/reports/revenue_by_plan.csv
+      ```
+
+      **Задание:** Сохраните отчёт по выручке за тарифом в `~/reports/revenue_by_plan.csv`.
+
+      ```exercise
+      description: Сохранить отчёт revenue_by_plan.csv
+      type: term
+      asset: server-0
+      template:
+      sqlite3.*>\s*.*reports/revenue_by_plan\.csv
+      ```
+
+      Структурированные данные удобны, когда они есть. Но access.log, который вы открывали в первой задаче, никакой базой не является — это просто текст. Возвращаемся к grep, awk и sed, чтобы разобрать его.
 
   - title: "Grep: фильтруем access.log"
     content: |
       ## Что такое access.log
 
-      DataStream пишет лог каждого HTTP-запроса в формате Nginx combined log:
+      Структурированные данные — таблицы и CSV — удобны, когда они есть. Но лог-файлы устроены иначе: это просто текст, строка за строкой, без схемы и без SQL. DataStream пишет лог каждого HTTP-запроса в формате Nginx combined log:
 
       ```
       185.220.101.42 - - [01/Mar/2024:00:03:17 +0000] "POST /api/upload HTTP/1.1" 200 4823 "-" "python-requests/2.28.0"
@@ -213,6 +523,30 @@ content:
 
       **Упражнение:** Найдите все запросы с кодом 404 и 503. Посчитайте количество каждого отдельно. Затем найдите все **не-200** ответы одной командой — используйте флаг `-v` чтобы исключить успешные запросы.
 
+      ```exercise
+      description: Посчитать количество запросов с кодом 404
+      type: term
+      asset: server-0
+      template:
+      grep\s+.*(-c\s+.*['" ]404['" ]|['" ]404['" ].*\|\s*wc\s+-l)
+      ```
+
+      ```exercise
+      description: Посчитать количество запросов с кодом 503
+      type: term
+      asset: server-0
+      template:
+      grep\s+.*(-c\s+.*['" ]503['" ]|['" ]503['" ].*\|\s*wc\s+-l)
+      ```
+
+      ```exercise
+      description: Найти все не-200 ответы одной командой через grep -v
+      type: term
+      asset: server-0
+      template:
+      grep\s+.*-v.*['" ]200['" ]
+      ```
+
       ## Фильтрация по IP и эндпоинту
 
       Предположим, нас интересует один подозрительный IP — `185.220.101.42`:
@@ -227,7 +561,15 @@ content:
       grep '185.220.101.42' /var/log/datastream/access.log | grep ' 500 '
       ```
 
-      **Упражнение:** Найдите все запросы к эндпоинту `/api/upload` которые завершились ошибкой (любой код 4xx или 5xx). Используйте `-E` для регулярного выражения с несколькими кодами: `' 4[0-9][0-9] | 5[0-9][0-9] '`.
+      **Упражнение:** Найдите все запросы к эндпоинту `/api/upload` которые завершились ошибкой (любой код 4xx или 5xx). Пригодится `-E` для регулярного выражения с несколькими кодами, например `' [45][0-9][0-9] '` — но подойдёт любой синтаксис, дающий тот же результат (в том числе `awk`).
+
+      ```exercise
+      description: Найти запросы к /api/upload с кодами 4xx или 5xx
+      type: term
+      asset: server-0
+      template:
+      api/upload[\s\S]*"\s+[45]\d\d\s
+      ```
 
   - title: "Awk и sed: извлекаем и трансформируем данные"
     content: |
@@ -266,6 +608,22 @@ content:
 
       Теперь сделайте то же самое для кода 404 самостоятельно.
 
+      ```exercise
+      description: Вывести строки с кодом 500 через awk с условием
+      type: term
+      asset: server-0
+      template:
+      awk\s+.*\$7\s*==\s*["']?500["']?
+      ```
+
+      ```exercise
+      description: Вывести строки с кодом 404 через awk с условием
+      type: term
+      asset: server-0
+      template:
+      awk\s+.*\$7\s*==\s*["']?404["']?
+      ```
+
       ## Агрегация: считаем суммарный трафик
 
       `awk` умеет накапливать переменные между строками:
@@ -277,6 +635,38 @@ content:
       `END{}` выполняется после обработки всех строк.
 
       **Упражнение:** Посчитайте суммарный объём трафика только по успешным запросам (код 200). Затем найдите суммарный объём ответов с ошибками 500 — это поможет оценить, сколько данных клиенты получили обратно в виде сообщений об ошибках.
+
+      ```exercise
+      description: Посчитать суммарный трафик для запросов с кодом 200
+      type: term
+      asset: server-0
+      template:
+      awk\s+.*\$7\s*==\s*["']?200["']?.*sum\s*\+=\s*\$10
+      ```
+
+      ```exercise
+      description: Посчитать суммарный трафик для запросов с кодом 500
+      type: term
+      asset: server-0
+      template:
+      awk\s+.*\$7\s*==\s*["']?500["']?.*sum\s*\+=\s*\$10
+      ```
+
+      Сумма — не единственная агрегация. Если разделить сумму на число обработанных строк, получится среднее. Для этого в `END{}` пригодится счётчик строк, например `n`, увеличиваемый на каждой строке:
+
+      ```bash
+      awk '{sum += $10; n++} END {print "Average bytes:", sum/n}' /var/log/datastream/access.log
+      ```
+
+      **Упражнение:** Посчитайте средний размер ответа (в байтах) для запросов к `/api/upload`.
+
+      ```exercise
+      description: Посчитать средний размер ответа для /api/upload
+      type: term
+      asset: server-0
+      template:
+      (awk[\s\S]*api\\?/upload|api\\?/upload[\s\S]*awk).*sum\s*\+=\s*\$10.*sum\s*/\s*(n|NR)
+      ```
 
       ## Sed: замена и трансформация текста
 
@@ -296,7 +686,25 @@ content:
       sed 's/\[ERROR\]/[CRITICAL]/g' /var/log/datastream/error.log | head -10
       ```
 
+      **Упражнение:** Замените `[ERROR]` на `[CRITICAL]` во всём `error.log` и сохраните результат в `~/reports/error_critical.log`.
+
+      ```exercise
+      description: Заменить [ERROR] на [CRITICAL] в error.log через sed
+      type: term
+      asset: server-0
+      template:
+      sed\s+.*ERROR.*CRITICAL.*>\s*.*reports/error_critical\.log
+      ```
+
       **Упражнение:** Создайте очищенную версию access.log в вашей папке отчётов — только строки с ошибками 500, с анонимизированными IP. Используйте цепочку `grep | sed > файл`:
+
+      ```exercise
+      description: Создать очищенный errors_500_anon.log с анонимизированными IP
+      type: term
+      asset: server-0
+      template:
+      grep\s+.*500.*\|\s*sed\s+.*>\s*.*errors_500_anon\.log
+      ```
 
       ```bash
       grep ' 500 ' /var/log/datastream/access.log \
@@ -305,6 +713,24 @@ content:
 
       wc -l ~/reports/errors_500_anon.log
       cat ~/reports/errors_500_anon.log | head -5
+      ```
+
+      ## Текстовый конвейер тоже умеет производить CSV
+
+      В задачах про CSV и SQLite вы читали готовые структурированные данные. Но `awk` и `sed` вместе умеют и создавать их — из произвольного текста, вроде access.log.
+
+      ```bash
+      awk '{print $1, $7}' /var/log/datastream/access.log | sed 's/ /,/' | head -5
+      ```
+
+      **Упражнение:** Постройте CSV `ip,code` (IP-адрес и HTTP-код через запятую) по всему access.log и сохраните в `~/reports/ip_code.csv`.
+
+      ```exercise
+      description: Собрать ip,code как CSV в ip_code.csv
+      type: term
+      asset: server-0
+      template:
+      awk.*sed.*>\s*.*reports/ip_code\.csv
       ```
 
   - title: "Sort, uniq и финальный конвейер"
@@ -345,6 +771,14 @@ content:
 
       **Упражнение:** Модифицируйте команду чтобы получить топ-3 IP только среди ошибок 500. Добавьте `grep ' 500 '` в начало конвейера (перед `awk`).
 
+      ```exercise
+      description: Получить топ-3 IP среди запросов с ошибкой 500
+      type: term
+      asset: server-0
+      template:
+      grep\s+.*500.*\|\s*awk.*\|\s*sort\s*\|\s*uniq\s+-c\s*\|\s*sort\s+-\w*[rn]\w*[rn]\w*\s*\|\s*head\s+-3
+      ```
+
       ## Топ проблемных эндпоинтов
 
       Поле `$6` в логе — это HTTP-метод+эндпоинт в кавычках: `"POST /api/upload`. Эндпоинт — поле `$7` (после метода):
@@ -357,6 +791,14 @@ content:
       Здесь `$7 ~ /^[45]/` — условие: код начинается с 4 или 5. `$6` — метод+путь.
 
       **Упражнение:** Постройте список эндпоинтов (только путь, без метода) отсортированных по числу ошибок 500. Подсказка: используйте `awk '$7 == "500" {print $6}'`, затем через `cut` или второй `awk` обрежьте кавычку и метод чтобы остался только путь.
+
+      ```exercise
+      description: Список эндпоинтов отсортированных по числу ошибок 500
+      type: term
+      asset: server-0
+      template:
+      awk\s+.*\$7\s*==\s*["']?500["']?.*\|\s*(cut|awk|sed).*\|\s*sort\s*\|\s*uniq\s+-c\s*\|\s*sort\s+-\w*[rn]\w*[rn]\w*
+      ```
 
       ## Финальный конвейер: отчёт в файл
 
@@ -382,6 +824,14 @@ content:
       cat ~/reports/summary.txt
       ```
 
+      ```exercise
+      description: Собрать итоговый отчёт в ~/reports/summary.txt
+      type: term
+      asset: server-0
+      template:
+      >\s*.*reports/summary\.txt
+      ```
+
       **Финальное задание:** Дополните отчёт четвёртой секцией — «TOP 5 IP по суммарному трафику (байт)». Для этого нужно суммировать `$10` (байты) для каждого уникального IP — `awk` с массивом:
 
       ```bash
@@ -391,253 +841,29 @@ content:
 
       Добавьте эту секцию в `~/reports/summary.txt` и покажите финальный файл командой `cat ~/reports/summary.txt`.
 
+      ```exercise
+      description: Посчитать суммарный трафик по IP и добавить топ-5 в summary.txt
+      type: term
+      asset: server-0
+      template:
+      awk\s+.*bytes\[\$1\]\s*\+=\s*\$10.*>>?\s*.*reports/summary\.txt
+      ```
+
+      ```exercise
+      description: Показать финальный файл summary.txt
+      type: term
+      asset: server-0
+      template:
+      cat\s+.*reports/summary\.txt
+      ```
+
 environment:
-  duration: 90
+  duration: 150
   assets:
     - name: server-0
-      image: ubuntu
-      platform: container
-      ssh_user: lab
+      image: ubuntu-analytics
       cpu: 200m
       memory: 256Mi
       disk: 5Gi
       protocols:
         - exec
-      setup: |
-        #!/bin/bash
-        set -e
-
-        # --- Пользователь и структура каталогов ---
-        useradd -m -s /bin/bash datastream 2>/dev/null || true
-        mkdir -p /app/datastream/data
-        mkdir -p /var/log/datastream
-        mkdir -p /var/lib/datastream/cache
-        mkdir -p /home/lab/reports
-
-        # --- Код и конфиг приложения ---
-        cat > /app/datastream/config.yaml << 'EOF'
-        server:
-          host: 0.0.0.0
-          port: 8080
-          workers: 4
-
-        storage:
-          data_dir: /app/datastream/data
-          db_path: /var/lib/datastream/events.db
-          cache_dir: /var/lib/datastream/cache
-
-        logging:
-          access_log: /var/log/datastream/access.log
-          error_log: /var/log/datastream/error.log
-          level: info
-
-        retention:
-          log_days: 30
-          cache_ttl: 3600
-        EOF
-
-        cat > /app/datastream/requirements.txt << 'EOF'
-        flask==2.3.2
-        pandas==2.0.3
-        sqlalchemy==2.0.19
-        gunicorn==21.2.0
-        pyyaml==6.0.1
-        EOF
-
-        cat > /app/datastream/app.py << 'EOF'
-        # DataStream — HTTP event ingestion service
-        # Accepts CSV uploads, aggregates by client_id, writes reports to /var/lib/datastream/
-
-        import yaml
-        from flask import Flask, request, jsonify
-
-        app = Flask(__name__)
-
-        @app.route('/api/upload', methods=['POST'])
-        def upload():
-            pass
-
-        @app.route('/api/status', methods=['GET'])
-        def status():
-            return jsonify({"status": "ok"})
-
-        @app.route('/api/report/<client_id>', methods=['GET'])
-        def report(client_id):
-            pass
-
-        if __name__ == '__main__':
-            app.run()
-        EOF
-
-        # --- CSV-данные ---
-        cat > /app/datastream/data/events_2024_01.csv << 'EOF'
-        timestamp,client_id,event_type,value,region
-        2024-01-15 08:23:11,client_042,purchase,149.99,EU
-        2024-01-15 08:24:03,client_017,pageview,0,US
-        2024-01-15 08:25:47,client_042,purchase,89.50,EU
-        2024-01-15 08:26:12,client_103,signup,0,APAC
-        2024-01-15 08:27:01,client_017,purchase,299.00,US
-        2024-01-15 09:01:44,client_055,pageview,0,EU
-        2024-01-15 09:15:22,client_042,refund,149.99,EU
-        2024-01-15 10:03:09,client_017,purchase,59.90,US
-        2024-01-16 08:00:01,client_103,purchase,199.00,APAC
-        2024-01-16 08:45:33,client_055,purchase,79.00,EU
-        EOF
-
-        cat > /app/datastream/data/events_2024_02.csv << 'EOF'
-        timestamp,client_id,event_type,value,region
-        2024-02-01 07:12:00,client_017,purchase,349.00,US
-        2024-02-01 07:45:11,client_099,signup,0,EU
-        2024-02-02 09:30:22,client_042,purchase,249.99,EU
-        2024-02-03 10:11:05,client_099,purchase,89.00,EU
-        2024-02-05 14:00:00,client_103,refund,199.00,APAC
-        2024-02-07 16:22:44,client_055,purchase,120.00,EU
-        2024-02-10 08:05:33,client_017,purchase,59.90,US
-        EOF
-
-        cat > /app/datastream/data/clients.csv << 'EOF'
-        client_id,name,plan,region,since
-        client_017,Acme Corp,enterprise,US,2022-03-01
-        client_042,BrightData GmbH,pro,EU,2023-01-15
-        client_055,Solaris SAS,starter,EU,2023-07-20
-        client_099,NordMetrics,pro,EU,2024-01-05
-        client_103,AsiaPulse Ltd,enterprise,APAC,2022-11-30
-        EOF
-
-        # --- Генерация access.log ---
-        python3 << 'PYEOF'
-        import random
-        import datetime
-
-        ips = [
-            "185.220.101.42", "93.184.216.34", "198.51.100.17",
-            "203.0.113.5",    "185.220.101.98", "91.108.4.11",
-            "172.16.254.1",   "45.33.32.156",   "162.243.10.151",
-            "104.21.14.177",  "185.220.101.42", "93.184.216.34",
-        ]
-        endpoints_methods = [
-            ("POST", "/api/upload"),   ("POST", "/api/upload"),
-            ("POST", "/api/upload"),   ("GET",  "/api/status"),
-            ("GET",  "/api/status"),   ("GET",  "/api/report/client_042"),
-            ("GET",  "/api/report/client_017"), ("GET", "/api/report/client_103"),
-            ("GET",  "/api/metrics"),  ("GET",  "/favicon.ico"),
-            ("GET",  "/robots.txt"),
-        ]
-        codes_by_endpoint = {
-            "/api/upload":  ([200]*7 + [201]*2 + [400]*2 + [500]*2 + [503]*1),
-            "/api/status":  ([200]*9 + [500]*1),
-            "/api/report/client_042": ([200]*8 + [404]*1 + [500]*1),
-            "/api/report/client_017": ([200]*8 + [404]*1 + [500]*1),
-            "/api/report/client_103": ([200]*7 + [404]*2 + [500]*1),
-            "/api/metrics": ([200]*8 + [403]*2),
-            "/favicon.ico": ([200]*5 + [404]*5),
-            "/robots.txt":  ([200]*9 + [404]*1),
-        }
-        user_agents = [
-            "python-requests/2.28.0", "curl/7.88.1",
-            "Mozilla/5.0 (compatible; DataStream-Client/1.2)",
-            "Go-http-client/1.1",
-        ]
-
-        random.seed(42)
-        start = datetime.datetime(2024, 3, 1, 0, 0, 0)
-        lines = []
-        t = start
-        for i in range(5000):
-            t += datetime.timedelta(seconds=random.randint(5, 120))
-            ip = random.choice(ips)
-            method, endpoint = random.choice(endpoints_methods)
-            pool = codes_by_endpoint.get(endpoint, [200]*8 + [500]*2)
-            code = random.choice(pool)
-            size = random.randint(512, 15000) if code < 400 else random.randint(50, 512)
-            ua = random.choice(user_agents)
-            ts = t.strftime("%d/%b/%Y:%H:%M:%S +0000")
-            lines.append(
-                f'{ip} - - [{ts}] "{method} {endpoint} HTTP/1.1" {code} {size} "-" "{ua}"'
-            )
-
-        with open("/var/log/datastream/access.log", "w") as f:
-            f.write("\n".join(lines) + "\n")
-        PYEOF
-
-        # --- Генерация error.log ---
-        python3 << 'PYEOF'
-        import random
-        import datetime
-
-        random.seed(7)
-        errors = [
-            "Database connection timeout after 30s",
-            "Failed to parse CSV: unexpected column count in row 47",
-            "Client client_042 report generation failed: missing data for 2024-02",
-            "Cache write failed: disk quota exceeded",
-            "Request body too large: 12.4MB received, max 10MB allowed",
-            "Upstream timeout for /api/upload after 60s",
-            "Unhandled exception in report worker PID 1842",
-        ]
-        warnings = [
-            "Slow query detected: 2.3s for report generation client_103",
-            "Cache hit ratio below threshold: 0.42 (expected >0.7)",
-            "Memory usage above 80%: 817MB / 1024MB",
-            "Retry 2/3 for client_103 webhook delivery",
-            "Log file approaching rotation threshold: 480MB",
-            "Worker respawn detected: PID 1839 exited with code 1",
-        ]
-
-        start = datetime.datetime(2024, 3, 1, 0, 5, 0)
-        t = start
-        lines = []
-        for _ in range(450):
-            t += datetime.timedelta(seconds=random.randint(30, 900))
-            level = random.choices(["ERROR", "WARN"], weights=[35, 65])[0]
-            msg = random.choice(errors if level == "ERROR" else warnings)
-            ts = t.strftime("%Y-%m-%d %H:%M:%S")
-            lines.append(f"[{ts}] [{level}] {msg}")
-
-        with open("/var/log/datastream/error.log", "w") as f:
-            f.write("\n".join(lines) + "\n")
-        PYEOF
-
-        # --- Архивные логи (имитация logrotate) ---
-        cp /var/log/datastream/access.log /var/log/datastream/access.log.1
-        gzip -c /var/log/datastream/access.log.1 > /var/log/datastream/access.log.2.gz
-        rm /var/log/datastream/access.log.1
-
-        # --- База данных (stub) ---
-        dd if=/dev/urandom of=/var/lib/datastream/events.db bs=1M count=3 2>/dev/null
-
-        # --- Мусор: кэш-файлы (главный виновник) ---
-        dd if=/dev/zero of=/var/lib/datastream/cache/report_cache_2024_01.tmp bs=1M count=18 2>/dev/null
-        dd if=/dev/zero of=/var/lib/datastream/cache/report_cache_2024_02.tmp bs=1M count=22 2>/dev/null
-        dd if=/dev/zero of=/var/lib/datastream/cache/report_cache_2024_03.tmp bs=1M count=15 2>/dev/null
-
-        # --- Мусор: бэкапы и старый экспорт ---
-        cp /var/lib/datastream/events.db /var/lib/datastream/events.db.bak
-        dd if=/dev/zero of=/var/lib/datastream/old_export_2024_01.tar.gz bs=1M count=28 2>/dev/null
-        touch -d "45 days ago" /var/lib/datastream/old_export_2024_01.tar.gz
-        touch -d "45 days ago" /var/lib/datastream/events.db.bak
-
-        # --- Мусор в домашней папке сервиса ---
-        dd if=/dev/zero of=/home/datastream/deploy_bundle_v1.tar.gz bs=1M count=20 2>/dev/null
-        touch -d "65 days ago" /home/datastream/deploy_bundle_v1.tar.gz
-        cat > /home/datastream/migrate_db_v1.sh << 'EOF'
-        #!/bin/bash
-        # Old migration script from v1 -> v2 schema, no longer needed
-        sqlite3 /var/lib/datastream/events.db "ALTER TABLE events ADD COLUMN region TEXT"
-        EOF
-        touch -d "90 days ago" /home/datastream/migrate_db_v1.sh
-        dd if=/dev/zero of=/home/datastream/core.1839 bs=1M count=8 2>/dev/null
-        touch -d "3 days ago" /home/datastream/core.1839
-
-        # --- Права доступа ---
-        chown -R datastream:datastream /app/datastream /var/log/datastream /var/lib/datastream /home/datastream
-        chmod 755 /app/datastream
-        chmod 644 /app/datastream/config.yaml /app/datastream/requirements.txt
-        chmod 640 /var/log/datastream/access.log /var/log/datastream/error.log
-        chmod 755 /home/datastream
-        chown -R lab:lab /home/lab
-        chmod 755 /home/lab/reports
-
-        # Разрешаем lab читать логи
-        chmod o+r /var/log/datastream/access.log /var/log/datastream/error.log
-        chmod o+x /var/log/datastream

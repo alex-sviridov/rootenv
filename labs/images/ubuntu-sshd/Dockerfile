@@ -5,6 +5,7 @@ RUN apt-get update -y && \
         openssh-server \
         openssh-client \
         ca-certificates \
+        python3 \
         sudo \
         vim \
         less \

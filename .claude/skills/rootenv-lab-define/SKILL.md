@@ -51,6 +51,34 @@ Mix all three within a lab. Never use open exercises for a concept introduced fo
 
 **Connecting thread** — exercises within a section must share state. A file created in exercise 1 is used in exercise 2; a service configured in exercise 2 is tested in exercise 3. Never write standalone exercises that could be shuffled without consequence.
 
+### Exercise blocks (auto-graded checks)
+
+A task's `content` markdown can embed one or more graded exercises as fenced code blocks with the info-string `exercise`. Add one whenever a task step has a checkable outcome — commonly one per `**Task:**`/`**Exercise:**` prompt, sometimes more if a single prompt has multiple independently-checkable outcomes (e.g. "create the file and set its ownership" → one exercise per outcome). Purely conceptual prompts ("explain why...") get none.
+
+````markdown
+```exercise
+description: Create /tmp/labfile owned by bob
+type: term
+asset: server-0
+template:
+chown\s+bob\s+/tmp/labfile
+```
+````
+
+- **`description`** — required. Shown to the student as the exercise's label. State the checkable outcome, not the command (e.g. "Set `/tmp/labfile` to mode 750", not "run chmod 750").
+- **`type`** — required; `term` is the only type relay-grader currently supports.
+- **`asset`** — optional. Must match a `name` in this lab's `environment.assets[]` when present; the exercise is graded only against that asset's terminal output. Omit for single-node labs or when any asset satisfies it.
+- **`template`** — required, always the last field. **A regular expression matched against the student's terminal scrollback, not a shell command** — satisfied once the pattern appears anywhere in that asset's recent output. Everything from the `template:` line to the closing fence is the pattern body verbatim (multi-line regexes are fine, no YAML block-scalar needed). Escape regex metacharacters in literal paths/values (`.`, `/` are usually left bare, but `[`, `(`, `+` etc. need escaping if literal). Use `\s+` between tokens so exercises tolerate flag/spacing variation. Field order otherwise doesn't matter.
+
+`labs-sync.py` numbers each block `"<task#>.<exercise#>"` (1-indexed, exercise number resets per task), validates any `asset` reference against `environment.assets`, and rewrites each block down to just `id` and `description` before it reaches PocketBase — `type`/`asset`/`template` never reach the frontend.
+
+**Writing tolerant regexes:**
+- If a prompt implies multiple independent targets (e.g. "delete the `.bak` files in dir A and the old archives in dir B"), write one exercise block per target — don't collapse them into a single loose regex.
+- For tasks that redirect output into a file (`> report.txt`), grade the command/pipeline containing the redirect, not the file's contents — the grader only ever sees terminal scrollback.
+- Order-independent flags need an order-independent class, not a fixed sequence: `sort -\w*[rn]\w*[rn]\w*` matches both `-rn` and `-nr`; a literal `-\w*rn\w*` does not.
+- To require two substrings anywhere in the output regardless of order or which side of a pipe they're on, use lookaheads — `(?=.*foo)(?=.*bar)` — rather than enumerating every ordering by hand.
+- Before finalizing a non-trivial regex, test it in a scratch script against 2–3 hand-written alternate commands a student might plausibly type (different flag order, different tool chain achieving the same result). This catches operator-precedence and ordering bugs that are easy to miss by inspection.
+
 ### Markdown conventions
 
 Use the full range of markdown to make theory readable:
@@ -122,6 +150,7 @@ Each item in `content` follows this pattern:
 1. **Explanation paragraph** — concise prose describing the concept.
 2. **Code block** — concrete commands with inline `# comments` for context.
 3. **Bold Task line** — `**Task:** <imperative instruction the user must complete.>`
+4. **Exercise block(s)** — one ` ```exercise ` block per checkable outcome the Task line implies. See "Exercise blocks (auto-graded checks)" above for the format.
 
 Use `**server-0**` / `**server-1**` callouts when a multi-node lab has role-specific steps.
 
@@ -173,6 +202,14 @@ content:
 
       **Task:** List the permissions of `/etc/shadow` and explain why it has those permissions.
 
+      ```exercise
+      description: List the permissions of /etc/shadow
+      type: term
+      asset: server-0
+      template:
+      ls\s+-l[a-z]*\s+/etc/shadow
+      ```
+
   - title: Set Permissions with chmod
     content: |
       Use `chmod` with symbolic or octal notation to set permissions.
@@ -183,6 +220,22 @@ content:
       ```
 
       **Task:** Set `/tmp/labfile` to `750` (owner: rwx, group: r-x, others: ---).
+
+      ```exercise
+      description: Create /tmp/labfile
+      type: term
+      asset: server-0
+      template:
+      touch\s+/tmp/labfile
+      ```
+
+      ```exercise
+      description: Set /tmp/labfile permissions to 750
+      type: term
+      asset: server-0
+      template:
+      chmod\s+750\s+/tmp/labfile
+      ```
 
 environment:
   duration: 90
@@ -223,6 +276,22 @@ content:
       ```
 
       **Task:** Ensure `nfs-server` is active on server-0 and confirm server-0's RPC portmapper is reachable from server-1.
+
+      ```exercise
+      description: Enable and start nfs-server on server-0
+      type: term
+      asset: server-0
+      template:
+      systemctl\s+enable\s+--now\s+nfs-server
+      ```
+
+      ```exercise
+      description: Confirm server-0's RPC portmapper from server-1
+      type: term
+      asset: server-1
+      template:
+      rpcinfo\s+-p\s+server-0
+      ```
 
 environment:
   duration: 30

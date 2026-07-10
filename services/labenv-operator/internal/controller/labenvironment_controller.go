@@ -471,6 +471,21 @@ func (r *LabEnvironmentReconciler) ensurePod(ctx context.Context, env *labv1alph
 		return err
 	}
 
+	command := []string{"sleep", "infinity"}
+	var readinessProbe *corev1.Probe
+	if asset.Setup != "" {
+		const setupDoneFile = "/tmp/.rootenv-setup-done"
+		command = []string{"sh", "-c", asset.Setup + "\ntouch " + setupDoneFile + "\nexec sleep infinity"}
+		readinessProbe = &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				Exec: &corev1.ExecAction{
+					Command: []string{"test", "-f", setupDoneFile},
+				},
+			},
+			PeriodSeconds: 2,
+		}
+	}
+
 	pod := corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      asset.Name,
@@ -506,7 +521,8 @@ func (r *LabEnvironmentReconciler) ensurePod(ctx context.Context, env *labv1alph
 					Name:            "main",
 					Image:           image,
 					ImagePullPolicy: corev1.PullIfNotPresent,
-					Command:         []string{"sleep", "infinity"},
+					Command:         command,
+					ReadinessProbe:  readinessProbe,
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
 							corev1.ResourceCPU:              resource.MustParse(asset.CPU),

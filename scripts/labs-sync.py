@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from labs_sync_exercises import extract_exercises, validate_exercise_assets, rewrite_content_with_placeholders
+from labs_sync_exercises import extract_exercises, validate_exercise_assets, validate_exercise_templates, rewrite_content_with_placeholders
 
 _SLUG_RE = re.compile(r'^[A-Za-z0-9]+$')
 
@@ -175,6 +175,7 @@ def validate_lab(path: Path) -> bool:
                         exercises = extract_exercises(content)
                         asset_names = {a.get("name") for a in assets if isinstance(a, dict)}
                         errors.extend(validate_exercise_assets(exercises, asset_names))
+                        errors.extend(validate_exercise_templates(exercises))
                     except ValueError as e:
                         errors.append(f"exercise parse error: {e}")
         except yaml.YAMLError as e:

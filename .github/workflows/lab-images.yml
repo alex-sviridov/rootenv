@@ -21,7 +21,7 @@ jobs:
       matrix: ${{ steps.set.outputs.matrix }}
     steps:
       - id: set
-        run: echo 'matrix={"image":["ubuntu-sshd"]}' >> $GITHUB_OUTPUT
+        run: echo 'matrix={"image":["ubuntu-sshd","ubuntu-analytics"]}' >> $GITHUB_OUTPUT
 
   security-scan:
     name: Security Scan ${{ matrix.image }}

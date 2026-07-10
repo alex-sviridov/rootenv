@@ -47,6 +47,10 @@ build:
       context: labs/images/ubuntu-sshd
       docker:
         dockerfile: Dockerfile
+    - image: ubuntu-analytics
+      context: labs/images/ubuntu-analytics
+      docker:
+        dockerfile: Dockerfile
 deploy:
   kubectl: {}
   kubeContext: k3d-rootenv
@@ -61,6 +65,7 @@ resourceSelector:
         - ".data.exec"
         - ".data.grader"
         - ".data.ubuntu-sshd"
+        - ".data.ubuntu-analytics"
 
 profiles:
   - name: sandbox

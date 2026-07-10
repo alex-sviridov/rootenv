@@ -64,6 +64,14 @@ content:
 
       `ca` — приватный ключ, никуда не уходит. `ca.pub` — публичный, его нужно разложить по серверам.
 
+      ```exercise
+      description: Сгенерировать CA-ключ ed25519 в /etc/ssh-ca/ca
+      type: term
+      asset: workstation
+      template:
+      ssh-keygen[\s\S]*(-t\s+ed25519[\s\S]*-f\s+/etc/ssh-ca/ca|-f\s+/etc/ssh-ca/ca[\s\S]*-t\s+ed25519)
+      ```
+
       ## Распространяем ca.pub и настраиваем TrustedUserCAKeys
 
       Пока работает вход по паролю — используем его.
@@ -88,6 +96,14 @@ content:
         echo "=== $host ==="
         ssh lab@${host} "grep TrustedUserCAKeys /etc/ssh/sshd_config && sudo sshd -t && echo 'config OK'"
       done
+      ```
+
+      ```exercise
+      description: Настроить TrustedUserCAKeys хотя бы на одном хосте и подтвердить конфиг
+      type: term
+      asset: workstation
+      template:
+      grep\s+TrustedUserCAKeys\s+/etc/ssh/sshd_config[\s\S]*?config OK
       ```
 
       Дополнительно: добавьте `TrustedUserCAKeys` и на сам **workstation** — для симметрии, на случай если другие инженеры будут ходить на него по сертификатам.
@@ -135,6 +151,14 @@ content:
       ls -la /tmp/host-keys/
       ```
 
+      ```exercise
+      description: Подписать host key одного из серверов сертификатом CA
+      type: term
+      asset: workstation
+      template:
+      ssh-keygen[\s\S]*-s\s+/etc/ssh-ca/ca[\s\S]*-h\b[\s\S]*-n\s+\S[\s\S]*-V\s+\S
+      ```
+
       ```bash
       # Раскладываем сертификаты обратно
       for host in bastion application database; do
@@ -164,6 +188,14 @@ content:
       for host in bastion application database; do
         ssh -o StrictHostKeyChecking=yes lab@${host} hostname && echo "$host: OK"
       done
+      ```
+
+      ```exercise
+      description: Подключиться к хосту с StrictHostKeyChecking=yes без предупреждений
+      type: term
+      asset: workstation
+      template:
+      ssh\s+-o\s+StrictHostKeyChecking=yes\s+lab@\S+\s+hostname[\s\S]*?:\s*OK
       ```
 
       Для инспекции сертификата: `ssh-keygen -L -f /tmp/host-keys/bastion_host-cert.pub`
@@ -201,10 +233,26 @@ content:
 
       SSH автоматически использует `id_ed25519-cert.pub` вместе с `id_ed25519` если они лежат рядом.
 
+      ```exercise
+      description: Подписать пользовательский ключ lab с принципалом lab
+      type: term
+      asset: workstation
+      template:
+      ssh-keygen[\s\S]*-s\s+/etc/ssh-ca/ca[\s\S]*-n\s+lab\b[\s\S]*-V\s+\S
+      ```
+
       ```bash
       # Вход по сертификату — пароль не должен спрашиваться
       ssh -o PasswordAuthentication=no lab@bastion hostname
       ssh -o PasswordAuthentication=no lab@application hostname
+      ```
+
+      ```exercise
+      description: Войти по сертификату без пароля хотя бы на один хост
+      type: term
+      asset: workstation
+      template:
+      ssh\s+-o\s+PasswordAuthentication=no\s+lab@\S+\s+hostname
       ```
 
       ## Тестируем отказ: неверный principal
@@ -222,6 +270,14 @@ content:
           -o PasswordAuthentication=no \
           lab@bastion
       # Ожидаем: Permission denied
+      ```
+
+      ```exercise
+      description: Подписать тестовый сертификат с неверным принципалом и получить отказ
+      type: term
+      asset: workstation
+      template:
+      ssh-keygen[\s\S]*-s\s+/etc/ssh-ca/ca[\s\S]*-n\s+wronguser\b[\s\S]*Permission denied
       ```
 
       ## Отключаем вход по паролю
@@ -246,6 +302,14 @@ content:
       ```bash
       ssh -o PasswordAuthentication=yes -o PubkeyAuthentication=no lab@bastion
       # Ожидаем: Permission denied (publickey)
+      ```
+
+      ```exercise
+      description: Отключить PasswordAuthentication на bastion и подтвердить отказ входа по паролю
+      type: term
+      asset: workstation
+      template:
+      PasswordAuthentication\s+no[\s\S]*ssh\s+-o\s+PasswordAuthentication=yes\s+-o\s+PubkeyAuthentication=no\s+lab@bastion[\s\S]*Permission denied
       ```
 
       Дополнительно: создайте сертификат с `-V +1m`, подождите истечения и проверьте что вход отклоняется. Что именно пишет sshd в `/var/log/auth.log` при попытке войти с просроченным сертификатом?
@@ -318,7 +382,23 @@ content:
       ssh -G app | grep -E "^(hostname|user|proxyjump|identityfile|identitiesonly|controlmaster)"
       ```
 
+      ```exercise
+      description: Проверить итоговые параметры соединения для app через ssh -G
+      type: term
+      asset: workstation
+      template:
+      ssh\s+-G\s+app\s*\|\s*grep
+      ```
+
       Добавьте в конфиг алиас `ws` для workstation (`HostName workstation`). Затем добавьте в блок `app` директиву `LocalForward 8080 localhost:80` и проверьте через `ssh -G app | grep localforward` — директива должна быть в выводе даже без активного соединения.
+
+      ```exercise
+      description: Добавить LocalForward 8080 localhost:80 в блок app и подтвердить через ssh -G
+      type: term
+      asset: workstation
+      template:
+      ssh\s+-G\s+app\s*\|\s*grep\s+localforward[\s\S]*localforward\s+8080\s+localhost:80
+      ```
 
   - title: "ProxyJump через bastion: безопасный вход во внутреннюю сеть"
     content: |
@@ -349,11 +429,27 @@ content:
       ssh -o ProxyJump=none -o ConnectTimeout=5 app hostname 2>&1
       ```
 
+      ```exercise
+      description: Убедиться что application недоступен напрямую без ProxyJump
+      type: term
+      asset: workstation
+      template:
+      ssh\s+-o\s+ProxyJump=none\s+-o\s+ConnectTimeout=5\s+app\s+hostname
+      ```
+
       Затем проверьте что ProxyJump работает с явным флагом (минуя конфиг):
 
       ```bash
       ssh -J lab@bastion lab@application hostname
       ssh -J lab@bastion lab@database hostname
+      ```
+
+      ```exercise
+      description: Подключиться к application или database через явный флаг -J
+      type: term
+      asset: workstation
+      template:
+      ssh\s+-J\s+lab@bastion\s+lab@(application|database)\s+hostname
       ```
 
       ## Многоуровневый ProxyJump
@@ -403,6 +499,14 @@ content:
       ssh -f -N -L 5432:localhost:5432 db
       nc -zv localhost 5432 && echo "туннель работает"
       kill $(pgrep -f "ssh -f -N -L 5432")
+      ```
+
+      ```exercise
+      description: Пробросить порт 5432 к database хотя бы одним из способов и подтвердить туннель
+      type: term
+      asset: workstation
+      template:
+      ssh\s+-f\s+-N\s+-L\s+5432:\S+:5432\s+\S+[\s\S]*туннель работает
       ```
 
       В чём разница между двумя способами с точки зрения того, откуда устанавливается TCP-соединение до порта 5432?
@@ -489,6 +593,14 @@ content:
       ssh -O check app
       ```
 
+      ```exercise
+      description: Проверить статус мастер-соединения через ssh -O check
+      type: term
+      asset: workstation
+      template:
+      ssh\s+-O\s+check\s+app
+      ```
+
       Закройте терминал 1 (Ctrl+C). Через сколько времени исчезнет сокет мастера? Почему именно столько?
 
       Дополнительно: поменяйте `ControlPersist` на `0` и `yes` — поэкспериментируйте и объясните, когда каждое значение нужно на практике. В каких сценариях бессрочный мастер опасен?
@@ -527,12 +639,28 @@ content:
       ssh-keygen -L -f /tmp/devops_key-cert.pub
       ```
 
+      ```exercise
+      description: Подписать ключ devops с принципалом devops
+      type: term
+      asset: workstation
+      template:
+      ssh-keygen[\s\S]*-s\s+/etc/ssh-ca/ca[\s\S]*-n\s+devops\b[\s\S]*-V\s+\S
+      ```
+
       **Exercise:** Проверьте вход по выданному сертификату:
 
       ```bash
       ssh -i /tmp/devops_key \
           -o CertificateFile=/tmp/devops_key-cert.pub \
           devops@application hostname
+      ```
+
+      ```exercise
+      description: Войти на application по сертификату devops
+      type: term
+      asset: workstation
+      template:
+      ssh\s+-i\s+/tmp/devops_key[\s\S]*?-o\s+CertificateFile=/tmp/devops_key-cert\.pub[\s\S]*?devops@application\s+hostname
       ```
 
       Затем убедитесь что тот же сертификат не даёт доступа на `bastion` — пользователя `devops` там нет, и принципал не совпадёт.
@@ -550,6 +678,14 @@ content:
 
       # Проверяем: сертификат должен числиться как revoked
       ssh-keygen -Q -l -f /etc/ssh-ca/revoked /tmp/devops_key-cert.pub
+      ```
+
+      ```exercise
+      description: Добавить сертификат devops в KRL и подтвердить что он отозван
+      type: term
+      asset: workstation
+      template:
+      ssh-keygen\s+-k\s+-u\s+-f\s+/etc/ssh-ca/revoked\s+/tmp/devops_key-cert\.pub[\s\S]*REVOKED
       ```
 
       ```bash

@@ -5,3 +5,4 @@ metadata:
   namespace: labenv-operator-system
 data:
   ubuntu-sshd: ubuntu-sshd:latest
+  ubuntu-analytics: ubuntu-analytics:latest

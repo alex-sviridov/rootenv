@@ -4,7 +4,7 @@ import pytest
 import yaml as _yaml
 from pathlib import Path
 
-from labs_sync_exercises import parse_exercise_block, extract_exercises, validate_exercise_assets, rewrite_content_with_placeholders
+from labs_sync_exercises import parse_exercise_block, extract_exercises, validate_exercise_assets, validate_exercise_templates, rewrite_content_with_placeholders
 
 
 def test_parse_exercise_block_basic():
@@ -147,6 +147,28 @@ def test_validate_exercise_assets_unknown_asset():
     assert len(errors) == 1
     assert "1.1" in errors[0]
     assert "server-9" in errors[0]
+
+
+def test_validate_exercise_templates_empty_list():
+    assert validate_exercise_templates([]) == []
+
+
+def test_validate_exercise_templates_all_valid():
+    exercises = [
+        {"id": "1.1", "template": r"chown\s+bob\s+/tmp/labfile"},
+        {"id": "1.2", "template": r"(find[\s\S]*a|a[\s\S]*find)"},
+    ]
+    assert validate_exercise_templates(exercises) == []
+
+
+def test_validate_exercise_templates_rejects_lookahead():
+    # Go's regexp (RE2), which relay-grader actually compiles templates
+    # with, does not support lookahead — this must be caught here rather
+    # than silently making the exercise unpassable at grading time.
+    exercises = [{"id": "2.3", "template": r"(?=.*foo)(?=.*bar)"}]
+    errors = validate_exercise_templates(exercises)
+    assert len(errors) == 1
+    assert "2.3" in errors[0]
 
 
 def test_rewrite_content_with_placeholders_strips_type_and_template():

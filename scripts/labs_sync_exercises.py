@@ -2,9 +2,14 @@
 
 import re
 import copy
+import json
+import shutil
+import subprocess
+from pathlib import Path
 
 _LABELS = ("description", "type", "asset")
 _FENCE_RE = re.compile(r'```exercise\n(.*?)\n```', re.DOTALL)
+_REGEXCHECK_SRC = Path(__file__).parent / "regexcheck" / "main.go"
 
 
 def parse_exercise_block(body: str) -> dict:
@@ -75,6 +80,49 @@ def validate_exercise_assets(exercises: list[dict], asset_names: set[str]) -> li
         asset = ex.get("asset")
         if asset and asset not in asset_names:
             errors.append(f"exercise {ex['id']}: asset '{asset}' not found in environment.assets")
+    return errors
+
+
+def validate_exercise_templates(exercises: list[dict]) -> list[str]:
+    """Check each exercise's `template` compiles as a Go regexp under RE2
+    syntax, `(?s)`-prefixed exactly like relay-grader compiles it
+    (services/relay/grader/backend.go). Go's RE2 rejects constructs other
+    regex flavors accept without complaint — lookahead/lookbehind
+    (`(?=...)`, `(?!...)`), backreferences — so a template that looks fine
+    under Python's `re` can still fail to compile at grading time, which
+    silently makes that exercise permanently unpassable (see docs/lab-grade.md).
+    Returns a list of error strings; empty if every template compiles.
+    """
+    if not exercises:
+        return []
+    if shutil.which("go") is None:
+        return ["cannot validate exercise templates: 'go' not found on PATH "
+                "(required to check templates compile as Go/RE2 regexps)"]
+
+    templates = [ex["template"] for ex in exercises]
+    try:
+        proc = subprocess.run(
+            ["go", "run", str(_REGEXCHECK_SRC)],
+            input=json.dumps(templates),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        return [f"cannot validate exercise templates: failed to run regexcheck: {e}"]
+
+    if proc.returncode != 0:
+        return [f"cannot validate exercise templates: regexcheck failed: {proc.stderr.strip()}"]
+
+    try:
+        results = json.loads(proc.stdout)
+    except json.JSONDecodeError as e:
+        return [f"cannot validate exercise templates: bad regexcheck output: {e}"]
+
+    errors = []
+    for ex, res in zip(exercises, results):
+        if not res.get("ok"):
+            errors.append(f"exercise {ex['id']}: template does not compile as a Go regexp: {res.get('error')}")
     return errors
 
 
