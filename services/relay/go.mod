@@ -1,6 +1,6 @@
 module github.com/alexsviridov/linuxlab/relay
 
-go 1.26.0
+go 1.26.5
 
 require (
 	github.com/coder/websocket v1.8.14
