@@ -30,9 +30,11 @@ relay/
     relaybase/    # Shared: Handler (exec auth), Authenticator (SSH auth), ConnLimiter, HandleHealthz, BackoffReconnector
   exec/           # package exec — kubectl exec backend (Backend struct + KubeExecer)
   ssh/            # package ssh — SSH relay handler, proxy, key decrypt, metrics
+  grader/         # package grader — task loading (LoadTasks) + Backend (grade report over WS)
   cmd/
     relay-exec/   # Binary entry point for the exec relay (sidecar per lab environment)
     relay-ssh/    # Binary entry point for the SSH relay
+    relay-grader/ # Binary entry point for the grader relay (sidecar per lab environment)
 ```
 
 ## Connection URL (relay-ssh)
@@ -46,6 +48,14 @@ relay/
 - First WS message: discarded (placeholder for future token); auth happens via headers only
 - Healthz: `/healthz` → `{"status":"ok"}`
 - One relay-exec instance runs per lab environment (sidecar); `RELAY_MY_ATTEMPT_ID` and `RELAY_MY_NAMESPACE` are required env vars
+
+## Connection URL (relay-grader)
+- External (via Traefik, once wired): `/relay/grade/<attemptID>/` — attempt-scoped, no `assetName` segment
+- Auth: same as relay-exec — injected headers `X-Attempt-Id` and `X-User-Id`, first WS message discarded
+- On connect: server immediately sends one JSON text message `{"<taskId>": false, ...}` for every task loaded from `RELAY_TASKS_FILE`, then holds the connection open (idle) until the client disconnects — no grading logic yet, `grade` is always `false`
+- Healthz: `/healthz` → `{"status":"ok"}`
+- One relay-grader instance runs per lab environment (sidecar, bootstrap only — labenv-operator wiring to actually deploy it is not yet implemented); `RELAY_MY_NAMESPACE` and `RELAY_TASKS_FILE` are required env vars; `RELAY_MY_ATTEMPT_ID`/`RELAY_MY_OWNER_ID` required unless `RELAY_SKIP_AUTH=true`
+- `tasks.json` schema: array of `{id, type, template}` strings; `type` must currently be `"term"`
 
 ## Auth message format (relay-ssh)
 First WebSocket message: `<pb_token>\n<secret>`

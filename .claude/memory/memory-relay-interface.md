@@ -75,3 +75,15 @@ Client can proactively send in-band: `\x00REFRESH\n<token>` — relay validates 
 - One SSH session per WebSocket connection; multiple tabs = multiple connections
 - No multiplexing
 - Backend unavailability does not crash relay; new connections queue until backend recovers; active sessions are unaffected
+
+## Internal: relay-exec → relay-grader forwarding (not client-facing)
+
+**Port:** relay-grader listens on `RELAY_GRADER_INTERNAL_PORT` (default 8081), a plain TCP listener separate from its HTTP/WS port (8080). No auth beyond NetworkPolicy — only pods labeled `app: relay-exec` in the same namespace can reach this port.
+
+**Protocol:** newline-delimited JSON, one message per line: `{"asset":"<assetName>","data":"<raw chunk>"}\n`. `data` is a raw, possibly mid-line, PTY output chunk — relay-exec does no line-splitting; relay-grader reassembles per-asset and splits on `\n` itself.
+
+**Delivery guarantee:** fire-and-forget, best-effort only. relay-exec's `Forwarder.Send` never blocks and drops messages if disconnected or the internal channel (cap 256) is full. relay-exec's terminal sessions are completely unaffected by relay-grader being down, slow, or absent (`RELAY_GRADER_ADDR` unset → no-op forwarder, nothing dialed).
+
+**Grading:** relay-grader strips ANSI escapes, keeps a 10-line ring buffer per asset, and re-runs every not-yet-passed task's compiled regex (`Task.Template`) against the relevant buffer(s) whenever new lines arrive. Asset-scoped tasks (`Task.Asset != ""`) match only that asset's buffer; lab-wide tasks match any asset's buffer. Grades are sticky (`false → true` only, never revert) and reset to all-false on relay-grader restart (in-memory only, no persistence).
+
+**Push updates:** `/relay/grade/{attemptID}/` clients now receive more than one message per connection — an initial bootstrap snapshot, then a fresh full grade map broadcast every time any task's grade changes. Frontend's existing wholesale-replace `onmessage` handler already supports this.

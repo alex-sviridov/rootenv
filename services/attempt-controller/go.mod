@@ -1,6 +1,6 @@
 module github.com/alex-sviridov/rootenv/services/attempt-controller
 
-go 1.25.0
+go 1.26.5
 
 require (
 	k8s.io/apimachinery v0.32.5

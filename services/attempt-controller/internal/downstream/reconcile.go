@@ -33,6 +33,7 @@ type Attempt struct {
 	DesiredState       string
 	DecommissionReason string
 	Environment        EnvironmentSpec
+	Exercises          []Exercise
 }
 
 type EnvironmentSpec struct {
@@ -50,6 +51,16 @@ type Asset struct {
 	RelayProtocols []string `json:"protocols"`
 }
 
+// Exercise is a gradeable item embedded in a lab's task markdown, extracted
+// by scripts/labs_sync_exercises.py at sync time.
+type Exercise struct {
+	ID          string `json:"id"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+	Asset       string `json:"asset,omitempty"`
+	Template    string `json:"template"`
+}
+
 // Reconciler applies attempt state to Kubernetes LabEnvironment resources.
 type Reconciler struct {
 	dyn dynamic.Interface
@@ -62,7 +73,7 @@ func NewReconciler(dyn dynamic.Interface, pb PocketBaseClient) *Reconciler {
 
 // toLabEnvironment translates an Attempt into a LabEnvironment custom resource
 // (lab.rootenv.io/v1alpha1). Field names must be kept in sync with
-// LabEnvironmentSpec/Asset in services/labenv-operator/api/v1alpha1/labenvironment_types.go.
+// LabEnvironmentSpec/Asset/Exercise in services/labenv-operator/api/v1alpha1/labenvironment_types.go.
 func (r *Reconciler) toLabEnvironment(a Attempt) *unstructured.Unstructured {
 	assets := make([]any, 0, len(a.Environment.Assets))
 	for _, assetItem := range a.Environment.Assets {
@@ -80,6 +91,16 @@ func (r *Reconciler) toLabEnvironment(a Attempt) *unstructured.Unstructured {
 			"protocols": protocols,
 		})
 	}
+	exercises := make([]any, 0, len(a.Exercises))
+	for _, ex := range a.Exercises {
+		exercises = append(exercises, map[string]any{
+			"id":          ex.ID,
+			"description": ex.Description,
+			"type":        ex.Type,
+			"asset":       ex.Asset,
+			"template":    ex.Template,
+		})
+	}
 	return &unstructured.Unstructured{
 		Object: map[string]any{
 			"apiVersion": "lab.rootenv.io/v1alpha1",
@@ -93,6 +114,7 @@ func (r *Reconciler) toLabEnvironment(a Attempt) *unstructured.Unstructured {
 				"labId":     a.LabID,
 				"ttl":       a.Environment.Duration,
 				"assets":    assets,
+				"exercises": exercises,
 			},
 		},
 	}

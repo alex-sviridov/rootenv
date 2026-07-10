@@ -85,6 +85,46 @@ func TestToLabEnvironmentIncludesAssetSetup(t *testing.T) {
 	}
 }
 
+func TestToLabEnvironmentIncludesExercises(t *testing.T) {
+	r, _, _ := newReconcilerWithFake()
+	a := Attempt{
+		ID:     "a1",
+		UserID: "u1",
+		LabID:  "rhcsa-lab1",
+		Exercises: []Exercise{
+			{ID: "1.1", Description: "Create a file", Type: "term", Asset: "server-0", Template: "test -f /tmp/x"},
+			{ID: "1.2", Description: "No asset filter", Type: "term", Template: "echo hi"},
+		},
+	}
+
+	obj := r.toLabEnvironment(a)
+
+	spec := obj.Object["spec"].(map[string]any)
+	exercises := spec["exercises"].([]any)
+	if len(exercises) != 2 {
+		t.Fatalf("len(exercises) = %d, want 2", len(exercises))
+	}
+	first := exercises[0].(map[string]any)
+	if first["id"] != "1.1" || first["description"] != "Create a file" || first["type"] != "term" ||
+		first["asset"] != "server-0" || first["template"] != "test -f /tmp/x" {
+		t.Errorf("unexpected exercises[0]: %+v", first)
+	}
+	second := exercises[1].(map[string]any)
+	if second["asset"] != "" {
+		t.Errorf("exercises[1].asset = %q, want empty", second["asset"])
+	}
+}
+
+func TestToLabEnvironmentEmptyExercisesIsEmptySlice(t *testing.T) {
+	r, _, _ := newReconcilerWithFake()
+	obj := r.toLabEnvironment(Attempt{ID: "a1"})
+	spec := obj.Object["spec"].(map[string]any)
+	exercises := spec["exercises"].([]any)
+	if len(exercises) != 0 {
+		t.Errorf("exercises = %v, want empty", exercises)
+	}
+}
+
 func TestReconcileAttemptDecommissionedDeletesLabEnvironment(t *testing.T) {
 	r, dyn, _ := newReconcilerWithFake()
 

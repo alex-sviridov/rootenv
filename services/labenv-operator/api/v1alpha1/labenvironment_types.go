@@ -40,6 +40,8 @@ type LabEnvironmentSpec struct {
 	TTL int32 `json:"ttl,omitempty"`
 	// Assets is a list of assets that should be provisioned as part of this lab environment.
 	Assets []Asset `json:"assets"`
+	// Exercises is a list of gradeable exercises extracted from the lab's task markdown.
+	Exercises []Exercise `json:"exercises,omitempty"`
 }
 
 // Asset defines a single asset to be provisioned as part of the lab environment, such as a VM or container.
@@ -63,6 +65,24 @@ type Asset struct {
 	Protocols []string `json:"protocols,omitempty"`
 	// Setup is an optional script that should be executed to set up the asset after it is provisioned.
 	Setup string `json:"setup,omitempty"`
+}
+
+// Exercise is a gradeable item embedded in a lab's task markdown, copied
+// verbatim from the labs PocketBase record's `exercises` field via
+// attempt-controller.
+type Exercise struct {
+	// ID identifies this exercise, computed as "<task#>.<exercise#>" at lab-sync time.
+	ID string `json:"id"`
+	// Description is shown to the user; never used by the grader itself.
+	Description string `json:"description"`
+	// Type must currently be "term" — the only type relay-grader supports.
+	Type string `json:"type"`
+	// Asset optionally scopes this exercise's check to one asset's terminal.
+	// Empty means the grader does not filter by terminal.
+	Asset string `json:"asset,omitempty"`
+	// Template is a regular expression matched against the terminal's output
+	// history (for type "term"); satisfied once it matches anywhere in the scrollback.
+	Template string `json:"template"`
 }
 
 // LabEnvironmentStatus defines the observed state of LabEnvironment.

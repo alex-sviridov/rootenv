@@ -33,12 +33,11 @@ type Handler struct {
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	assetName := strings.Trim(r.PathValue("assetName"), "/")
-	if assetName == "" {
-		http.Error(w, "missing asset name", http.StatusBadRequest)
-		return
-	}
 
-	log := slog.With("asset", assetName, "remote", r.RemoteAddr)
+	log := slog.With("remote", r.RemoteAddr)
+	if assetName != "" {
+		log = log.With("asset", assetName)
+	}
 
 	acceptOpts := &websocket.AcceptOptions{}
 	if len(h.AllowedOrigins) > 0 {

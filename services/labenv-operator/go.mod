@@ -1,6 +1,6 @@
 module github.com/alex-sviridov/rootenv/services/labenv-operator
 
-go 1.25.7
+go 1.26.5
 
 require (
 	github.com/onsi/ginkgo/v2 v2.27.2

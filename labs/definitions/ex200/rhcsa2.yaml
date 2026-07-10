@@ -101,8 +101,6 @@ environment:
   assets:
     - name: server-0
       image: ubuntu
-      platform: container
-      ssh_user: lab
       cpu: 100m
       memory: 128Mi
       disk: 5Gi

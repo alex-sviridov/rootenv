@@ -10,6 +10,8 @@ from pathlib import Path
 
 import yaml
 
+from labs_sync_exercises import extract_exercises, validate_exercise_assets, rewrite_content_with_placeholders
+
 _SLUG_RE = re.compile(r'^[A-Za-z0-9]+$')
 
 THIS_DIR = Path(__file__).parent
@@ -168,6 +170,13 @@ def validate_lab(path: Path) -> bool:
                         setup = a.get("setup")
                         if setup is not None and not isinstance(setup, str):
                             errors.append(f"environment.assets[{i}].setup must be a string")
+                if isinstance(content, list):
+                    try:
+                        exercises = extract_exercises(content)
+                        asset_names = {a.get("name") for a in assets if isinstance(a, dict)}
+                        errors.extend(validate_exercise_assets(exercises, asset_names))
+                    except ValueError as e:
+                        errors.append(f"exercise parse error: {e}")
         except yaml.YAMLError as e:
             errors.append(f"YAML parse error: {e}")
         except OSError as e:
@@ -230,11 +239,16 @@ def upsert_lab(token, path: Path):
     with open(path) as f:
         doc = yaml.safe_load(f)
 
+    content = doc.get("content", [])
+    exercises = extract_exercises(content)
+    rewritten_content = rewrite_content_with_placeholders(content)
+
     record = {
         "title": doc["meta"]["title"],
         "description": doc["meta"].get("description", ""),
-        "content": doc.get("content", []),
+        "content": rewritten_content,
         "environment": doc.get("environment", {}),
+        "exercises": exercises,
         "type": "lab",
         "parent": parent,
         "slug": slug,

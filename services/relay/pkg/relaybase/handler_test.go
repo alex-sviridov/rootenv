@@ -180,6 +180,42 @@ func TestHandler_skip_auth_calls_backend(t *testing.T) {
 	fb.mu.Unlock()
 }
 
+func TestHandler_no_asset_name_in_route(t *testing.T) {
+	fb := &fakeBackend{}
+	h := makeHandler(fb, "atm_123", "usr_abc", 2*time.Second)
+
+	mux := http.NewServeMux()
+	mux.Handle("/relay/grade/{attemptID}/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Set("X-Attempt-Id", "atm_123")
+		r.Header.Set("X-User-Id", "usr_abc")
+		h.ServeHTTP(w, r)
+	}))
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/relay/grade/atm_123/", nil)
+	if err != nil {
+		t.Fatalf("dial failed: %v", err)
+	}
+	defer func() { _ = conn.CloseNow() }()
+
+	if err := conn.Write(context.Background(), websocket.MessageText, []byte("sometoken")); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	if !fb.wasCalled() {
+		t.Error("Backend.Serve was not called")
+	}
+	fb.mu.Lock()
+	if fb.assetName != "" {
+		t.Errorf("assetName: got %q, want empty string", fb.assetName)
+	}
+	fb.mu.Unlock()
+}
+
 func TestHandler_skip_auth_ignores_wrong_attempt_id(t *testing.T) {
 	fb := &fakeBackend{}
 	h := &relaybase.Handler{

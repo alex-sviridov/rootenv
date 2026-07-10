@@ -99,11 +99,16 @@ spec:
             cpu: 10m
             memory: 64Mi
         env:
-          - name: RELAY_IMAGE
+          - name: RELAY_EXEC_IMAGE
             valueFrom:
               configMapKeyRef:
-                name: relay-exec-image
-                key: image
+                name: relay-images
+                key: exec
+          - name: RELAY_GRADER_IMAGE
+            valueFrom:
+              configMapKeyRef:
+                name: relay-images
+                key: grader
         volumeMounts:
           - name: lab-images
             mountPath: /etc/lab-images

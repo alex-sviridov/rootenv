@@ -642,7 +642,7 @@ Also add a new `It` block in `Describe("loadRelayConfig"` to assert the middlewa
 
 ```go
 It("includes the relay auth middleware annotation by default", func() {
-    os.Setenv("RELAY_IMAGE", "img:tag")
+    os.Setenv("RELAY_EXEC_IMAGE", "img:tag")
     cfg, err := loadRelayConfig()
     Expect(err).NotTo(HaveOccurred())
     Expect(cfg.ingressAnnotations).To(HaveKeyWithValue(
@@ -666,12 +666,12 @@ In `services/labenv-operator/internal/controller/relay.go`, replace the `loadRel
 
 ```go
 func loadRelayConfig() (relayConfig, error) {
-	image := os.Getenv("RELAY_IMAGE")
+	image := os.Getenv("RELAY_EXEC_IMAGE")
 	if image == "" {
-		return relayConfig{}, fmt.Errorf("RELAY_IMAGE env var is required")
+		return relayConfig{}, fmt.Errorf("RELAY_EXEC_IMAGE env var is required")
 	}
 
-	basePath := os.Getenv("RELAY_INGRESS_BASE_PATH")
+	basePath := os.Getenv("RELAY_EXEC_INGRESS_BASE_PATH")
 	if basePath == "" {
 		basePath = "/relay/exec"
 	}

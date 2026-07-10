@@ -14,7 +14,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -97,6 +96,9 @@ func (r *LabEnvironmentReconciler) reconcileCreate(ctx context.Context, env *lab
 		return ctrl.Result{}, err
 	}
 	if err := r.ensureRelay(ctx, env, nsName); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.ensureRelayGrader(ctx, env, nsName); err != nil {
 		return ctrl.Result{}, err
 	}
 	// get asset status
@@ -376,7 +378,7 @@ func (r *LabEnvironmentReconciler) ensureNetworkPolicy(ctx context.Context, nsNa
 	return err
 }
 
-func protocolPtr(p corev1.Protocol) *corev1.Protocol { return &p }
+func protocolPtr(p corev1.Protocol) *corev1.Protocol { return new(p) }
 func portPtr(p int32) *intstr.IntOrString            { v := intstr.FromInt32(p); return &v }
 
 // ensureResourceQuota caps total resource usage in the namespace, protecting the cluster from a broken lab definition.
@@ -488,11 +490,11 @@ func (r *LabEnvironmentReconciler) ensurePod(ctx context.Context, env *labv1alph
 			// Never: pod is not restarted on failure; a crashed lab is recreated, not revived
 			RestartPolicy: corev1.RestartPolicyNever,
 			// hostUsers: false maps container root to an unprivileged UID on the host
-			HostUsers:                    ptr.To(false),
+			HostUsers:                    new(false),
 			HostNetwork:                  false,
 			HostPID:                      false,
 			HostIPC:                      false,
-			AutomountServiceAccountToken: ptr.To(false),
+			AutomountServiceAccountToken: new(false),
 			// SecurityContext with SeccompProfile set to RuntimeDefault applies the default seccomp profile to all containers in the pod, providing a baseline level of security.
 			SecurityContext: &corev1.PodSecurityContext{
 				SeccompProfile: &corev1.SeccompProfile{

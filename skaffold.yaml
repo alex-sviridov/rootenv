@@ -35,6 +35,10 @@ build:
       context: services/relay
       docker:
         dockerfile: exec/Dockerfile
+    - image: relay-grader
+      context: services/relay
+      docker:
+        dockerfile: grader/Dockerfile
     - image: relay-authenticator
       context: services/relay-authenticator
       docker:
@@ -53,7 +57,10 @@ manifests:
 resourceSelector:
   allow:
     - groupKind: "ConfigMap"
-      image: [".data.image", ".data.ubuntu-sshd"]
+      image: 
+        - ".data.exec"
+        - ".data.grader"
+        - ".data.ubuntu-sshd"
 
 profiles:
   - name: sandbox

@@ -28,6 +28,7 @@ Synced from `labs/` YAML on every backend startup. Do not edit via UI.
 | description | text | |
 | content | json | array of `{title, content}` tasks |
 | environment | json | lab environment spec (`{duration, assets:[...]}`) — never sent to frontend |
+| exercises | json | array of `{id, description, type, asset?, template}`, written by labs-sync.py only; never exposed via `labs_userview` |
 | parent | relation → labs | optional |
 
 Rules:

@@ -12,7 +12,7 @@ resources:
   - 40-backend-ingress.yaml
   - 49-frontend-ingress.yaml
   - ../../services/labenv-operator/config/default
-  - 55-relay-exec-image.yaml
+  - 55-relay-images.yaml
   - 56-lab-images.yaml
   - 50-attempt-controller-secrets.yaml
   - 51-attempt-controller-serviceaccount.yaml

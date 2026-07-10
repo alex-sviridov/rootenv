@@ -321,6 +321,19 @@ func TestToAttemptEnvironmentParsed(t *testing.T) {
 	}
 }
 
+func TestToAttemptParsesExercises(t *testing.T) {
+	rec := AttemptRecord{ID: "a1"}
+	rec.Expand.Lab.Exercises = []byte(`[{"id":"1.1","description":"d","type":"term","template":"echo hi"}]`)
+
+	a, err := rec.ToAttempt()
+	if err != nil {
+		t.Fatalf("ToAttempt failed: %v", err)
+	}
+	if len(a.Exercises) != 1 || a.Exercises[0].ID != "1.1" {
+		t.Errorf("Exercises = %+v", a.Exercises)
+	}
+}
+
 func TestPatchAttemptReauthsOn401(t *testing.T) {
 	var authCalls int
 	var patchCalls int

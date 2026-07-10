@@ -10,6 +10,7 @@ images:
   - name: labenv-operator
   - name: attempt-controller
   - name: relay-exec
+  - name: relay-grader
   - name: relay-authenticator
 
 patches:
@@ -36,5 +37,5 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value:
-          name: RELAY_INGRESS_BASE_PATH
+          name: RELAY_EXEC_INGRESS_BASE_PATH
           value: "/relay/exec"

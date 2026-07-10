@@ -15,7 +15,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -40,12 +39,12 @@ type relayConfig struct {
 }
 
 func loadRelayConfig() (relayConfig, error) {
-	image := os.Getenv("RELAY_IMAGE")
+	image := os.Getenv("RELAY_EXEC_IMAGE")
 	if image == "" {
-		return relayConfig{}, fmt.Errorf("RELAY_IMAGE env var is required")
+		return relayConfig{}, fmt.Errorf("RELAY_EXEC_IMAGE env var is required")
 	}
 
-	basePath := os.Getenv("RELAY_INGRESS_BASE_PATH")
+	basePath := os.Getenv("RELAY_EXEC_INGRESS_BASE_PATH")
 	if basePath == "" {
 		basePath = "/relay/exec"
 	}
@@ -202,7 +201,7 @@ func (r *LabEnvironmentReconciler) ensureRelayDeployment(ctx context.Context, en
 			Labels:    map[string]string{"app": "relay-exec"},
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: ptr.To(int32(1)),
+			Replicas: new(int32(1)),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{"app": "relay-exec"},
 			},
@@ -213,8 +212,8 @@ func (r *LabEnvironmentReconciler) ensureRelayDeployment(ctx context.Context, en
 				Spec: corev1.PodSpec{
 					ServiceAccountName: "relay",
 					SecurityContext: &corev1.PodSecurityContext{
-						RunAsNonRoot: ptr.To(true),
-						RunAsUser:    ptr.To(int64(10001)),
+						RunAsNonRoot: new(true),
+						RunAsUser:    new(int64(10001)),
 						SeccompProfile: &corev1.SeccompProfile{
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
@@ -228,10 +227,11 @@ func (r *LabEnvironmentReconciler) ensureRelayDeployment(ctx context.Context, en
 								{Name: "RELAY_MY_NAMESPACE", Value: nsName},
 								{Name: "RELAY_MY_ATTEMPT_ID", Value: env.Name},
 								{Name: "RELAY_MY_OWNER_ID", Value: env.Spec.OwnerId},
+								{Name: "RELAY_GRADER_ADDR", Value: "relay-grader:8081"},
 							},
 							SecurityContext: &corev1.SecurityContext{
-								AllowPrivilegeEscalation: ptr.To(false),
-								ReadOnlyRootFilesystem:   ptr.To(true),
+								AllowPrivilegeEscalation: new(false),
+								ReadOnlyRootFilesystem:   new(true),
 								Capabilities: &corev1.Capabilities{
 									Drop: []corev1.Capability{"ALL"},
 								},
@@ -380,6 +380,7 @@ func (r *LabEnvironmentReconciler) ensureRelayNetworkPolicy(ctx context.Context,
 
 	tcp := corev1.ProtocolTCP
 	wsPort := intstr.FromInt32(8080)
+	graderPortVal := intstr.FromInt32(8081)
 
 	notRelayExec := metav1.LabelSelectorRequirement{
 		Key:      "app",
@@ -438,6 +439,17 @@ func (r *LabEnvironmentReconciler) ensureRelayNetworkPolicy(ctx context.Context,
 					}},
 					Ports: []networkingv1.NetworkPolicyPort{
 						{Protocol: &tcp, Port: &apiPortVal},
+					},
+				},
+				// reach relay-grader's internal port to forward terminal output
+				{
+					To: []networkingv1.NetworkPolicyPeer{{
+						PodSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"app": "relay-grader"},
+						},
+					}},
+					Ports: []networkingv1.NetworkPolicyPort{
+						{Protocol: &tcp, Port: &graderPortVal},
 					},
 				},
 			},

@@ -21,6 +21,7 @@ type config struct {
 	namespace      string
 	attemptID      string
 	ownerID        string
+	graderAddr     string
 	skipAuth       bool
 	allowedOrigins []string
 	logLevel       slog.Level
@@ -50,6 +51,8 @@ func loadConfig() (config, bool) {
 		return config{}, false
 	}
 
+	graderAddr := os.Getenv("RELAY_GRADER_ADDR") // optional — empty disables grading forwarding
+
 	port := os.Getenv("RELAY_LISTEN_PORT")
 	if port == "" {
 		port = "8080"
@@ -69,6 +72,7 @@ func loadConfig() (config, bool) {
 		namespace:      namespace,
 		attemptID:      attemptID,
 		ownerID:        ownerID,
+		graderAddr:     graderAddr,
 		skipAuth:       skipAuth,
 		allowedOrigins: origins,
 		logLevel:       level,
@@ -97,9 +101,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	forwarder := exec.NewForwarder(cfg.graderAddr, slog.Default())
+	defer forwarder.Close()
+
 	backend := exec.Backend{
 		Namespace: cfg.namespace,
 		Execer:    kubeExecer,
+		Forwarder: forwarder,
 		Log:       slog.Default().With("namespace", cfg.namespace),
 	}
 	limiter := relaybase.NewConnLimiter(16)
@@ -131,7 +139,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	slog.Info("relay-exec starting", "port", cfg.port, "skip_auth", cfg.skipAuth, "attempt_id", cfg.attemptID, "namespace", cfg.namespace)
+	slog.Info("relay-exec starting", "port", cfg.port, "skip_auth", cfg.skipAuth, "attempt_id", cfg.attemptID, "namespace", cfg.namespace, "grader_addr", cfg.graderAddr)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("server error", "err", err)

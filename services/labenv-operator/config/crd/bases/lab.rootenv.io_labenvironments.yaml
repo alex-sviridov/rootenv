@@ -111,6 +111,44 @@ spec:
                   - name
                   type: object
                 type: array
+              exercises:
+                description: Exercises is a list of gradeable exercises extracted
+                  from the lab's task markdown.
+                items:
+                  description: |-
+                    Exercise is a gradeable item embedded in a lab's task markdown, copied
+                    verbatim from the labs PocketBase record's `exercises` field via
+                    attempt-controller.
+                  properties:
+                    asset:
+                      description: |-
+                        Asset optionally scopes this exercise's check to one asset's terminal.
+                        Empty means the grader does not filter by terminal.
+                      type: string
+                    description:
+                      description: Description is shown to the user; never used by
+                        the grader itself.
+                      type: string
+                    id:
+                      description: ID identifies this exercise, computed as "<task#>.<exercise#>"
+                        at lab-sync time.
+                      type: string
+                    template:
+                      description: |-
+                        Template is a regular expression matched against the terminal's output
+                        history (for type "term"); satisfied once it matches anywhere in the scrollback.
+                      type: string
+                    type:
+                      description: Type must currently be "term" — the only type relay-grader
+                        supports.
+                      type: string
+                  required:
+                  - description
+                  - id
+                  - template
+                  - type
+                  type: object
+                type: array
               labId:
                 description: LabId identifies which lab definition to provision.
                 maxLength: 63
