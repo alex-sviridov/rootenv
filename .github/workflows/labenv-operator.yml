@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.26'
+          go-version: '1.26.5'
           cache-dependency-path: services/labenv-operator/go.sum
       - name: Verify generated code & manifests are up to date
         working-directory: services/labenv-operator
@@ -51,7 +51,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.26'
+          go-version: '1.26.5'
           cache-dependency-path: services/labenv-operator/go.sum
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
@@ -66,7 +66,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.26'
+          go-version: '1.26.5'
           cache-dependency-path: services/labenv-operator/go.sum
       - name: Run govulncheck
         working-directory: services/labenv-operator
