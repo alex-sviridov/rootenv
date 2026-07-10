@@ -88,7 +88,7 @@ func TestForwarder_delivers_to_listening_server(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		scanner := bufio.NewScanner(conn)
 		if scanner.Scan() {
 			received <- scanner.Text()
