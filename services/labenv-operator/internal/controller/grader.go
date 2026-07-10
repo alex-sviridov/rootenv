@@ -140,7 +140,7 @@ func (r *LabEnvironmentReconciler) ensureRelayGraderDeployment(ctx context.Conte
 			Labels:    map[string]string{"app": "relay-grader"},
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: ptr.To(int32(1)),
+			Replicas: new(int32(1)),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{"app": "relay-grader"},
 			},
@@ -150,8 +150,8 @@ func (r *LabEnvironmentReconciler) ensureRelayGraderDeployment(ctx context.Conte
 				},
 				Spec: corev1.PodSpec{
 					SecurityContext: &corev1.PodSecurityContext{
-						RunAsNonRoot: ptr.To(true),
-						RunAsUser:    ptr.To(int64(10001)),
+						RunAsNonRoot: new(true),
+						RunAsUser:    new(int64(10001)),
 						SeccompProfile: &corev1.SeccompProfile{
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},

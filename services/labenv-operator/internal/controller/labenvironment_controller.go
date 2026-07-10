@@ -379,7 +379,7 @@ func (r *LabEnvironmentReconciler) ensureNetworkPolicy(ctx context.Context, nsNa
 	return err
 }
 
-func protocolPtr(p corev1.Protocol) *corev1.Protocol { return &p }
+func protocolPtr(p corev1.Protocol) *corev1.Protocol { return new(p) }
 func portPtr(p int32) *intstr.IntOrString            { v := intstr.FromInt32(p); return &v }
 
 // ensureResourceQuota caps total resource usage in the namespace, protecting the cluster from a broken lab definition.

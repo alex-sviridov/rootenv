@@ -41,7 +41,7 @@ func ServeInternalListener(ctx context.Context, ln net.Listener, backend *Backen
 }
 
 func handleForwarderConn(conn net.Conn, backend *Backend, log *slog.Logger) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	scanner := bufio.NewScanner(conn)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {

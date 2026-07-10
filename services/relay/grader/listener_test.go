@@ -28,7 +28,7 @@ func TestListenAndServeInternal_ingests_valid_lines(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	msg, _ := json.Marshal(map[string]string{"asset": "main", "data": "MARKER\n"})
 	if _, err := conn.Write(append(msg, '\n')); err != nil {
@@ -63,7 +63,7 @@ func TestListenAndServeInternal_skips_malformed_line_without_closing_connection(
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if _, err := conn.Write([]byte("not valid json\n")); err != nil {
 		t.Fatalf("write malformed: %v", err)

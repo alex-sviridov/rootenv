@@ -1,0 +1,415 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controller
+
+import (
+	"context"
+	"os"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	labv1alpha1 "github.com/alex-sviridov/rootenv/services/labenv-operator/api/v1alpha1"
+)
+
+var _ = Describe("ensureRelay", func() {
+	ctx := context.Background()
+
+	BeforeEach(func() {
+		DeferCleanup(func() {
+			Expect(os.Unsetenv("RELAY_EXEC_IMAGE")).To(Succeed())
+			Expect(os.Unsetenv("RELAY_INGRESS_CLASS")).To(Succeed())
+			Expect(os.Unsetenv("RELAY_EXEC_INGRESS_BASE_PATH")).To(Succeed())
+			Expect(os.Unsetenv("RELAY_INGRESS_ANNOTATIONS")).To(Succeed())
+		})
+		Expect(os.Setenv("RELAY_EXEC_IMAGE", "relay-exec:test")).To(Succeed())
+		Expect(os.Setenv("RELAY_INGRESS_CLASS", "traefik")).To(Succeed())
+		Expect(os.Setenv("RELAY_EXEC_INGRESS_BASE_PATH", "/relay/exec")).To(Succeed())
+		Expect(os.Setenv("RELAY_INGRESS_ANNOTATIONS", "traefik.ingress.kubernetes.io/router.entrypoints=websecure")).To(Succeed())
+	})
+
+	It("creates all relay resources", func() {
+		envName := "relay-resources-test"
+		nsName := "rootenv-lab-" + envName
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
+
+		env := &labv1alpha1.LabEnvironment{
+			ObjectMeta: metav1.ObjectMeta{Name: envName},
+			Spec: labv1alpha1.LabEnvironmentSpec{
+				OwnerId: "usr-test",
+				LabId:   "test-lab",
+				Assets:  []labv1alpha1.Asset{{Name: "main", Image: "busybox"}},
+			},
+		}
+
+		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		Expect(r.ensureRelay(ctx, env, nsName)).To(Succeed())
+
+		By("ServiceAccount relay exists")
+		var sa corev1.ServiceAccount
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay"}, &sa)).To(Succeed())
+
+		By("Role relay exists with correct rules")
+		var role rbacv1.Role
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay"}, &role)).To(Succeed())
+		Expect(role.Rules).To(HaveLen(2))
+
+		By("RoleBinding relay exists")
+		var rb rbacv1.RoleBinding
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay"}, &rb)).To(Succeed())
+		Expect(rb.Subjects[0].Name).To(Equal("relay"))
+
+		By("Deployment relay-exec exists with correct image and env")
+		var deploy appsv1.Deployment
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay-exec"}, &deploy)).To(Succeed())
+		Expect(deploy.Spec.Template.Spec.Containers[0].Image).To(Equal("relay-exec:test"))
+		Expect(deploy.Spec.Template.Spec.Containers[0].Env).To(ContainElements(
+			corev1.EnvVar{Name: "RELAY_MY_NAMESPACE", Value: nsName},
+			corev1.EnvVar{Name: "RELAY_MY_ATTEMPT_ID", Value: envName},
+			corev1.EnvVar{Name: "RELAY_MY_OWNER_ID", Value: "usr-test"},
+		))
+		Expect(deploy.Spec.Template.Spec.Containers[0].Env).To(ContainElement(
+			corev1.EnvVar{Name: "RELAY_GRADER_ADDR", Value: "relay-grader:8081"},
+		))
+
+		By("Service relay exists")
+		var svc corev1.Service
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay"}, &svc)).To(Succeed())
+		Expect(svc.Spec.Ports[0].Port).To(Equal(int32(8080)))
+
+		By("Ingress relay exists with correct path and annotation")
+		var ing networkingv1.Ingress
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay"}, &ing)).To(Succeed())
+		Expect(ing.Spec.Rules[0].HTTP.Paths[0].Path).To(Equal("/relay/exec/" + envName))
+		Expect(ing.Annotations).To(HaveKey("traefik.ingress.kubernetes.io/router.entrypoints"))
+		Expect(*ing.Spec.IngressClassName).To(Equal("traefik"))
+
+		By("NetworkPolicy networkpolicy-relay-exec exists with correct pod selector")
+		var np networkingv1.NetworkPolicy
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "networkpolicy-relay-exec"}, &np)).To(Succeed())
+		Expect(np.Spec.PodSelector.MatchLabels).To(HaveKeyWithValue("app", "relay-exec"))
+
+		By("ensureRelay is idempotent — second call does not error")
+		Expect(r.ensureRelay(ctx, env, nsName)).To(Succeed())
+	})
+
+	It("returns error when RELAY_EXEC_IMAGE is missing", func() {
+		Expect(os.Unsetenv("RELAY_EXEC_IMAGE")).To(Succeed())
+		envName := "relay-missing-image-test"
+		env := &labv1alpha1.LabEnvironment{
+			ObjectMeta: metav1.ObjectMeta{Name: envName},
+			Spec: labv1alpha1.LabEnvironmentSpec{
+				OwnerId: "usr-test",
+				LabId:   "lab",
+				Assets:  []labv1alpha1.Asset{{Name: "m", Image: "b"}},
+			},
+		}
+		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		Expect(r.ensureRelay(ctx, env, "rootenv-lab-"+envName)).To(MatchError(ContainSubstring("RELAY_EXEC_IMAGE")))
+	})
+})
+
+var _ = Describe("apiServerEndpoint", func() {
+	ctx := context.Background()
+	r := &LabEnvironmentReconciler{}
+
+	BeforeEach(func() {
+		r = &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+	})
+
+	It("returns the IP and port from the kubernetes Endpoints", func() {
+		ip, port, err := r.apiServerEndpoint(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ip).NotTo(BeEmpty())
+		Expect(port).To(BeNumerically(">", 0))
+	})
+})
+
+var _ = Describe("ensureRelayNetworkPolicy", func() {
+	ctx := context.Background()
+
+	It("creates the network policy with correct shape", func() {
+		nsName := "rootenv-lab-np-shape-test"
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
+
+		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+
+		ip, port, err := r.apiServerEndpoint(ctx)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(r.ensureRelayNetworkPolicy(ctx, nsName, relayConfig{ingressControllerNamespace: "kube-system"})).To(Succeed())
+
+		var np networkingv1.NetworkPolicy
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "networkpolicy-relay-exec"}, &np)).To(Succeed())
+
+		By("pod selector targets relay-exec only")
+		Expect(np.Spec.PodSelector.MatchLabels).To(HaveKeyWithValue("app", "relay-exec"))
+
+		By("both Ingress and Egress policy types are set")
+		Expect(np.Spec.PolicyTypes).To(ConsistOf(
+			networkingv1.PolicyTypeIngress,
+			networkingv1.PolicyTypeEgress,
+		))
+
+		By("ingress allows port 8080 from kube-system only")
+		Expect(np.Spec.Ingress).To(HaveLen(1))
+		ingressRule := np.Spec.Ingress[0]
+		Expect(ingressRule.Ports).To(HaveLen(1))
+		Expect(ingressRule.Ports[0].Port.IntValue()).To(Equal(8080))
+		Expect(ingressRule.From).To(HaveLen(1))
+		Expect(ingressRule.From[0].NamespaceSelector.MatchLabels).To(HaveKeyWithValue(
+			"kubernetes.io/metadata.name", "kube-system",
+		))
+
+		By("egress has same-namespace pods rule (excluding relay-exec)")
+		var foundPodRule bool
+		for _, rule := range np.Spec.Egress {
+			for _, peer := range rule.To {
+				if peer.NamespaceSelector != nil && peer.PodSelector != nil {
+					Expect(peer.NamespaceSelector.MatchLabels).To(HaveKeyWithValue(
+						"kubernetes.io/metadata.name", nsName,
+					))
+					Expect(peer.PodSelector.MatchExpressions).To(HaveLen(1))
+					Expect(peer.PodSelector.MatchExpressions[0].Key).To(Equal("app"))
+					Expect(peer.PodSelector.MatchExpressions[0].Operator).To(Equal(metav1.LabelSelectorOpNotIn))
+					Expect(peer.PodSelector.MatchExpressions[0].Values).To(ConsistOf("relay-exec"))
+					foundPodRule = true
+				}
+			}
+		}
+		Expect(foundPodRule).To(BeTrue(), "expected egress rule allowing same-namespace non-relay-exec pods")
+
+		By("egress contains apiserver ipBlock with real post-DNAT IP and port")
+		var foundAPIRule bool
+		for _, rule := range np.Spec.Egress {
+			for _, peer := range rule.To {
+				if peer.IPBlock != nil && peer.IPBlock.CIDR == ip+"/32" {
+					Expect(rule.Ports).To(HaveLen(1))
+					Expect(rule.Ports[0].Port.IntValue()).To(Equal(int(port)))
+					foundAPIRule = true
+				}
+			}
+		}
+		Expect(foundAPIRule).To(BeTrue(), "expected egress rule with ipBlock %s/32 port %d", ip, port)
+
+		By("egress allows reaching relay-grader on port 8081")
+		var foundGraderRule bool
+		for _, rule := range np.Spec.Egress {
+			for _, peer := range rule.To {
+				if peer.PodSelector != nil && peer.PodSelector.MatchLabels["app"] == "relay-grader" {
+					Expect(rule.Ports).To(HaveLen(1))
+					Expect(rule.Ports[0].Port.IntValue()).To(Equal(8081))
+					foundGraderRule = true
+				}
+			}
+		}
+		Expect(foundGraderRule).To(BeTrue(), "expected egress rule allowing relay-grader on port 8081")
+	})
+
+	It("is idempotent — second call updates without error", func() {
+		nsName := "rootenv-lab-np-idempotent-test"
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
+
+		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		Expect(r.ensureRelayNetworkPolicy(ctx, nsName, relayConfig{ingressControllerNamespace: "kube-system"})).To(Succeed())
+		Expect(r.ensureRelayNetworkPolicy(ctx, nsName, relayConfig{ingressControllerNamespace: "kube-system"})).To(Succeed())
+	})
+})
+
+var _ = Describe("loadRelayConfig", func() {
+	AfterEach(func() {
+		Expect(os.Unsetenv("RELAY_EXEC_IMAGE")).To(Succeed())
+		Expect(os.Unsetenv("RELAY_INGRESS_CLASS")).To(Succeed())
+		Expect(os.Unsetenv("RELAY_EXEC_INGRESS_BASE_PATH")).To(Succeed())
+		Expect(os.Unsetenv("RELAY_INGRESS_ANNOTATIONS")).To(Succeed())
+	})
+
+	It("returns error when RELAY_EXEC_IMAGE is unset", func() {
+		_, err := loadRelayConfig()
+		Expect(err).To(MatchError(ContainSubstring("RELAY_EXEC_IMAGE")))
+	})
+
+	It("uses /relay/exec as default base path", func() {
+		Expect(os.Setenv("RELAY_EXEC_IMAGE", "img:tag")).To(Succeed())
+		cfg, err := loadRelayConfig()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.ingressBasePath).To(Equal("/relay/exec"))
+	})
+
+	It("parses multiple annotations from comma-separated string", func() {
+		Expect(os.Setenv("RELAY_EXEC_IMAGE", "img:tag")).To(Succeed())
+		Expect(os.Setenv("RELAY_INGRESS_ANNOTATIONS", "foo=bar,baz=qux,key=val=with=equals")).To(Succeed())
+		cfg, err := loadRelayConfig()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.ingressAnnotations).To(HaveKeyWithValue("foo", "bar"))
+		Expect(cfg.ingressAnnotations).To(HaveKeyWithValue("baz", "qux"))
+		Expect(cfg.ingressAnnotations).To(HaveKeyWithValue("key", "val=with=equals"))
+		Expect(cfg.ingressAnnotations).To(HaveKeyWithValue(
+			"traefik.ingress.kubernetes.io/router.middlewares",
+			"kube-system-relay-auth-middleware@kubernetescrd",
+		))
+	})
+
+	It("skips malformed annotation tokens (no = sign)", func() {
+		Expect(os.Setenv("RELAY_EXEC_IMAGE", "img:tag")).To(Succeed())
+		Expect(os.Setenv("RELAY_INGRESS_ANNOTATIONS", "good=value,badtoken,=emptykey")).To(Succeed())
+		cfg, err := loadRelayConfig()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.ingressAnnotations).To(HaveLen(2))
+		Expect(cfg.ingressAnnotations).To(HaveKeyWithValue("good", "value"))
+		Expect(cfg.ingressAnnotations).To(HaveKeyWithValue(
+			"traefik.ingress.kubernetes.io/router.middlewares",
+			"kube-system-relay-auth-middleware@kubernetescrd",
+		))
+	})
+
+	It("leaves ingressClass empty when RELAY_INGRESS_CLASS is unset", func() {
+		Expect(os.Setenv("RELAY_EXEC_IMAGE", "img:tag")).To(Succeed())
+		cfg, err := loadRelayConfig()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.ingressClass).To(BeEmpty())
+	})
+
+	It("includes the relay auth middleware annotation by default", func() {
+		Expect(os.Setenv("RELAY_EXEC_IMAGE", "img:tag")).To(Succeed())
+		cfg, err := loadRelayConfig()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.ingressAnnotations).To(HaveKeyWithValue(
+			"traefik.ingress.kubernetes.io/router.middlewares",
+			"kube-system-relay-auth-middleware@kubernetescrd",
+		))
+	})
+
+	It("uses RELAY_INGRESS_CONTROLLER_NAMESPACE override for the middleware annotation and controller namespace", func() {
+		Expect(os.Setenv("RELAY_EXEC_IMAGE", "img:tag")).To(Succeed())
+		Expect(os.Setenv("RELAY_INGRESS_CONTROLLER_NAMESPACE", "traefik-system")).To(Succeed())
+		DeferCleanup(func() { Expect(os.Unsetenv("RELAY_INGRESS_CONTROLLER_NAMESPACE")).To(Succeed()) })
+
+		cfg, err := loadRelayConfig()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.ingressControllerNamespace).To(Equal("traefik-system"))
+		Expect(cfg.ingressAnnotations).To(HaveKeyWithValue(
+			"traefik.ingress.kubernetes.io/router.middlewares",
+			"traefik-system-relay-auth-middleware@kubernetescrd",
+		))
+	})
+})
+
+var _ = Describe("ensureRelayIngress", func() {
+	ctx := context.Background()
+
+	BeforeEach(func() {
+		DeferCleanup(func() {
+			Expect(os.Unsetenv("RELAY_INGRESS_CLASS")).To(Succeed())
+			Expect(os.Unsetenv("RELAY_INGRESS_ANNOTATIONS")).To(Succeed())
+		})
+	})
+
+	It("sets ingressClassName when RELAY_INGRESS_CLASS is set", func() {
+		envName := "ing-test-classname"
+		nsName := "rootenv-lab-" + envName
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
+		Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, ns))).To(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, ns)
+		})
+
+		env := &labv1alpha1.LabEnvironment{
+			ObjectMeta: metav1.ObjectMeta{Name: envName},
+			Spec:       labv1alpha1.LabEnvironmentSpec{OwnerId: "usr", LabId: "lab"},
+		}
+
+		Expect(os.Setenv("RELAY_INGRESS_CLASS", "traefik")).To(Succeed())
+		cfg := relayConfig{ingressBasePath: "/relay/exec", ingressClass: "traefik"}
+		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		Expect(r.ensureRelayIngress(ctx, env, nsName, cfg)).To(Succeed())
+
+		var ing networkingv1.Ingress
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay"}, &ing)).To(Succeed())
+		Expect(ing.Spec.IngressClassName).NotTo(BeNil())
+		Expect(*ing.Spec.IngressClassName).To(Equal("traefik"))
+	})
+
+	It("leaves IngressClassName nil when RELAY_INGRESS_CLASS is unset", func() {
+		envName := "ing-test-noclass"
+		nsName := "rootenv-lab-" + envName
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
+		Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, ns))).To(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, ns)
+		})
+
+		env := &labv1alpha1.LabEnvironment{
+			ObjectMeta: metav1.ObjectMeta{Name: envName},
+			Spec:       labv1alpha1.LabEnvironmentSpec{OwnerId: "usr", LabId: "lab"},
+		}
+
+		cfg := relayConfig{ingressBasePath: "/relay/exec"}
+		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		Expect(r.ensureRelayIngress(ctx, env, nsName, cfg)).To(Succeed())
+
+		var ing networkingv1.Ingress
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay"}, &ing)).To(Succeed())
+		Expect(ing.Spec.IngressClassName).To(BeNil())
+	})
+
+	It("sets annotations from config", func() {
+		envName := "ing-test-annot"
+		nsName := "rootenv-lab-" + envName
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
+		Expect(client.IgnoreAlreadyExists(k8sClient.Create(ctx, ns))).To(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, ns)
+		})
+
+		env := &labv1alpha1.LabEnvironment{
+			ObjectMeta: metav1.ObjectMeta{Name: envName},
+			Spec:       labv1alpha1.LabEnvironmentSpec{OwnerId: "usr", LabId: "lab"},
+		}
+
+		cfg := relayConfig{
+			ingressBasePath: "/relay/exec",
+			ingressAnnotations: map[string]string{
+				"traefik.ingress.kubernetes.io/router.entrypoints": "websecure",
+				"traefik.ingress.kubernetes.io/router.middlewares": "kube-system-relay-auth-middleware@kubernetescrd",
+			},
+		}
+		r := &LabEnvironmentReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		Expect(r.ensureRelayIngress(ctx, env, nsName, cfg)).To(Succeed())
+
+		var ing networkingv1.Ingress
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: nsName, Name: "relay"}, &ing)).To(Succeed())
+		Expect(ing.Annotations).To(HaveKeyWithValue(
+			"traefik.ingress.kubernetes.io/router.entrypoints", "websecure",
+		))
+		Expect(ing.Annotations).To(HaveKeyWithValue(
+			"traefik.ingress.kubernetes.io/router.middlewares", "kube-system-relay-auth-middleware@kubernetescrd",
+		))
+	})
+})
