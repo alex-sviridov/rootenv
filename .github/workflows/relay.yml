@@ -80,6 +80,8 @@ jobs:
         include:
           - service: relay-exec
             dockerfile: services/relay/exec/Dockerfile
+          - service: relay-grader
+            dockerfile: services/relay/grader/Dockerfile
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
