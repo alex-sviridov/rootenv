@@ -580,7 +580,7 @@ func main() {
 Create `services/relay-authenticator/Dockerfile`:
 
 ```dockerfile
-FROM golang:1.26-alpine AS builder
+FROM golang:1.27-alpine AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -1316,7 +1316,7 @@ func main() {
 Create `services/relay/exec/Dockerfile`:
 
 ```dockerfile
-FROM golang:1.26-alpine AS builder
+FROM golang:1.27-alpine AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

@@ -711,7 +711,7 @@ git commit -m "feat(relay): add relay-grader binary entry point"
 Create `services/relay/grader/Dockerfile`:
 
 ```dockerfile
-FROM golang:1.26-alpine AS builder
+FROM golang:1.27-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
