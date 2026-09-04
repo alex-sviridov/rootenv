@@ -11,9 +11,10 @@ export function useGraderConnection(attemptId) {
 
   function connect() {
     closedExplicitly = false
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    const isSecure = location.protocol === 'https:'
+    const proto = isSecure ? 'wss' : 'ws'
     const url = `${proto}://${location.host}/relay/grade/${attemptId}/`
-    document.cookie = `pb_auth=${pb.authStore.token}; SameSite=Strict; Secure; path=/`
+    document.cookie = `pb_auth=${pb.authStore.token}; SameSite=Strict; path=/${isSecure ? '; Secure' : ''}`
     ws = new WebSocket(url)
 
     ws.onopen = () => {

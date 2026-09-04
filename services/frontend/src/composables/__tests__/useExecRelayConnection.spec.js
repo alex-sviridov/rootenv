@@ -78,7 +78,7 @@ describe('useExecRelayConnection', () => {
     unmount()
   })
 
-  it('sets pb_auth cookie before WebSocket connect', async () => {
+  it('sets pb_auth cookie without Secure when protocol is http', async () => {
     let setCookieValue = null
     const originalDescriptor = Object.getOwnPropertyDescriptor(document, 'cookie')
     Object.defineProperty(document, 'cookie', {
@@ -92,8 +92,32 @@ describe('useExecRelayConnection', () => {
 
       expect(setCookieValue).toContain('pb_auth=test-token')
       expect(setCookieValue).toContain('SameSite=Strict')
-      expect(setCookieValue).toContain('Secure')
       expect(setCookieValue).toContain('path=/')
+      expect(setCookieValue).not.toContain('Secure')
+      unmount()
+    } finally {
+      if (originalDescriptor) Object.defineProperty(document, 'cookie', originalDescriptor)
+    }
+  })
+
+  it('sets pb_auth cookie with Secure when protocol is https', async () => {
+    vi.stubGlobal('location', { protocol: 'https:', host: 'example.com' })
+
+    let setCookieValue = null
+    const originalDescriptor = Object.getOwnPropertyDescriptor(document, 'cookie')
+    Object.defineProperty(document, 'cookie', {
+      set(value) { setCookieValue = value },
+      configurable: true,
+    })
+
+    try {
+      const { unmount } = withSetup(() => useExecRelayConnection('atm_123', 'workstation'))
+      await flushPromises()
+
+      expect(setCookieValue).toContain('pb_auth=test-token')
+      expect(setCookieValue).toContain('SameSite=Strict')
+      expect(setCookieValue).toContain('path=/')
+      expect(setCookieValue).toContain('Secure')
       unmount()
     } finally {
       if (originalDescriptor) Object.defineProperty(document, 'cookie', originalDescriptor)

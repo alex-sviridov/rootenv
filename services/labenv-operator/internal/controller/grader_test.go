@@ -192,6 +192,7 @@ var _ = Describe("loadGraderConfig", func() {
 	AfterEach(func() {
 		Expect(os.Unsetenv("RELAY_GRADER_IMAGE")).To(Succeed())
 		Expect(os.Unsetenv("RELAY_GRADER_INGRESS_BASE_PATH")).To(Succeed())
+		Expect(os.Unsetenv("RELAY_INGRESS_ANNOTATIONS")).To(Succeed())
 	})
 
 	It("returns error when RELAY_GRADER_IMAGE is unset", func() {
@@ -210,6 +211,20 @@ var _ = Describe("loadGraderConfig", func() {
 		Expect(os.Setenv("RELAY_GRADER_IMAGE", "img:tag")).To(Succeed())
 		cfg, err := loadGraderConfig()
 		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.ingressAnnotations).To(HaveKeyWithValue(
+			"traefik.ingress.kubernetes.io/router.middlewares",
+			"kube-system-relay-auth-middleware@kubernetescrd",
+		))
+	})
+
+	It("parses multiple annotations from comma-separated string", func() {
+		Expect(os.Setenv("RELAY_GRADER_IMAGE", "img:tag")).To(Succeed())
+		Expect(os.Setenv("RELAY_INGRESS_ANNOTATIONS", "foo=bar,baz=qux,key=val=with=equals")).To(Succeed())
+		cfg, err := loadGraderConfig()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.ingressAnnotations).To(HaveKeyWithValue("foo", "bar"))
+		Expect(cfg.ingressAnnotations).To(HaveKeyWithValue("baz", "qux"))
+		Expect(cfg.ingressAnnotations).To(HaveKeyWithValue("key", "val=with=equals"))
 		Expect(cfg.ingressAnnotations).To(HaveKeyWithValue(
 			"traefik.ingress.kubernetes.io/router.middlewares",
 			"kube-system-relay-auth-middleware@kubernetescrd",
