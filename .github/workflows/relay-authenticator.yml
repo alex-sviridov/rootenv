@@ -39,9 +39,10 @@ jobs:
           cache-dependency-path: services/relay-authenticator/go.sum
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
+        # TODO: remove once golangci-lint supports go1.27 export data (golangci/golangci-lint#6643)
+        continue-on-error: true
         with:
           version: v2.13
-          install-mode: goinstall
           working-directory: services/relay-authenticator
 
   security-scan:
