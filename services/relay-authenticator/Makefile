@@ -5,7 +5,7 @@ test:
 		-v $(PWD):/app \
 		-w /app \
 		-v $(HOME)/gopath/pkg/mod:/go/pkg/mod \
-		golang:1.26 sh -c "go test -v ./... && CGO_ENABLED=0 go build -ldflags="-s -w" -o /tmp/relay-authenticator ./cmd/main.go"
+		golang:1.27 sh -c "go test -v ./... && CGO_ENABLED=0 go build -ldflags="-s -w" -o /tmp/relay-authenticator ./cmd/main.go"
 
 lint:
 	docker run --rm \
@@ -14,7 +14,7 @@ lint:
 		-v $(HOME)/gopath/pkg/mod:/go/pkg/mod \
 		-v $(HOME)/gopath/bin:/go/bin \
 		-v go-build-cache:/root/.cache/go-build \
-		golang:1.26 sh -c "go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest && golangci-lint run ./..."
+		golang:1.27 sh -c "go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest && golangci-lint run ./..."
 
 scan:
 	docker run --rm \
@@ -32,6 +32,6 @@ govulncheck:
 		-v $(HOME)/gopath/pkg/mod:/go/pkg/mod \
 		-v $(HOME)/gopath/bin:/go/bin \
 		-v go-build-cache:/root/.cache/go-build \
-		golang:1.26 sh -c "go install golang.org/x/vuln/cmd/govulncheck@latest && govulncheck ./..."
+		golang:1.27 sh -c "go install golang.org/x/vuln/cmd/govulncheck@latest && govulncheck ./..."
 
 ci-dryrun: test lint scan govulncheck

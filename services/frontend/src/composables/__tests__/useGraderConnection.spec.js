@@ -51,7 +51,7 @@ describe('useGraderConnection', () => {
     expect(MockWebSocket.lastInstance.url).toBe('wss://example.com/relay/grade/atm_123/')
   })
 
-  it('sets pb_auth cookie before connecting', () => {
+  it('sets pb_auth cookie without Secure when protocol is http', () => {
     let setCookieValue = null
     const originalDescriptor = Object.getOwnPropertyDescriptor(document, 'cookie')
     Object.defineProperty(document, 'cookie', {
@@ -63,6 +63,27 @@ describe('useGraderConnection', () => {
       const { connect } = useGraderConnection('atm_123')
       connect()
       expect(setCookieValue).toContain('pb_auth=test-token')
+      expect(setCookieValue).not.toContain('Secure')
+    } finally {
+      if (originalDescriptor) Object.defineProperty(document, 'cookie', originalDescriptor)
+    }
+  })
+
+  it('sets pb_auth cookie with Secure when protocol is https', () => {
+    vi.stubGlobal('location', { protocol: 'https:', host: 'example.com' })
+
+    let setCookieValue = null
+    const originalDescriptor = Object.getOwnPropertyDescriptor(document, 'cookie')
+    Object.defineProperty(document, 'cookie', {
+      set(value) { setCookieValue = value },
+      configurable: true,
+    })
+
+    try {
+      const { connect } = useGraderConnection('atm_123')
+      connect()
+      expect(setCookieValue).toContain('pb_auth=test-token')
+      expect(setCookieValue).toContain('Secure')
     } finally {
       if (originalDescriptor) Object.defineProperty(document, 'cookie', originalDescriptor)
     }

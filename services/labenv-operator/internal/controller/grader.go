@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -46,6 +47,15 @@ func loadGraderConfig() (graderConfig, error) {
 
 	annotations := map[string]string{
 		"traefik.ingress.kubernetes.io/router.middlewares": ingressControllerNS + "-relay-auth-middleware@kubernetescrd",
+	}
+	if raw := os.Getenv("RELAY_INGRESS_ANNOTATIONS"); raw != "" {
+		for token := range strings.SplitSeq(raw, ",") {
+			k, v, ok := strings.Cut(token, "=")
+			if !ok || strings.TrimSpace(k) == "" {
+				continue
+			}
+			annotations[strings.TrimSpace(k)] = v
+		}
 	}
 
 	return graderConfig{

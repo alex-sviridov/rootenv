@@ -35,6 +35,7 @@ func parseAttemptID(uri string) (string, bool) {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("pb_auth")
 	if err != nil {
+		slog.Warn("missing pb_auth cookie", "uri", r.Header.Get("X-Forwarded-Uri"))
 		http.Error(w, "missing pb_auth cookie", http.StatusUnauthorized)
 		return
 	}
@@ -42,6 +43,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	forwardedURI := r.Header.Get("X-Forwarded-Uri")
 	if forwardedURI == "" {
+		slog.Warn("missing X-Forwarded-Uri header")
 		http.Error(w, "missing X-Forwarded-Uri", http.StatusBadRequest)
 		return
 	}
